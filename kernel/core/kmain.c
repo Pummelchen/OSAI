@@ -118,7 +118,9 @@ void kmain(const osai_boot_info_t *boot) {
 
   const osai_initramfs_file_t *init_file = 0;
   osai_user_process_t init_process;
-  kassert(initramfs_lookup("/init", &init_file) == OSAI_OK);
+  const osai_initramfs_config_t *init_config = initramfs_config();
+  kassert(init_config != 0);
+  kassert(initramfs_lookup(init_config->service_path, &init_file) == OSAI_OK);
   kassert(user_load_init(init_file, &init_process) == OSAI_OK);
   user_process_run(&init_process);
 

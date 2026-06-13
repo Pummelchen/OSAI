@@ -4,7 +4,7 @@ This file is a working plan for moving OSAI from the current QEMU status through
 
 ## Current Baseline
 
-Current baseline is QEMU milestone 12: AArch64 UEFI boot, PMM/VMM, exceptions, SMP, split VirtIO block/net, VirtIO-backed initfs, real EL0 `/init` ELF, syscall service control, VMM-backed heap, AI Cell resource MVP, structured boot telemetry, and `make qemu-smoke`.
+Current baseline is QEMU milestone 17: AArch64 UEFI boot, PMM/VMM, exceptions, SMP, split VirtIO block/net, versioned VirtIO-backed read-only filesystem metadata, parsed config manifest, real EL0 `/init` ELF selected from the manifest, syscall service control, VMM-backed heap, AI Cell resource MVP, structured boot telemetry, and `make qemu-smoke`.
 
 ## Milestone Plan
 
@@ -45,4 +45,4 @@ Current baseline is QEMU milestone 12: AArch64 UEFI boot, PMM/VMM, exceptions, S
 
 ## Current Work Slice
 
-The first code slice after this plan is milestone 13 plus the memory side of milestones 14 and 15: introduce a generic arena manager, route model/KV/source arenas through it, keep QEMU smoke green, and update telemetry.
+The next code slice is milestone 18: stabilize the userspace ABI with an explicit syscall table, capability handles, process table metadata, user pointer validation, and bad syscall tests.
