@@ -7,7 +7,7 @@ all: bootstrap image
 bootstrap:
 	./scripts/macos-bootstrap.sh
 
-test: bootstrap qemu-dry-run
+test: bootstrap image qemu-dry-run
 
 image:
 	./scripts/build-image.sh

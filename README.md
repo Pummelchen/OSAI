@@ -60,9 +60,11 @@ Detailed design documentation lives in the GitHub Wiki:
 
 ## Status
 
-OSAI is currently in the design and planning stage.
+OSAI is currently in early design and bring-up.
 
-The first engineering target is a bootable QEMU prototype on macOS. Production-oriented targets follow in this order: Intel Desktop, Intel Xeon, and ARM/NVIDIA N1X-compatible SoCs.
+The repository now contains the first AArch64 QEMU-on-macOS boot path: a UEFI loader, ELF64 kernel handoff, serial kernel logging, and an initial physical memory manager self-test.
+
+The first engineering target remains a useful bootable QEMU prototype on macOS. Production-oriented targets follow in this order: Intel Desktop, Intel Xeon, and ARM/NVIDIA N1X-compatible SoCs.
 
 ## License
 
