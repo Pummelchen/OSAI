@@ -1,5 +1,6 @@
 #include <osai/assert.h>
 #include <osai/klog.h>
+#include <osai/pmm.h>
 #include <osai/vmm.h>
 
 #define PAGE_SIZE UINT64_C(4096)
@@ -12,6 +13,7 @@
 #define PTE_VALID UINT64_C(1)
 #define PTE_TABLE UINT64_C(1 << 1)
 #define PTE_ATTR_NORMAL UINT64_C(0 << 2)
+#define PTE_ATTR_DEVICE UINT64_C(1 << 2)
 #define PTE_AP_RO UINT64_C(1 << 7)
 #define PTE_AP_EL0 UINT64_C(1 << 6)
 #define PTE_SH_INNER UINT64_C(3 << 8)
@@ -22,6 +24,7 @@
 #define PTE_BLOCK_L2_ADDR_MASK UINT64_C(0x0000ffffffe00000)
 
 #define MAIR_NORMAL_WB UINT64_C(0xff)
+#define MAIR_DEVICE_NGNRE UINT64_C(0x04)
 
 extern char __text_start[];
 extern char __text_end[];
@@ -75,6 +78,10 @@ static uint64_t block_descriptor(uint64_t physical_address, uint64_t attrs) {
 
 static uint64_t normal_rw_nx_attrs(void) {
   return PTE_ATTR_NORMAL | PTE_SH_INNER | PTE_PXN | PTE_UXN;
+}
+
+static uint64_t device_rw_nx_attrs(void) {
+  return PTE_ATTR_DEVICE | PTE_PXN | PTE_UXN;
 }
 
 static uint64_t normal_ro_nx_attrs(void) {
@@ -177,6 +184,77 @@ static void map_kernel_pages(uint64_t start, uint64_t end) {
   }
 }
 
+static uint64_t attrs_from_flags(uint32_t flags) {
+  uint64_t attrs = (flags & OSAI_VMM_DEVICE) != 0 ? device_rw_nx_attrs()
+                                                   : normal_rw_nx_attrs();
+
+  if ((flags & OSAI_VMM_USER) != 0) {
+    attrs |= PTE_AP_EL0;
+  }
+  if ((flags & OSAI_VMM_WRITABLE) == 0) {
+    attrs |= PTE_AP_RO;
+  }
+  if ((flags & OSAI_VMM_EXECUTABLE) != 0) {
+    attrs &= ~PTE_UXN;
+  }
+
+  if ((flags & OSAI_VMM_USER) == 0 && (flags & OSAI_VMM_EXECUTABLE) != 0) {
+    attrs &= ~PTE_PXN;
+  }
+
+  return attrs;
+}
+
+static uint64_t *ensure_l3_table(uint64_t virtual_address) {
+  uint64_t l0_index = (virtual_address >> 39) & 0x1ffU;
+  uint64_t l1_index = (virtual_address >> 30) & 0x1ffU;
+  uint64_t l2_index = (virtual_address >> 21) & 0x1ffU;
+  kassert(l0_index == 0);
+  kassert(l1_index < EARLY_L1_TABLES);
+
+  uint64_t l0_desc = g_l0_table[l0_index];
+  kassert((l0_desc & (PTE_VALID | PTE_TABLE)) == (PTE_VALID | PTE_TABLE));
+  uint64_t *l1 = (uint64_t *)(uintptr_t)(l0_desc & PTE_ADDR_MASK);
+
+  uint64_t l1_desc = l1[l1_index];
+  kassert((l1_desc & (PTE_VALID | PTE_TABLE)) == (PTE_VALID | PTE_TABLE));
+  uint64_t *l2 = (uint64_t *)(uintptr_t)(l1_desc & PTE_ADDR_MASK);
+
+  uint64_t l2_desc = l2[l2_index];
+  if ((l2_desc & (PTE_VALID | PTE_TABLE)) == (PTE_VALID | PTE_TABLE)) {
+    return (uint64_t *)(uintptr_t)(l2_desc & PTE_ADDR_MASK);
+  }
+
+  uint64_t *l3 = (uint64_t *)pmm_alloc_page();
+  kassert(l3 != 0);
+  for (uint64_t i = 0; i < 512; ++i) {
+    l3[i] = 0;
+  }
+
+  if ((l2_desc & PTE_VALID) != 0 && (l2_desc & PTE_TABLE) == 0) {
+    uint64_t block_base = l2_desc & PTE_BLOCK_L2_ADDR_MASK;
+    uint64_t attrs = l2_desc & ~PTE_BLOCK_L2_ADDR_MASK;
+    for (uint64_t i = 0; i < 512; ++i) {
+      l3[i] = page_descriptor(block_base + (i * PAGE_SIZE), attrs);
+    }
+  }
+
+  l2[l2_index] = table_descriptor(l3);
+  return l3;
+}
+
+static void invalidate_tlb_page(uint64_t virtual_address) {
+  (void)virtual_address;
+  __asm__ volatile(
+      "dsb ishst\n"
+      "tlbi vmalle1is\n"
+      "dsb ish\n"
+      "isb\n"
+      :
+      :
+      : "memory");
+}
+
 static void build_tables(const osai_boot_info_t *boot) {
   zero_table(g_l0_table, 512);
   zero_table(g_l1_table, 512);
@@ -202,7 +280,7 @@ static void build_tables(const osai_boot_info_t *boot) {
 }
 
 static void aarch64_enable_mmu(uint64_t root_table) {
-  uint64_t mair = MAIR_NORMAL_WB;
+  uint64_t mair = MAIR_NORMAL_WB | (MAIR_DEVICE_NGNRE << 8U);
   uint64_t tcr = UINT64_C(16) | UINT64_C(1 << 8) | UINT64_C(1 << 10) |
                  UINT64_C(3 << 12) | UINT64_C(2) << 32;
   uint64_t sctlr = 0;
@@ -245,6 +323,9 @@ static osai_status_t descriptor_to_flags(uint64_t virtual_address,
   }
   if ((descriptor & PTE_PXN) == 0) {
     out |= OSAI_VMM_EXECUTABLE;
+  }
+  if ((descriptor & PTE_AP_EL0) != 0) {
+    out |= OSAI_VMM_USER;
   }
 
   *flags = out;
@@ -295,4 +376,76 @@ osai_status_t vmm_translate(uint64_t virtual_address, uint64_t *physical_address
 
   *physical_address = (l3_desc & PTE_ADDR_MASK) + page_offset;
   return descriptor_to_flags(virtual_address, l3_desc, flags);
+}
+
+osai_status_t vmm_map_page(uint64_t virtual_address, uint64_t physical_address,
+                           uint32_t flags) {
+  if ((virtual_address & (PAGE_SIZE - 1)) != 0 ||
+      (physical_address & (PAGE_SIZE - 1)) != 0 ||
+      (flags & OSAI_VMM_PRESENT) == 0) {
+    return OSAI_ERR_INVALID;
+  }
+
+  uint64_t *l3 = ensure_l3_table(virtual_address);
+  uint64_t l3_index = (virtual_address >> 12) & 0x1ffU;
+  l3[l3_index] = page_descriptor(physical_address, attrs_from_flags(flags));
+  invalidate_tlb_page(virtual_address);
+  return OSAI_OK;
+}
+
+osai_status_t vmm_unmap_page(uint64_t virtual_address) {
+  if ((virtual_address & (PAGE_SIZE - 1)) != 0) {
+    return OSAI_ERR_INVALID;
+  }
+
+  uint64_t *l3 = ensure_l3_table(virtual_address);
+  uint64_t l3_index = (virtual_address >> 12) & 0x1ffU;
+  l3[l3_index] = 0;
+  invalidate_tlb_page(virtual_address);
+  return OSAI_OK;
+}
+
+osai_status_t vmm_validate_user_buffer(uint64_t virtual_address, uint64_t size,
+                                       uint32_t required_flags) {
+  if (size == 0 || virtual_address < OSAI_USER_BASE ||
+      virtual_address + size < virtual_address ||
+      virtual_address + size > OSAI_USER_LIMIT) {
+    return OSAI_ERR_INVALID;
+  }
+
+  uint64_t start = align_down(virtual_address, PAGE_SIZE);
+  uint64_t end = align_up(virtual_address + size, PAGE_SIZE);
+  for (uint64_t page = start; page < end; page += PAGE_SIZE) {
+    uint64_t physical = 0;
+    uint32_t flags = 0;
+    if (vmm_translate(page, &physical, &flags) != OSAI_OK) {
+      return OSAI_ERR_INVALID;
+    }
+    (void)physical;
+    if ((flags & OSAI_VMM_USER) == 0 ||
+        (flags & required_flags) != required_flags) {
+      return OSAI_ERR_INVALID;
+    }
+  }
+  return OSAI_OK;
+}
+
+void vmm_self_test(void) {
+  void *page = pmm_alloc_page();
+  kassert(page != 0);
+  uint64_t va = UINT64_C(0x4e000000);
+  kassert(vmm_map_page(va, (uint64_t)(uintptr_t)page,
+                       OSAI_VMM_PRESENT | OSAI_VMM_WRITABLE |
+                           OSAI_VMM_USER) == OSAI_OK);
+  uint64_t translated = 0;
+  uint32_t flags = 0;
+  kassert(vmm_translate(va, &translated, &flags) == OSAI_OK);
+  kassert(translated == (uint64_t)(uintptr_t)page);
+  kassert((flags & OSAI_VMM_USER) != 0);
+  kassert((flags & OSAI_VMM_WRITABLE) != 0);
+  kassert(vmm_validate_user_buffer(va, 16, OSAI_VMM_WRITABLE) == OSAI_OK);
+  kassert(vmm_unmap_page(va) == OSAI_OK);
+  kassert(vmm_translate(va, &translated, &flags) == OSAI_ERR_INVALID);
+  pmm_free_page(page);
+  klog("VMM map/unmap self-test passed\n");
 }

@@ -5,11 +5,14 @@ ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 BUILD_DIR="$ROOT_DIR/build"
 EFI_BUILD_DIR="$BUILD_DIR/uefi"
 KERNEL_BUILD_DIR="$BUILD_DIR/kernel"
+INIT_BUILD_DIR="$BUILD_DIR/init"
 IMAGE_PATH="${OSAI_AARCH64_IMAGE:-$BUILD_DIR/osai-aarch64.img}"
 TEST_BLOCK_IMAGE="${OSAI_TEST_BLOCK_IMAGE:-$BUILD_DIR/osai-virtio-test.img}"
 LOADER_OBJ="$EFI_BUILD_DIR/loader_main.obj"
 LOADER_EFI="$EFI_BUILD_DIR/BOOTAA64.EFI"
 KERNEL_ELF="$KERNEL_BUILD_DIR/kernel.elf"
+INIT_OBJ="$INIT_BUILD_DIR/init.o"
+INIT_ELF="$INIT_BUILD_DIR/init.elf"
 
 find_tool() {
   tool_name="$1"
@@ -71,8 +74,9 @@ LD_LLD="$(require_tool "LLD ELF linker" ld.lld "Install with: brew install lld" 
 MFORMAT="$(require_tool "mtools mformat" mformat "Install with: brew install mtools" /opt/homebrew/bin/mformat /usr/local/bin/mformat)"
 MMD="$(require_tool "mtools mmd" mmd "Install with: brew install mtools" /opt/homebrew/bin/mmd /usr/local/bin/mmd)"
 MCOPY="$(require_tool "mtools mcopy" mcopy "Install with: brew install mtools" /opt/homebrew/bin/mcopy /usr/local/bin/mcopy)"
+PYTHON3="$(require_tool "Python 3" python3 "Install with: brew install python" /opt/homebrew/bin/python3 /usr/local/bin/python3)"
 
-mkdir -p "$EFI_BUILD_DIR" "$KERNEL_BUILD_DIR"
+mkdir -p "$EFI_BUILD_DIR" "$KERNEL_BUILD_DIR" "$INIT_BUILD_DIR"
 
 printf '%s\n' "Building AArch64 UEFI loader..."
 "$CLANG" \
@@ -136,11 +140,12 @@ KERNEL_OBJECTS="
   $KERNEL_BUILD_DIR/timer.o
   $KERNEL_BUILD_DIR/gic.o
   $KERNEL_BUILD_DIR/smp.o
-  $KERNEL_BUILD_DIR/virtio_mmio.o
+  $KERNEL_BUILD_DIR/virtio_transport.o
+  $KERNEL_BUILD_DIR/virtio_blk.o
+  $KERNEL_BUILD_DIR/virtio_net.o
   $KERNEL_BUILD_DIR/initramfs.o
   $KERNEL_BUILD_DIR/service.o
   $KERNEL_BUILD_DIR/core_lease.o
-  $KERNEL_BUILD_DIR/init.o
   $KERNEL_BUILD_DIR/user.o
   $KERNEL_BUILD_DIR/model_arena.o
   $KERNEL_BUILD_DIR/ai_cell.o
@@ -161,11 +166,12 @@ KERNEL_OBJECTS="
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/timer.c" -o "$KERNEL_BUILD_DIR/timer.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/gic.c" -o "$KERNEL_BUILD_DIR/gic.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/smp.c" -o "$KERNEL_BUILD_DIR/smp.o"
-"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/dev/virtio/virtio_mmio.c" -o "$KERNEL_BUILD_DIR/virtio_mmio.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/dev/virtio/virtio_transport.c" -o "$KERNEL_BUILD_DIR/virtio_transport.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/dev/virtio/virtio_blk.c" -o "$KERNEL_BUILD_DIR/virtio_blk.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/dev/virtio/virtio_net.c" -o "$KERNEL_BUILD_DIR/virtio_net.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/fs/initramfs.c" -o "$KERNEL_BUILD_DIR/initramfs.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/user/service.c" -o "$KERNEL_BUILD_DIR/service.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/core_lease.c" -o "$KERNEL_BUILD_DIR/core_lease.o"
-"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/user/init.S" -o "$KERNEL_BUILD_DIR/init.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/user/user.c" -o "$KERNEL_BUILD_DIR/user.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/model_arena.c" -o "$KERNEL_BUILD_DIR/model_arena.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/ai_cell.c" -o "$KERNEL_BUILD_DIR/ai_cell.o"
@@ -178,6 +184,26 @@ KERNEL_OBJECTS="
   -T "$ROOT_DIR/kernel/arch/aarch64/linker.ld" \
   -o "$KERNEL_ELF" \
   $KERNEL_OBJECTS
+
+printf '%s\n' "Building userspace /init ELF..."
+"$CLANG" \
+  --target=aarch64-none-elf \
+  -ffreestanding \
+  -fno-stack-protector \
+  -fno-builtin \
+  -fno-pic \
+  -fno-pie \
+  -Wall \
+  -Wextra \
+  -Werror \
+  -c "$ROOT_DIR/userspace/init/init.S" \
+  -o "$INIT_OBJ"
+
+"$LD_LLD" \
+  -nostdlib \
+  -T "$ROOT_DIR/userspace/init/linker.ld" \
+  -o "$INIT_ELF" \
+  "$INIT_OBJ"
 
 rm -f "$IMAGE_PATH"
 mkdir -p "$(dirname -- "$IMAGE_PATH")"
@@ -197,4 +223,8 @@ printf '%s\n' "Creating VirtIO block test image: $TEST_BLOCK_IMAGE"
 rm -f "$TEST_BLOCK_IMAGE"
 dd if=/dev/zero of="$TEST_BLOCK_IMAGE" bs=512 count=2048 status=none
 printf 'OSAI-VIRTIO-BLOCK-TEST\n' | dd of="$TEST_BLOCK_IMAGE" bs=512 count=1 conv=notrunc status=none
+"$PYTHON3" "$ROOT_DIR/scripts/create-initfs.py" \
+  "$TEST_BLOCK_IMAGE" \
+  "$INIT_ELF" \
+  "$ROOT_DIR/userspace/init/osai-init.conf"
 printf '%s\n' "Created $TEST_BLOCK_IMAGE"

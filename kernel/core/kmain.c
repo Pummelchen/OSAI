@@ -13,11 +13,24 @@
 #include <osai/telemetry.h>
 #include <osai/timer.h>
 #include <osai/user.h>
-#include <osai/virtio_mmio.h>
+#include <osai/virtio_blk.h>
+#include <osai/virtio_net.h>
 #include <osai/vmm.h>
 
 static const char g_vmm_rodata_probe[] = "vmm-rodata";
 static uint64_t g_vmm_data_probe;
+
+static void map_mmio_range(uint64_t start, uint64_t size) {
+  const uint64_t page_size = 4096;
+  uint64_t page = start & ~(page_size - 1U);
+  uint64_t end = (start + size + page_size - 1U) & ~(page_size - 1U);
+  while (page < end) {
+    kassert(vmm_map_page(page, page,
+                         OSAI_VMM_PRESENT | OSAI_VMM_WRITABLE |
+                             OSAI_VMM_DEVICE) == OSAI_OK);
+    page += page_size;
+  }
+}
 
 void kmain(const osai_boot_info_t *boot) {
   klog_init(boot);
@@ -36,17 +49,15 @@ void kmain(const osai_boot_info_t *boot) {
   timer_self_test();
   smp_init_qemu_virt();
   smp_self_test();
-  virtio_block_self_test();
-  virtio_net_self_test();
-  initramfs_self_test();
-  service_supervisor_self_test();
-  model_arena_self_test();
-  ai_cell_self_test();
 
   pmm_init(boot);
-  kheap_self_test();
-
   vmm_init(boot);
+  vmm_self_test();
+  map_mmio_range(boot->uart_base, 4096);
+  map_mmio_range(UINT64_C(0x08000000), UINT64_C(0x20000));
+  map_mmio_range(UINT64_C(0x0a000000), UINT64_C(0x4000));
+  klog("VMM MMIO device mappings installed\n");
+  kheap_self_test();
   uint64_t translated = 0;
   uint32_t flags = 0;
   kassert(vmm_translate((uint64_t)(uintptr_t)&kmain, &translated, &flags) == OSAI_OK);
@@ -68,6 +79,13 @@ void kmain(const osai_boot_info_t *boot) {
   klog("VMM translation test passed\n");
   gic_init_qemu_virt();
   gic_self_test();
+
+  virtio_block_self_test();
+  virtio_net_self_test();
+  initramfs_self_test();
+  service_supervisor_init();
+  model_arena_self_test();
+  ai_cell_self_test();
   telemetry_emit_boot_summary();
 
 #if defined(OSAI_FAULT_TEST_PAGE)
@@ -92,7 +110,12 @@ void kmain(const osai_boot_info_t *boot) {
   }
 
   klog("PMM 1024 page allocate/free test passed\n");
-  user_init_run();
+
+  const osai_initramfs_file_t *init_file = 0;
+  osai_user_process_t init_process;
+  kassert(initramfs_lookup("/init", &init_file) == OSAI_OK);
+  kassert(user_load_init(init_file, &init_process) == OSAI_OK);
+  user_process_run(&init_process);
 
   for (;;) {
     __asm__ volatile("wfe");

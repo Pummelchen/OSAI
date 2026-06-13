@@ -28,6 +28,10 @@ typedef struct osai_ai_cell {
   osai_ai_cell_state_t state;
   osai_ai_cell_manifest_t manifest;
   uint64_t lifecycle_generation;
+  void **reserved_pages;
+  uint64_t reserved_page_count;
+  uint64_t kv_cache_base;
+  uint64_t source_index_base;
 } osai_ai_cell_t;
 
 void ai_cell_runtime_init(void);
@@ -36,6 +40,7 @@ osai_status_t ai_cell_create(uint32_t cell_id,
 osai_status_t ai_cell_prepare(uint32_t cell_id);
 osai_status_t ai_cell_start(uint32_t cell_id);
 osai_status_t ai_cell_stop(uint32_t cell_id);
+uint64_t ai_cell_transition_count(void);
 void ai_cell_self_test(void);
 
 #endif

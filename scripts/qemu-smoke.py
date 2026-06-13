@@ -10,30 +10,39 @@ TARGETS = [
     "exceptions: self-test",
     "timer: monotonic self-test passed",
     "smp: per-core registry self-test passed",
-    "virtio-blk: read self-test passed",
-    "virtio-net: rx/tx self-test passed",
-    "initramfs: lookup self-test passed",
-    "service: supervisor self-test passed",
+    "VMM map/unmap self-test passed",
+    "VMM MMIO device mappings installed",
+    "virtio-blk: read/error/reset self-test passed",
+    "virtio-net: malformed packet/drop self-test passed",
+    "virtio-net: rx/tx/reset self-test passed",
+    "initramfs: virtio lookup self-test passed",
     "model-arena: shared read-only arena self-test passed",
     "core-lease: owner=0 mask=0x2 acquired",
+    "nic-conflict-agent",
     "ai-cell: lifecycle self-test passed",
     "kheap: self-test passed",
     "VMM translation test passed",
     "gic: discovery self-test passed",
     "PMM 1024 page allocate/free test passed",
-    "telemetry: boot_summary",
-    "/init: hello from EL0",
+    "telemetry: {\"cpu_count\"",
+    "user: loaded /init ELF",
+    "/init: hello from ELF",
+    "service: /init state=running",
+    "/init: service setup complete",
     "user: /init exited status=0",
 ]
 
 
 def main() -> int:
+    env = os.environ.copy()
+    env["OSAI_QEMU_HOSTFWD_PORT"] = "none"
     proc = subprocess.Popen(
         ["make", "qemu-aarch64"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
+        env=env,
     )
     seen = []
     deadline = time.time() + int(os.environ.get("OSAI_QEMU_SMOKE_TIMEOUT", "60"))
@@ -50,7 +59,7 @@ def main() -> int:
                 seen.append(chunk)
                 text = "".join(seen)
                 if all(target in text for target in TARGETS):
-                    print("\nQEMU smoke boot reached all Phase 8 MVP markers")
+                    print("\nQEMU smoke boot reached all full userspace/resource markers")
                     return 0
             elif proc.poll() is not None:
                 break
