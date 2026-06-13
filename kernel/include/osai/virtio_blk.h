@@ -7,6 +7,8 @@
 osai_status_t virtio_block_init(void);
 osai_status_t virtio_block_read_sector(uint64_t sector, void *buffer,
                                        uint64_t buffer_size);
+osai_status_t virtio_block_write_sector(uint64_t sector, const void *buffer,
+                                        uint64_t buffer_size);
 uint64_t virtio_block_capacity_sectors(void);
 void virtio_block_self_test(void);
 

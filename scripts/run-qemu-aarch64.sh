@@ -139,7 +139,7 @@ set -- "$qemu" \
   -serial mon:stdio \
   -drive "if=pflash,format=raw,readonly=on,file=$firmware" \
   -drive "if=virtio,format=raw,file=$image" \
-  -drive "if=none,format=raw,readonly=on,id=osai_test_block,file=$test_block_image" \
+  -drive "if=none,format=raw,id=osai_test_block,file=$test_block_image" \
   -device virtio-blk-device,drive=osai_test_block
 
 if [ "$hostfwd_port" = "none" ]; then

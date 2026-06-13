@@ -63,16 +63,19 @@ mutable VirtIO-backed state.
 
 Required work:
 
-- [ ] Add a mutable state region to the VirtIO test block image.
-- [ ] Serialize boot, service, workspace, sandbox, and update records.
-- [ ] Add checksums/versioning for persistence records.
-- [ ] Reload persisted records after a QEMU reboot.
-- [ ] Prove rollback restores prior service/workspace state.
-- [ ] Keep read-only system image and mutable state boundaries explicit.
+- [x] Add a mutable state region to the VirtIO test block image.
+- [x] Serialize boot, service, workspace, sandbox, and update records.
+- [x] Add checksums/versioning for persistence records.
+- [x] Reload persisted records after a QEMU reboot.
+- [x] Prove rollback restores prior service/workspace state.
+- [x] Keep read-only system image and mutable state boundaries explicit.
 
 Definition of done:
 
 - A two-boot QEMU test proves state survives reboot and rollback works.
+- `make qemu-persistence-reboot` proves the same VirtIO state image is reused
+  across two QEMU boots and reports `persistence_boot_loads`.
+- The QEMU matrix includes persistence reboot validation.
 
 ## Phase Q4: Networking Depth
 

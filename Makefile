@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: all bootstrap test image qemu qemu-aarch64 qemu-x86_64 qemu-dry-run qemu-smoke qemu-preview qemu-matrix qemu-benchmark qemu-fault-matrix qemu-readiness-gate clean
+.PHONY: all bootstrap test image qemu qemu-aarch64 qemu-x86_64 qemu-dry-run qemu-smoke qemu-preview qemu-matrix qemu-benchmark qemu-persistence-reboot qemu-fault-matrix qemu-readiness-gate clean
 
 all: bootstrap image
 
@@ -36,6 +36,9 @@ qemu-matrix:
 
 qemu-benchmark:
 	python3 ./scripts/qemu-benchmark.py
+
+qemu-persistence-reboot: image
+	python3 ./scripts/qemu-persistence-reboot.py
 
 qemu-fault-matrix:
 	python3 ./scripts/qemu-fault-matrix.py

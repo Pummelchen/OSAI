@@ -45,7 +45,7 @@ FROZEN_QEMU_CONTRACTS = [
     },
     {
         "id": "qemu.persistence.rollback-metadata",
-        "description": "Persistence metadata snapshots and rolls back boot, service, workspace, and sandbox records.",
+        "description": "VirtIO-backed persistence snapshots, reloads after reboot, and rolls back boot, service, workspace, and sandbox records.",
     },
     {
         "id": "qemu.telemetry.no-hot-path-migration",
@@ -58,6 +58,7 @@ INTEL_DESKTOP_ENTRY_CRITERIA = [
     "build/qemu-preview-manifest.json exists and uses schema osai.qemu.preview.v1.",
     "build/qemu-benchmark-report.json exists and uses schema osai.qemu.correctness_benchmark.v1.",
     "All benchmark gates are true.",
+    "Two-boot persistence reboot validation passes on the same VirtIO state image.",
     "QEMU performance_claims_allowed is false.",
     "QEMU benchmark_type remains qemu-correctness.",
     "Controlled page, read-only write, and NX fault scenarios pass.",
@@ -73,8 +74,10 @@ REQUIRED_TELEMETRY_MINIMUMS = {
     "security_denied_ops": 2,
     "security_credential_rejects": 1,
     "security_signature_rejects": 1,
-    "persistence_snapshots": 4,
-    "persistence_rollbacks": 4,
+    "persistence_snapshots": 5,
+    "persistence_rollbacks": 5,
+    "persistence_disk_writes": 1,
+    "persistence_disk_loads": 1,
     "network_udp_tx": 1,
     "network_udp_rx": 1,
     "network_tcp_connections": 1,
@@ -93,6 +96,7 @@ REQUIRED_TELEMETRY_EQUALS = {
     "migration_total": 0,
     "context_switch_total": 0,
     "user_process_failed": 0,
+    "persistence_checksum_errors": 0,
 }
 
 

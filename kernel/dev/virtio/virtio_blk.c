@@ -9,6 +9,7 @@
 #define VRING_DESC_F_NEXT UINT16_C(1)
 #define VRING_DESC_F_WRITE UINT16_C(2)
 #define VIRTIO_BLK_T_IN UINT32_C(0)
+#define VIRTIO_BLK_T_OUT UINT32_C(1)
 #define SECTOR_SIZE UINT64_C(512)
 
 typedef struct virtio_blk_req {
@@ -118,10 +119,14 @@ uint64_t virtio_block_capacity_sectors(void) {
   return g_blk->capacity_sectors;
 }
 
-osai_status_t virtio_block_read_sector(uint64_t sector, void *buffer,
-                                       uint64_t buffer_size) {
+static osai_status_t virtio_block_transfer_sector(uint64_t sector, void *buffer,
+                                                  uint64_t buffer_size,
+                                                  uint32_t type) {
   if (g_blk == 0 || g_blk->initialized == 0 || buffer == 0 ||
       buffer_size < SECTOR_SIZE) {
+    return OSAI_ERR_INVALID;
+  }
+  if (type != VIRTIO_BLK_T_IN && type != VIRTIO_BLK_T_OUT) {
     return OSAI_ERR_INVALID;
   }
   if (sector >= g_blk->capacity_sectors) {
@@ -131,8 +136,11 @@ osai_status_t virtio_block_read_sector(uint64_t sector, void *buffer,
   bytes_zero(g_blk->desc, sizeof(virtq_desc_t) * VIRTQ_SIZE);
   bytes_zero(g_blk->dma_sector, SECTOR_SIZE);
   *g_blk->status = 0xffU;
+  if (type == VIRTIO_BLK_T_OUT) {
+    bytes_copy(g_blk->dma_sector, buffer, SECTOR_SIZE);
+  }
 
-  g_blk->request->type = VIRTIO_BLK_T_IN;
+  g_blk->request->type = type;
   g_blk->request->reserved = 0;
   g_blk->request->sector = sector;
   g_blk->desc[0].addr = dma_address(g_blk->request);
@@ -141,7 +149,10 @@ osai_status_t virtio_block_read_sector(uint64_t sector, void *buffer,
   g_blk->desc[0].next = 1;
   g_blk->desc[1].addr = dma_address(g_blk->dma_sector);
   g_blk->desc[1].len = SECTOR_SIZE;
-  g_blk->desc[1].flags = VRING_DESC_F_NEXT | VRING_DESC_F_WRITE;
+  g_blk->desc[1].flags = VRING_DESC_F_NEXT;
+  if (type == VIRTIO_BLK_T_IN) {
+    g_blk->desc[1].flags |= VRING_DESC_F_WRITE;
+  }
   g_blk->desc[1].next = 2;
   g_blk->desc[2].addr = dma_address(g_blk->status);
   g_blk->desc[2].len = 1;
@@ -163,23 +174,51 @@ osai_status_t virtio_block_read_sector(uint64_t sector, void *buffer,
     return OSAI_ERR_IO;
   }
 
-  bytes_copy(buffer, g_blk->dma_sector, SECTOR_SIZE);
+  if (type == VIRTIO_BLK_T_IN) {
+    bytes_copy(buffer, g_blk->dma_sector, SECTOR_SIZE);
+  }
   return OSAI_OK;
+}
+
+osai_status_t virtio_block_read_sector(uint64_t sector, void *buffer,
+                                       uint64_t buffer_size) {
+  return virtio_block_transfer_sector(sector, buffer, buffer_size,
+                                      VIRTIO_BLK_T_IN);
+}
+
+osai_status_t virtio_block_write_sector(uint64_t sector, const void *buffer,
+                                        uint64_t buffer_size) {
+  return virtio_block_transfer_sector(sector, (void *)buffer, buffer_size,
+                                      VIRTIO_BLK_T_OUT);
 }
 
 void virtio_block_self_test(void) {
   uint8_t *sector = (uint8_t *)kheap_calloc(SECTOR_SIZE, 16);
+  uint8_t *write_sector = (uint8_t *)kheap_calloc(SECTOR_SIZE, 16);
   kassert(sector != 0);
+  kassert(write_sector != 0);
   kassert(virtio_block_init() == OSAI_OK);
   kassert(virtio_block_read_sector(0, sector, SECTOR_SIZE) == OSAI_OK);
   kassert(sector[0] == 'O');
   kassert(sector[1] == 'S');
   kassert(sector[2] == 'A');
   kassert(sector[3] == 'I');
+  klog("virtio-blk: sector0 magic='%s'\n", (const char *)sector);
   kassert(virtio_block_read_sector(virtio_block_capacity_sectors(), sector,
                                    SECTOR_SIZE) == OSAI_ERR_IO);
+  for (uint64_t i = 0; i < SECTOR_SIZE; ++i) {
+    write_sector[i] = (uint8_t)(i & 0xffU);
+  }
+  uint64_t write_test_sector = virtio_block_capacity_sectors() - 2U;
+  kassert(virtio_block_write_sector(write_test_sector, write_sector,
+                                    SECTOR_SIZE) == OSAI_OK);
+  bytes_zero(sector, SECTOR_SIZE);
+  kassert(virtio_block_read_sector(write_test_sector, sector, SECTOR_SIZE) ==
+          OSAI_OK);
+  for (uint64_t i = 0; i < SECTOR_SIZE; ++i) {
+    kassert(sector[i] == (uint8_t)(i & 0xffU));
+  }
   virtio_transport_reset(&g_blk->device);
   kassert(virtio_block_init() == OSAI_OK);
-  klog("virtio-blk: sector0 magic='%s'\n", (const char *)sector);
-  klog("virtio-blk: read/error/reset self-test passed\n");
+  klog("virtio-blk: read/write/error/reset self-test passed\n");
 }

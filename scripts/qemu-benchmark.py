@@ -51,6 +51,10 @@ def main() -> int:
         "persistence_snapshots",
         "persistence_rollbacks",
         "persistence_rejects",
+        "persistence_disk_writes",
+        "persistence_disk_loads",
+        "persistence_boot_loads",
+        "persistence_checksum_errors",
         "security_denied_ops",
         "security_credential_rejects",
         "security_signature_accepts",
@@ -87,7 +91,10 @@ def main() -> int:
         "virtio_block_visible": telemetry["virtio_block_sectors"] > 0,
         "ai_cell_transitions_present": telemetry["ai_cell_transitions"] >= 1,
         "security_denials_recorded": telemetry["security_denied_ops"] >= 2,
-        "persistence_rollbacks_present": telemetry["persistence_rollbacks"] >= 4,
+        "persistence_rollbacks_present": telemetry["persistence_rollbacks"] >= 5,
+        "disk_persistence_reloaded": telemetry["persistence_disk_writes"] >= 1
+        and telemetry["persistence_disk_loads"] >= 1
+        and telemetry["persistence_checksum_errors"] == 0,
         "no_hot_path_migration": telemetry["migration_total"] == 0,
         "no_hot_path_context_switches": telemetry["context_switch_total"] == 0,
         "udp_path_exercised": telemetry["network_udp_tx"] >= 1

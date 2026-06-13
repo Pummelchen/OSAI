@@ -75,7 +75,6 @@ void kmain(const osai_boot_info_t *boot) {
   git_workspace_runtime_init();
   git_workspace_self_test();
   sandbox_self_test();
-  persistence_self_test();
   core_lease_self_test();
   uint64_t translated = 0;
   uint32_t flags = 0;
@@ -100,6 +99,7 @@ void kmain(const osai_boot_info_t *boot) {
   gic_self_test();
 
   virtio_block_self_test();
+  persistence_self_test();
   virtio_net_self_test();
   network_stack_self_test();
   initramfs_self_test();
