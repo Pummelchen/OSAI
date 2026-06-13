@@ -2,9 +2,8 @@
 #include <osai/exception.h>
 #include <osai/klog.h>
 #include <osai/panic.h>
-#include <osai/service.h>
+#include <osai/syscall.h>
 #include <osai/user.h>
-#include <osai/vmm.h>
 
 #define ESR_EC_SHIFT 26U
 #define ESR_EC_MASK UINT64_C(0x3f)
@@ -110,59 +109,6 @@ void exception_trigger_page_fault_for_test(void) {
   klog("exceptions: triggering controlled page fault at 0x%lx\n",
        (uint64_t)(uintptr_t)unmapped);
   (void)*unmapped;
-}
-
-static osai_status_t copy_user_string(uint64_t user_ptr, uint64_t length,
-                                      char *buffer, uint64_t buffer_size) {
-  if (length == 0 || length >= buffer_size ||
-      vmm_validate_user_buffer(user_ptr, length, 0) != OSAI_OK) {
-    return OSAI_ERR_INVALID;
-  }
-  const char *src = (const char *)(uintptr_t)user_ptr;
-  for (uint64_t i = 0; i < length; ++i) {
-    buffer[i] = src[i];
-  }
-  buffer[length] = '\0';
-  return OSAI_OK;
-}
-
-static uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
-                                 uint64_t arg2) {
-  (void)arg2;
-
-  if (syscall == OSAI_SYSCALL_LOG) {
-    if (vmm_validate_user_buffer(arg0, arg1, 0) != OSAI_OK) {
-      return UINT64_C(-1);
-    }
-    klog_write((const char *)(uintptr_t)arg0, arg1);
-    return 0;
-  }
-
-  if (syscall == OSAI_SYSCALL_EXIT) {
-    if (service_exit("/init", (int)arg0) != OSAI_OK) {
-      klog("user: /init exit rejected status=%u service_not_running\n",
-           (unsigned)arg0);
-      return UINT64_C(-1);
-    }
-    klog("user: /init exited status=%u\n", (unsigned)arg0);
-    for (;;) {
-      __asm__ volatile("wfe");
-    }
-  }
-
-  if (syscall == OSAI_SYSCALL_OSCTL) {
-    char command[128];
-    if (copy_user_string(arg0, arg1, command, sizeof(command)) != OSAI_OK) {
-      klog("user: osctl invalid buffer ptr=0x%lx len=%lu\n", arg0, arg1);
-      return UINT64_C(-1);
-    }
-    klog("user: osctl command='%s'\n", command);
-    return osctl_execute(command) == OSAI_OK ? 0 : UINT64_C(-1);
-  }
-
-  klog("user: bad syscall=%lu arg0=0x%lx arg1=0x%lx\n",
-       syscall, arg0, arg1);
-  return UINT64_C(-1);
 }
 
 uint64_t aarch64_exception_entry(uint64_t kind, uint64_t esr, uint64_t elr,

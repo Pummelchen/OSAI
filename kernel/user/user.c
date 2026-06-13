@@ -69,6 +69,55 @@ static uint32_t elf_magic(const uint8_t *ident) {
          ((uint32_t)ident[2] << 16U) | ((uint32_t)ident[3] << 24U);
 }
 
+static osai_user_process_t g_process_table[OSAI_MAX_USER_PROCESSES];
+static osai_user_process_t *g_current_process;
+
+static void copy_process(osai_user_process_t *dst,
+                         const osai_user_process_t *src) {
+  dst->pid = src->pid;
+  dst->name = src->name;
+  dst->capability_mask = src->capability_mask;
+  dst->syscall_count = src->syscall_count;
+  dst->rejected_syscall_count = src->rejected_syscall_count;
+  dst->entry = src->entry;
+  dst->stack_top = src->stack_top;
+  dst->stack_guard_low = src->stack_guard_low;
+  dst->stack_guard_high = src->stack_guard_high;
+}
+
+void user_process_table_init(void) {
+  for (uint32_t i = 0; i < OSAI_MAX_USER_PROCESSES; ++i) {
+    g_process_table[i].pid = 0;
+    g_process_table[i].name = 0;
+    g_process_table[i].capability_mask = 0;
+    g_process_table[i].syscall_count = 0;
+    g_process_table[i].rejected_syscall_count = 0;
+  }
+  g_current_process = 0;
+  klog("user: process table initialized slots=%u\n", OSAI_MAX_USER_PROCESSES);
+}
+
+const osai_user_process_t *user_current_process(void) {
+  return g_current_process;
+}
+
+osai_status_t user_process_has_capability(uint64_t capability) {
+  if (g_current_process == 0 ||
+      (g_current_process->capability_mask & capability) != capability) {
+    return OSAI_ERR_INVALID;
+  }
+  return OSAI_OK;
+}
+
+void user_process_note_syscall(uint32_t rejected) {
+  if (g_current_process != 0) {
+    ++g_current_process->syscall_count;
+    if (rejected != 0) {
+      ++g_current_process->rejected_syscall_count;
+    }
+  }
+}
+
 static osai_status_t validate_ehdr(const osai_initramfs_file_t *file,
                                    const elf64_ehdr_t **out) {
   if (file == 0 || file->base == 0 || file->size < sizeof(elf64_ehdr_t) ||
@@ -198,22 +247,32 @@ osai_status_t user_load_init(const osai_initramfs_file_t *file,
   }
 
   process->entry = ehdr->entry;
+  process->pid = 1;
+  process->name = file->path;
+  process->capability_mask = OSAI_CAP_LOG | OSAI_CAP_EXIT | OSAI_CAP_OSCTL;
+  process->syscall_count = 0;
+  process->rejected_syscall_count = 0;
   if (map_user_stack(process) != OSAI_OK) {
     return OSAI_ERR_INVALID;
   }
 
-  klog("user: loaded /init ELF entry=0x%lx stack=0x%lx guard=[0x%lx,0x%lx]\n",
-       process->entry, process->stack_top, process->stack_guard_low,
-       process->stack_guard_high);
+  copy_process(&g_process_table[0], process);
+  klog("user: loaded %s ELF pid=%u caps=0x%lx entry=0x%lx stack=0x%lx guard=[0x%lx,0x%lx]\n",
+       process->name, process->pid, process->capability_mask, process->entry,
+       process->stack_top, process->stack_guard_low, process->stack_guard_high);
   return OSAI_OK;
 }
 
 void user_process_run(const osai_user_process_t *process) {
+  kassert(process != 0);
+  g_current_process = &g_process_table[0];
+  copy_process(g_current_process, process);
   uint64_t entry = process->entry;
   uint64_t stack = process->stack_top;
   uint64_t spsr = 0;
 
-  klog("user: entering EL0 /init entry=0x%lx stack=0x%lx\n", entry, stack);
+  klog("user: entering EL0 %s pid=%u entry=0x%lx stack=0x%lx\n",
+       g_current_process->name, g_current_process->pid, entry, stack);
 
   __asm__ volatile(
       "msr sp_el0, %[stack]\n"

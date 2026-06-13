@@ -145,6 +145,7 @@ KERNEL_OBJECTS="
   $KERNEL_BUILD_DIR/virtio_net.o
   $KERNEL_BUILD_DIR/initramfs.o
   $KERNEL_BUILD_DIR/service.o
+  $KERNEL_BUILD_DIR/syscall.o
   $KERNEL_BUILD_DIR/core_lease.o
   $KERNEL_BUILD_DIR/user.o
   $KERNEL_BUILD_DIR/model_arena.o
@@ -172,6 +173,7 @@ KERNEL_OBJECTS="
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/dev/virtio/virtio_net.c" -o "$KERNEL_BUILD_DIR/virtio_net.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/fs/initramfs.c" -o "$KERNEL_BUILD_DIR/initramfs.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/user/service.c" -o "$KERNEL_BUILD_DIR/service.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/user/syscall.c" -o "$KERNEL_BUILD_DIR/syscall.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/core_lease.c" -o "$KERNEL_BUILD_DIR/core_lease.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/user/user.c" -o "$KERNEL_BUILD_DIR/user.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/model_arena.c" -o "$KERNEL_BUILD_DIR/model_arena.o"

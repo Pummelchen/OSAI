@@ -20,6 +20,8 @@ TARGETS = [
     "initramfs: config service=/init mode=qemu-mvp",
     "initramfs: mounted rofs version=2",
     "initramfs: rofs metadata/config self-test passed",
+    "syscall: table self-test passed entries=3",
+    "user: process table initialized slots=4",
     "model-arena: shared read-only arena self-test passed",
     "core-lease: owner=0 mask=0x2 acquired",
     "nic-conflict-agent",
@@ -32,9 +34,13 @@ TARGETS = [
     "\"migration_total\":0",
     "\"context_switch_total\":0",
     "user: loaded /init ELF",
+    "user: rejected syscall=99",
+    "user: rejected syscall=1",
+    "/init: bad syscall tests passed",
     "/init: hello from ELF",
     "service: /init state=running",
     "/init: service setup complete",
+    "rejected=2",
     "user: /init exited status=0",
 ]
 

@@ -12,6 +12,7 @@
 #include <osai/pmm.h>
 #include <osai/service.h>
 #include <osai/smp.h>
+#include <osai/syscall.h>
 #include <osai/telemetry.h>
 #include <osai/timer.h>
 #include <osai/user.h>
@@ -88,6 +89,8 @@ void kmain(const osai_boot_info_t *boot) {
   virtio_block_self_test();
   virtio_net_self_test();
   initramfs_self_test();
+  syscall_self_test();
+  user_process_table_init();
   service_supervisor_init();
   model_arena_self_test();
   ai_cell_self_test();
