@@ -49,7 +49,7 @@ def main() -> int:
             "architecture": "aarch64",
             "firmware": "UEFI",
             "machine": "qemu-virt",
-            "userspace": "EL0 /init ELF from VirtIO-backed read-only filesystem",
+            "userspace": "EL0 /init plus /bin/service-manager from VirtIO-backed read-only filesystem",
             "performance_claims_allowed": False,
         },
         "benchmark_schema": benchmark.get("schema"),

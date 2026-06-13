@@ -41,18 +41,20 @@ management.
 
 Required work:
 
-- [ ] Split userland into `/init` and a service-manager payload.
-- [ ] Add a service descriptor format in the read-only filesystem.
-- [ ] Add syscalls for status, start, stop, restart, rollback, and update.
-- [ ] Keep kernel APIs as capability-checked primitives.
-- [ ] Add denied-operation tests for missing capabilities.
-- [ ] Emit userspace control-plane state telemetry.
+- [x] Split userland into `/init` and a service-manager payload.
+- [x] Add a service descriptor format in the read-only filesystem.
+- [x] Add syscalls for status, start, stop, restart, rollback, and update.
+- [x] Keep kernel APIs as capability-checked primitives.
+- [x] Add denied-operation tests for missing capabilities.
+- [x] Emit userspace control-plane state telemetry.
 
 Definition of done:
 
 - `/init` loads service-manager policy from filesystem data.
 - Service-manager commands are issued from userland, not kernel self-tests.
 - Missing capabilities fail closed.
+- QEMU boot proves `/bin/service-manager` reads the ROFS service descriptor,
+  manages `/svc/source-index`, and emits control-plane telemetry.
 
 ## Phase Q3: Real Filesystem and Persistence
 

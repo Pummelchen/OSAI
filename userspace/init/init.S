@@ -69,26 +69,6 @@ _start:
   mov x8, #3
   svc #0
 
-  adr x0, cmd_define_child
-  mov x1, #59
-  mov x8, #3
-  svc #0
-
-  adr x0, cmd_start_child
-  mov x1, #31
-  mov x8, #3
-  svc #0
-
-  adr x0, cmd_status_child
-  mov x1, #32
-  mov x8, #3
-  svc #0
-
-  adr x0, msg_child_supervised
-  mov x1, #32
-  mov x8, #1
-  svc #0
-
   adr x0, msg_done
   mov x1, #30
   mov x8, #1
@@ -145,13 +125,5 @@ cmd_start:
   .ascii "service start /init"
 cmd_status:
   .ascii "service status /init"
-cmd_define_child:
-  .ascii "service define /svc/source-index parent=/init restart=never"
-cmd_start_child:
-  .ascii "service start /svc/source-index"
-cmd_status_child:
-  .ascii "service status /svc/source-index"
-msg_child_supervised:
-  .ascii "/init: child service supervised\n"
 msg_done:
   .ascii "/init: service setup complete\n"

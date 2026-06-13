@@ -79,11 +79,14 @@ REQUIRED_TELEMETRY_MINIMUMS = {
     "network_udp_rx": 1,
     "network_tcp_connections": 1,
     "service_child_descriptors": 1,
-    "service_transitions": 4,
-    "user_process_transitions": 3,
-    "user_process_loaded": 1,
-    "user_process_running": 1,
-    "user_process_exited": 1,
+    "service_transitions": 8,
+    "control_plane_syscalls": 8,
+    "control_plane_denials": 4,
+    "service_descriptor_reads": 1,
+    "user_process_transitions": 6,
+    "user_process_loaded": 2,
+    "user_process_running": 2,
+    "user_process_exited": 2,
 }
 
 REQUIRED_TELEMETRY_EQUALS = {

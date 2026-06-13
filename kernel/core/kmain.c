@@ -137,15 +137,31 @@ void kmain(const osai_boot_info_t *boot) {
   klog("PMM 1024 page allocate/free test passed\n");
 
   const osai_initramfs_file_t *init_file = 0;
+  const osai_initramfs_file_t *manager_file = 0;
   osai_user_process_t init_process;
+  osai_user_process_t manager_process;
   const osai_initramfs_config_t *init_config = initramfs_config();
   kassert(init_config != 0);
   kassert(initramfs_lookup(init_config->service_path, &init_file) == OSAI_OK);
+  kassert(initramfs_lookup(init_config->service_manager_path, &manager_file) ==
+          OSAI_OK);
   kassert(user_load_init(init_file, &init_process) == OSAI_OK);
   int init_exit_code = user_process_run(&init_process);
   kassert(init_exit_code == 0);
   klog("kernel: /init returned to kernel exit_code=%u\n",
        (unsigned)init_exit_code);
+  user_process_reclaim_address_space(&init_process);
+
+  kassert(user_load_process(manager_file, 2,
+                            OSAI_CAP_LOG | OSAI_CAP_EXIT | OSAI_CAP_OSCTL |
+                                OSAI_CAP_FS_READ | OSAI_CAP_SERVICE_CONTROL,
+                            &manager_process) == OSAI_OK);
+  kassert(service_start(init_config->service_manager_path) == OSAI_OK);
+  int manager_exit_code = user_process_run(&manager_process);
+  kassert(manager_exit_code == 0);
+  klog("kernel: /bin/service-manager returned to kernel exit_code=%u\n",
+       (unsigned)manager_exit_code);
+  user_process_reclaim_address_space(&manager_process);
   telemetry_emit_boot_summary();
 
   for (;;) {

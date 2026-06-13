@@ -13,6 +13,8 @@ LOADER_EFI="$EFI_BUILD_DIR/BOOTAA64.EFI"
 KERNEL_ELF="$KERNEL_BUILD_DIR/kernel.elf"
 INIT_OBJ="$INIT_BUILD_DIR/init.o"
 INIT_ELF="$INIT_BUILD_DIR/init.elf"
+SERVICE_MANAGER_OBJ="$INIT_BUILD_DIR/service-manager.o"
+SERVICE_MANAGER_ELF="$INIT_BUILD_DIR/service-manager.elf"
 
 find_tool() {
   tool_name="$1"
@@ -223,6 +225,26 @@ printf '%s\n' "Building userspace /init ELF..."
   -o "$INIT_ELF" \
   "$INIT_OBJ"
 
+printf '%s\n' "Building userspace /bin/service-manager ELF..."
+"$CLANG" \
+  --target=aarch64-none-elf \
+  -ffreestanding \
+  -fno-stack-protector \
+  -fno-builtin \
+  -fno-pic \
+  -fno-pie \
+  -Wall \
+  -Wextra \
+  -Werror \
+  -c "$ROOT_DIR/userspace/service-manager/service-manager.S" \
+  -o "$SERVICE_MANAGER_OBJ"
+
+"$LD_LLD" \
+  -nostdlib \
+  -T "$ROOT_DIR/userspace/init/linker.ld" \
+  -o "$SERVICE_MANAGER_ELF" \
+  "$SERVICE_MANAGER_OBJ"
+
 rm -f "$IMAGE_PATH"
 mkdir -p "$(dirname -- "$IMAGE_PATH")"
 
@@ -244,5 +266,7 @@ printf 'OSAI-VIRTIO-BLOCK-TEST\n' | dd of="$TEST_BLOCK_IMAGE" bs=512 count=1 con
 "$PYTHON3" "$ROOT_DIR/scripts/create-initfs.py" \
   "$TEST_BLOCK_IMAGE" \
   "$INIT_ELF" \
-  "$ROOT_DIR/userspace/init/osai-init.conf"
+  "$SERVICE_MANAGER_ELF" \
+  "$ROOT_DIR/userspace/init/osai-init.conf" \
+  "$ROOT_DIR/userspace/service-manager/source-index.svc"
 printf '%s\n' "Created $TEST_BLOCK_IMAGE"

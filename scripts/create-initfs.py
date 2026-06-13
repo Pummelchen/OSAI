@@ -42,16 +42,23 @@ def write_entry(path: str, offset: int, size: int, flags: int, content_hash: int
 
 
 def main() -> int:
-    if len(sys.argv) != 4:
-        print("usage: create-initfs.py <image> <init-elf> <config>", file=sys.stderr)
+    if len(sys.argv) != 6:
+        print(
+            "usage: create-initfs.py <image> <init-elf> <service-manager-elf> <config> <service-descriptor>",
+            file=sys.stderr,
+        )
         return 2
 
     image = pathlib.Path(sys.argv[1])
     init_elf = pathlib.Path(sys.argv[2]).read_bytes()
-    config = pathlib.Path(sys.argv[3]).read_bytes()
+    service_manager_elf = pathlib.Path(sys.argv[3]).read_bytes()
+    config = pathlib.Path(sys.argv[4]).read_bytes()
+    service_descriptor = pathlib.Path(sys.argv[5]).read_bytes()
     files = [
         ("/init", init_elf, ENTRY_FLAG_EXECUTABLE),
+        ("/bin/service-manager", service_manager_elf, ENTRY_FLAG_EXECUTABLE),
         ("/etc/osai-init.conf", config, ENTRY_FLAG_MANIFEST),
+        ("/etc/services/source-index.svc", service_descriptor, 0),
     ]
     if len(files) > MAX_FILES:
         raise SystemExit("too many initfs files")
@@ -66,7 +73,7 @@ def main() -> int:
         offset += len(content)
 
     image_size = align(offset, SECTOR_SIZE)
-    manifest_index = 1
+    manifest_index = 2
     header = MAGIC.ljust(16, b"\0") + struct.pack(
         "<IIIIIIQQ",
         VERSION,

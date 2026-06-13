@@ -36,6 +36,12 @@ typedef struct osai_service {
 
 void service_supervisor_init(void);
 osai_status_t service_start_init(void);
+osai_status_t service_status(const char *name);
+osai_status_t service_start(const char *name);
+osai_status_t service_stop(const char *name);
+osai_status_t service_restart(const char *name);
+osai_status_t service_rollback(const char *name);
+osai_status_t service_update(const char *signature);
 osai_status_t service_exit(const char *name, int exit_code);
 osai_status_t osctl_execute(const char *command);
 void service_supervisor_self_test(void);

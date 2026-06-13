@@ -1,0 +1,5 @@
+name=/svc/source-index
+parent=/init
+restart=never
+start=true
+status=true

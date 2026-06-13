@@ -45,6 +45,8 @@ typedef struct initfs_disk_header {
 static osai_initramfs_file_t g_files[INITFS_MAX_FILES];
 static char g_file_paths[INITFS_MAX_FILES][INITFS_PATH_MAX];
 static char g_config_service_path[INITFS_PATH_MAX];
+static char g_config_service_manager_path[INITFS_PATH_MAX];
+static char g_config_service_descriptor_path[INITFS_PATH_MAX];
 static char g_config_mode[INITFS_MODE_MAX];
 static char g_config_child_service_path[INITFS_PATH_MAX];
 static char g_config_child_service_parent[INITFS_PATH_MAX];
@@ -133,6 +135,14 @@ static osai_status_t parse_config_line(const char *line, uint64_t len) {
     return copy_config_value(g_config_service_path, INITFS_PATH_MAX, line + 8,
                              len - 8);
   }
+  if (len > 16 && bytes_eq(line, "service_manager=", 16)) {
+    return copy_config_value(g_config_service_manager_path, INITFS_PATH_MAX,
+                             line + 16, len - 16);
+  }
+  if (len > 19 && bytes_eq(line, "service_descriptor=", 19)) {
+    return copy_config_value(g_config_service_descriptor_path, INITFS_PATH_MAX,
+                             line + 19, len - 19);
+  }
   if (len > 5 && bytes_eq(line, "mode=", 5)) {
     return copy_config_value(g_config_mode, INITFS_MODE_MAX, line + 5,
                              len - 5);
@@ -160,6 +170,8 @@ static osai_status_t parse_config_manifest(const osai_initramfs_file_t *file) {
   }
 
   g_config_service_path[0] = '\0';
+  g_config_service_manager_path[0] = '\0';
+  g_config_service_descriptor_path[0] = '\0';
   g_config_mode[0] = '\0';
   g_config_child_service_path[0] = '\0';
   g_config_child_service_parent[0] = '\0';
@@ -179,7 +191,10 @@ static osai_status_t parse_config_manifest(const osai_initramfs_file_t *file) {
     }
   }
 
-  if (g_config_service_path[0] == '\0' || g_config_mode[0] == '\0' ||
+  if (g_config_service_path[0] == '\0' ||
+      g_config_service_manager_path[0] == '\0' ||
+      g_config_service_descriptor_path[0] == '\0' ||
+      g_config_mode[0] == '\0' ||
       g_config_child_service_path[0] == '\0' ||
       g_config_child_service_parent[0] == '\0' ||
       g_config_child_service_restart[0] == '\0') {
@@ -188,6 +203,8 @@ static osai_status_t parse_config_manifest(const osai_initramfs_file_t *file) {
   }
 
   g_config.service_path = g_config_service_path;
+  g_config.service_manager_path = g_config_service_manager_path;
+  g_config.service_descriptor_path = g_config_service_descriptor_path;
   g_config.mode = g_config_mode;
   g_config.child_service_path = g_config_child_service_path;
   g_config.child_service_parent = g_config_child_service_parent;
@@ -195,25 +212,43 @@ static osai_status_t parse_config_manifest(const osai_initramfs_file_t *file) {
   g_config.valid = 1;
   klog("initramfs: config service=%s mode=%s\n",
        g_config.service_path, g_config.mode);
+  klog("initramfs: service-manager path=%s descriptor=%s\n",
+       g_config.service_manager_path, g_config.service_descriptor_path);
   klog("initramfs: child service=%s parent=%s restart=%s\n",
        g_config.child_service_path, g_config.child_service_parent,
        g_config.child_service_restart);
   return OSAI_OK;
 }
 
-static osai_status_t validate_config_service_target(void) {
+static osai_status_t validate_executable_target(const char *path) {
   for (uint32_t i = 0; i < g_file_count; ++i) {
-    if (str_eq(g_files[i].path, g_config.service_path)) {
+    if (str_eq(g_files[i].path, path)) {
       if (g_files[i].executable == 0) {
         klog("initramfs: config service target is not executable path=%s\n",
-             g_config.service_path);
+             path);
         return OSAI_ERR_INVALID;
       }
       return OSAI_OK;
     }
   }
   klog("initramfs: config service target missing path=%s\n",
-       g_config.service_path);
+       path);
+  return OSAI_ERR_NOT_FOUND;
+}
+
+static osai_status_t validate_descriptor_target(void) {
+  for (uint32_t i = 0; i < g_file_count; ++i) {
+    if (str_eq(g_files[i].path, g_config.service_descriptor_path)) {
+      if (g_files[i].executable != 0 || g_files[i].manifest != 0) {
+        klog("initramfs: descriptor has invalid flags path=%s\n",
+             g_config.service_descriptor_path);
+        return OSAI_ERR_INVALID;
+      }
+      return OSAI_OK;
+    }
+  }
+  klog("initramfs: descriptor target missing path=%s\n",
+       g_config.service_descriptor_path);
   return OSAI_ERR_NOT_FOUND;
 }
 
@@ -344,7 +379,9 @@ osai_status_t initramfs_init(void) {
   if ((header->entries[header->manifest_index].flags &
        INITFS_ENTRY_FLAG_MANIFEST) == 0 ||
       parse_config_manifest(&g_files[header->manifest_index]) != OSAI_OK ||
-      validate_config_service_target() != OSAI_OK) {
+      validate_executable_target(g_config.service_path) != OSAI_OK ||
+      validate_executable_target(g_config.service_manager_path) != OSAI_OK ||
+      validate_descriptor_target() != OSAI_OK) {
     return OSAI_ERR_INVALID;
   }
 
@@ -390,10 +427,21 @@ void initramfs_self_test(void) {
   kassert(parsed != 0);
   kassert(parsed->valid != 0);
   kassert(str_eq(parsed->service_path, "/init"));
+  kassert(str_eq(parsed->service_manager_path, "/bin/service-manager"));
+  kassert(str_eq(parsed->service_descriptor_path,
+                 "/etc/services/source-index.svc"));
   kassert(str_eq(parsed->mode, "qemu-mvp"));
   kassert(str_eq(parsed->child_service_path, "/svc/source-index"));
   kassert(str_eq(parsed->child_service_parent, "/init"));
   kassert(str_eq(parsed->child_service_restart, "never"));
+  kassert(initramfs_lookup("/bin/service-manager", &init) == OSAI_OK);
+  kassert(init != 0);
+  kassert(init->executable != 0);
+  kassert(initramfs_lookup("/etc/services/source-index.svc", &config) ==
+          OSAI_OK);
+  kassert(config != 0);
+  kassert(config->manifest == 0);
+  kassert(config->executable == 0);
   kassert(initramfs_lookup("/missing", &init) == OSAI_ERR_NOT_FOUND);
   klog("initramfs: rofs metadata/config self-test passed\n");
 }

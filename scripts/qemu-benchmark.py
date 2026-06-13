@@ -67,6 +67,9 @@ def main() -> int:
         "context_switch_total",
         "service_child_descriptors",
         "service_transitions",
+        "control_plane_syscalls",
+        "control_plane_denials",
+        "service_descriptor_reads",
         "user_process_transitions",
         "user_process_loaded",
         "user_process_running",
@@ -91,10 +94,13 @@ def main() -> int:
         and telemetry["network_udp_rx"] >= 1,
         "tcp_path_exercised": telemetry["network_tcp_connections"] >= 1,
         "child_service_supervised": telemetry["service_child_descriptors"] >= 1
-        and telemetry["service_transitions"] >= 4,
-        "user_process_lifecycle_complete": telemetry["user_process_loaded"] >= 1
-        and telemetry["user_process_running"] >= 1
-        and telemetry["user_process_exited"] >= 1
+        and telemetry["service_transitions"] >= 8,
+        "userspace_control_plane_active": telemetry["control_plane_syscalls"] >= 8
+        and telemetry["control_plane_denials"] >= 4
+        and telemetry["service_descriptor_reads"] >= 1,
+        "user_process_lifecycle_complete": telemetry["user_process_loaded"] >= 2
+        and telemetry["user_process_running"] >= 2
+        and telemetry["user_process_exited"] >= 2
         and telemetry["user_process_failed"] == 0,
     }
     failed_gates = sorted(name for name, passed in gates.items() if not passed)

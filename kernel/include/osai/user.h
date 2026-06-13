@@ -30,6 +30,8 @@ typedef struct osai_user_process {
   uint64_t stack_top;
   uint64_t stack_guard_low;
   uint64_t stack_guard_high;
+  uint64_t mapped_low;
+  uint64_t mapped_high;
 } osai_user_process_t;
 
 void user_process_table_init(void);
@@ -40,7 +42,11 @@ void user_process_note_syscall(uint32_t rejected);
 uint64_t user_process_note_exit(int exit_code);
 osai_status_t user_load_init(const osai_initramfs_file_t *file,
                              osai_user_process_t *process);
+osai_status_t user_load_process(const osai_initramfs_file_t *file,
+                                uint32_t pid, uint64_t capability_mask,
+                                osai_user_process_t *process);
 int user_process_run(const osai_user_process_t *process);
+void user_process_reclaim_address_space(const osai_user_process_t *process);
 uint64_t user_process_transition_count(void);
 uint64_t user_process_loaded_count(void);
 uint64_t user_process_running_count(void);

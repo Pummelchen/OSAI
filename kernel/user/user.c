@@ -92,6 +92,8 @@ static void copy_process(osai_user_process_t *dst,
   dst->stack_top = src->stack_top;
   dst->stack_guard_low = src->stack_guard_low;
   dst->stack_guard_high = src->stack_guard_high;
+  dst->mapped_low = src->mapped_low;
+  dst->mapped_high = src->mapped_high;
 }
 
 static const char *process_state_name(osai_user_process_state_t state) {
@@ -123,6 +125,18 @@ static void reset_process_slot(osai_user_process_t *process) {
   process->stack_top = 0;
   process->stack_guard_low = 0;
   process->stack_guard_high = 0;
+  process->mapped_low = 0;
+  process->mapped_high = 0;
+}
+
+static void track_process_mapping(osai_user_process_t *process, uint64_t start,
+                                  uint64_t end) {
+  if (process->mapped_low == 0 || start < process->mapped_low) {
+    process->mapped_low = start;
+  }
+  if (end > process->mapped_high) {
+    process->mapped_high = end;
+  }
 }
 
 static osai_status_t validate_process_transition(osai_user_process_state_t from,
@@ -280,7 +294,8 @@ static uint32_t flags_from_phdr(const elf64_phdr_t *phdr) {
 }
 
 static osai_status_t load_segment(const osai_initramfs_file_t *file,
-                                  const elf64_phdr_t *phdr) {
+                                  const elf64_phdr_t *phdr,
+                                  osai_user_process_t *process) {
   if (phdr->memsz < phdr->filesz ||
       phdr->offset + phdr->filesz > file->size ||
       phdr->vaddr < OSAI_USER_BASE ||
@@ -323,6 +338,7 @@ static osai_status_t load_segment(const osai_initramfs_file_t *file,
     }
   }
 
+  track_process_mapping(process, map_start, map_end);
   return OSAI_OK;
 }
 
@@ -352,51 +368,65 @@ static osai_status_t map_user_stack(osai_user_process_t *process) {
   process->stack_top = stack + PAGE_SIZE;
   process->stack_guard_low = guard_low;
   process->stack_guard_high = guard_high;
+  track_process_mapping(process, stack, stack + PAGE_SIZE);
   return OSAI_OK;
 }
 
-osai_status_t user_load_init(const osai_initramfs_file_t *file,
-                             osai_user_process_t *process) {
+osai_status_t user_load_process(const osai_initramfs_file_t *file,
+                                uint32_t pid, uint64_t capability_mask,
+                                osai_user_process_t *process) {
   const elf64_ehdr_t *ehdr = 0;
-  if (process == 0 || validate_ehdr(file, &ehdr) != OSAI_OK) {
+  if (process == 0 || pid == 0 || pid > OSAI_MAX_USER_PROCESSES ||
+      validate_ehdr(file, &ehdr) != OSAI_OK) {
     return OSAI_ERR_INVALID;
   }
+
+  reset_process_slot(process);
+  process->pid = pid;
+  process->name = file->path;
+  process->capability_mask = capability_mask;
 
   const uint8_t *base = (const uint8_t *)file->base;
   for (uint16_t i = 0; i < ehdr->phnum; ++i) {
     const elf64_phdr_t *phdr =
         (const elf64_phdr_t *)(const void *)(base + ehdr->phoff +
                                              ((uint64_t)i * ehdr->phentsize));
-    if (phdr->type == PT_LOAD && load_segment(file, phdr) != OSAI_OK) {
+    if (phdr->type == PT_LOAD && load_segment(file, phdr, process) != OSAI_OK) {
       return OSAI_ERR_INVALID;
     }
   }
 
   process->entry = ehdr->entry;
-  process->pid = 1;
-  process->name = file->path;
   process->state = OSAI_USER_PROCESS_LOADED;
   process->exit_code = 0;
-  process->capability_mask = OSAI_CAP_LOG | OSAI_CAP_EXIT | OSAI_CAP_OSCTL;
   process->syscall_count = 0;
   process->rejected_syscall_count = 0;
   if (map_user_stack(process) != OSAI_OK) {
     return OSAI_ERR_INVALID;
   }
 
-  copy_process(&g_process_table[0], process);
-  g_process_table[0].state = OSAI_USER_PROCESS_EMPTY;
-  transition_process(&g_process_table[0], OSAI_USER_PROCESS_LOADED, 0);
-  copy_process(process, &g_process_table[0]);
+  osai_user_process_t *slot = &g_process_table[pid - 1U];
+  copy_process(slot, process);
+  slot->state = OSAI_USER_PROCESS_EMPTY;
+  transition_process(slot, OSAI_USER_PROCESS_LOADED, 0);
+  copy_process(process, slot);
   klog("user: loaded %s ELF pid=%u caps=0x%lx entry=0x%lx stack=0x%lx guard=[0x%lx,0x%lx]\n",
        process->name, process->pid, process->capability_mask, process->entry,
        process->stack_top, process->stack_guard_low, process->stack_guard_high);
   return OSAI_OK;
 }
 
+osai_status_t user_load_init(const osai_initramfs_file_t *file,
+                             osai_user_process_t *process) {
+  return user_load_process(file, 1,
+                           OSAI_CAP_LOG | OSAI_CAP_EXIT | OSAI_CAP_OSCTL,
+                           process);
+}
+
 int user_process_run(const osai_user_process_t *process) {
   kassert(process != 0);
-  g_current_process = &g_process_table[0];
+  kassert(process->pid != 0 && process->pid <= OSAI_MAX_USER_PROCESSES);
+  g_current_process = &g_process_table[process->pid - 1U];
   copy_process(g_current_process, process);
   uint64_t entry = process->entry;
   uint64_t stack = process->stack_top;
@@ -414,6 +444,26 @@ int user_process_run(const osai_user_process_t *process) {
        g_current_process->pid, process_state_name(g_current_process->state),
        (unsigned)exit_code, g_process_transition_count);
   return exit_code;
+}
+
+void user_process_reclaim_address_space(const osai_user_process_t *process) {
+  if (process == 0 || process->mapped_low == 0 ||
+      process->mapped_high <= process->mapped_low) {
+    return;
+  }
+
+  for (uint64_t va = process->mapped_low; va < process->mapped_high;
+       va += PAGE_SIZE) {
+    uint64_t physical = 0;
+    uint32_t flags = 0;
+    if (vmm_translate(va, &physical, &flags) == OSAI_OK &&
+        (flags & OSAI_VMM_USER) != 0) {
+      kassert(vmm_unmap_page(va) == OSAI_OK);
+      pmm_free_page((void *)(uintptr_t)physical);
+    }
+  }
+  klog("user: reclaimed address space pid=%u range=[0x%lx,0x%lx)\n",
+       process->pid, process->mapped_low, process->mapped_high);
 }
 
 uint64_t user_process_transition_count(void) {
