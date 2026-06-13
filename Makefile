@@ -2,7 +2,7 @@ SHELL := /bin/sh
 
 .PHONY: all bootstrap test image qemu qemu-aarch64 qemu-x86_64 qemu-dry-run clean
 
-all: bootstrap
+all: bootstrap image
 
 bootstrap:
 	./scripts/macos-bootstrap.sh
@@ -10,8 +10,7 @@ bootstrap:
 test: bootstrap qemu-dry-run
 
 image:
-	@echo "OSAI image build is not implemented yet. Complete WP-003 first."
-	@exit 1
+	./scripts/build-image.sh
 
 qemu:
 	./scripts/run-qemu-aarch64.sh

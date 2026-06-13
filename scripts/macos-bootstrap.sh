@@ -172,6 +172,10 @@ check_tool "LLD linker" "ld.lld" \
   "Install with: brew install lld, or add an existing LLD install to PATH" \
   "$LLVM_BIN/ld.lld" "$LLD_BIN/ld.lld"
 
+check_tool "LLD COFF linker" "lld-link" \
+  "Install with: brew install lld, or add an existing LLD install to PATH" \
+  "$LLVM_BIN/lld-link" "$LLD_BIN/lld-link"
+
 check_tool "LLVM objcopy" "llvm-objcopy" \
   "Install LLVM with: brew install llvm, or add Homebrew LLVM to PATH" \
   "$LLVM_BIN/llvm-objcopy"
@@ -211,6 +215,10 @@ check_optional_tool "mtools mformat" "mformat" \
 check_optional_tool "mtools mcopy" "mcopy" \
   "Install with: brew install mtools if FAT image editing scripts choose mtools" \
   /opt/homebrew/bin/mcopy /usr/local/bin/mcopy
+
+check_optional_tool "mtools mmd" "mmd" \
+  "Install with: brew install mtools if FAT image editing scripts choose mtools" \
+  /opt/homebrew/bin/mmd /usr/local/bin/mmd
 
 if qemu_path="$(find_tool qemu-system-aarch64 "$QEMU_BIN/qemu-system-aarch64")"; then
   accel_output="$("$qemu_path" -accel help 2>/dev/null || true)"
