@@ -70,6 +70,7 @@ void kmain(const osai_boot_info_t *boot) {
   kheap_self_test();
   arena_manager_init();
   arena_self_test();
+  security_self_test();
   source_index_runtime_init();
   source_index_self_test();
   git_workspace_runtime_init();
@@ -106,7 +107,6 @@ void kmain(const osai_boot_info_t *boot) {
   syscall_self_test();
   user_process_table_init();
   user_process_lifecycle_self_test();
-  security_self_test();
   service_supervisor_init();
   model_arena_self_test();
   cpu_ai_runtime_self_test();

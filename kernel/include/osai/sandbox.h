@@ -29,9 +29,12 @@ typedef struct osai_sandbox_manifest {
 void sandbox_runtime_init(void);
 osai_status_t sandbox_create(const osai_sandbox_manifest_t *manifest);
 osai_status_t sandbox_start_build(uint32_t sandbox_id);
+osai_status_t sandbox_start_build_as(uint32_t actor_cell_id,
+                                     uint32_t sandbox_id);
 osai_status_t sandbox_finish_build(uint32_t sandbox_id,
                                    const char *artifact_revision);
 osai_status_t sandbox_rollback(uint32_t sandbox_id);
+osai_status_t sandbox_rollback_as(uint32_t actor_cell_id, uint32_t sandbox_id);
 uint64_t sandbox_transition_count(void);
 uint64_t sandbox_active_count(void);
 void sandbox_self_test(void);

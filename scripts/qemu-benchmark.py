@@ -56,6 +56,12 @@ def main() -> int:
         "persistence_boot_loads",
         "persistence_checksum_errors",
         "security_denied_ops",
+        "security_capability_denials",
+        "security_fs_denials",
+        "security_workspace_denials",
+        "security_sandbox_denials",
+        "security_rollback_denials",
+        "security_update_policy_rejects",
         "security_credential_rejects",
         "security_signature_accepts",
         "security_signature_rejects",
@@ -112,7 +118,15 @@ def main() -> int:
         and telemetry["cpu_ai_kv_writes"] >= 16
         and telemetry["cpu_ai_shared_weight_binds"] >= 4
         and telemetry["cpu_ai_gpu_rejects"] >= 1,
-        "security_denials_recorded": telemetry["security_denied_ops"] >= 2,
+        "security_enforcement_recorded": telemetry["security_denied_ops"] >= 16
+        and telemetry["security_capability_denials"] >= 3
+        and telemetry["security_fs_denials"] >= 1
+        and telemetry["security_workspace_denials"] >= 4
+        and telemetry["security_sandbox_denials"] >= 3
+        and telemetry["security_rollback_denials"] >= 1
+        and telemetry["security_update_policy_rejects"] >= 1
+        and telemetry["security_credential_rejects"] >= 3
+        and telemetry["security_signature_rejects"] >= 1,
         "persistence_rollbacks_present": telemetry["persistence_rollbacks"] >= 5,
         "disk_persistence_reloaded": telemetry["persistence_disk_writes"] >= 1
         and telemetry["persistence_disk_loads"] >= 1

@@ -126,17 +126,21 @@ rollback, and build/test permissions.
 
 Required work:
 
-- [ ] Extend capability checks across service operations.
-- [ ] Enforce filesystem read/write boundaries.
-- [ ] Enforce Git workspace write and patch permissions.
-- [ ] Enforce build/test sandbox permissions.
-- [ ] Strengthen signed update validation beyond the current stub.
-- [ ] Add rollback authorization tests.
-- [ ] Ensure secrets are rejected from logs, updates, and benchmark records.
+- [x] Extend capability checks across service operations.
+- [x] Enforce filesystem read/write boundaries.
+- [x] Enforce Git workspace write and patch permissions.
+- [x] Enforce build/test sandbox permissions.
+- [x] Strengthen signed update validation beyond the current stub.
+- [x] Add rollback authorization tests.
+- [x] Ensure secrets are rejected from logs, updates, and benchmark records.
 
 Definition of done:
 
 - Denied operations fail closed and increment telemetry counters.
+- `make qemu-smoke` requires capability, filesystem, workspace, sandbox,
+  rollback, update-policy, credential, and signature rejection telemetry.
+- `make qemu-readiness-gate` validates the Q6 security enforcement counters as
+  part of the QEMU correctness benchmark.
 
 ## Phase Q7: QEMU Release Candidate
 

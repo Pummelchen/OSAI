@@ -1,6 +1,7 @@
 #include <osai/assert.h>
 #include <osai/git_workspace.h>
 #include <osai/klog.h>
+#include <osai/security.h>
 
 #define MAX_GIT_WORKSPACES 3U
 #define MAX_PATCH_STACK 4U
@@ -119,6 +120,17 @@ static int validate_manifest(const osai_git_workspace_manifest_t *manifest) {
   return 1;
 }
 
+static osai_status_t authorize_workspace_actor(
+    const osai_git_workspace_t *workspace, uint32_t actor_cell_id,
+    const char *operation) {
+  if (workspace == 0) {
+    return OSAI_ERR_INVALID;
+  }
+  return security_authorize_git_workspace(workspace->workspace_id,
+                                          workspace->owner_cell_id,
+                                          actor_cell_id, operation);
+}
+
 void git_workspace_runtime_init(void) {
   for (uint32_t i = 0; i < MAX_GIT_WORKSPACES; ++i) {
     g_workspaces[i].state = OSAI_GIT_WORKSPACE_EMPTY;
@@ -191,8 +203,9 @@ osai_status_t git_workspace_create(
   return OSAI_OK;
 }
 
-osai_status_t git_workspace_sync_start(uint32_t workspace_id,
-                                      const char *revision) {
+static osai_status_t git_workspace_sync_start_as(uint32_t actor_cell_id,
+                                                 uint32_t workspace_id,
+                                                 const char *revision) {
   osai_git_workspace_t *workspace = lookup_workspace(workspace_id);
   if (workspace == 0 || workspace->state == OSAI_GIT_WORKSPACE_EMPTY ||
       workspace->state == OSAI_GIT_WORKSPACE_SYNCING ||
@@ -200,6 +213,9 @@ osai_status_t git_workspace_sync_start(uint32_t workspace_id,
       workspace->state == OSAI_GIT_WORKSPACE_REVERTING_PATCH ||
       !str_nonempty(revision) ||
       string_length(revision) >= OSAI_GIT_WORKSPACE_REVISION_MAX) {
+    return OSAI_ERR_INVALID;
+  }
+  if (authorize_workspace_actor(workspace, actor_cell_id, "sync") != OSAI_OK) {
     return OSAI_ERR_INVALID;
   }
 
@@ -215,6 +231,16 @@ osai_status_t git_workspace_sync_start(uint32_t workspace_id,
   ++g_sync_count;
   klog("git-workspace: %u sync start target=%s\n", workspace_id, revision);
   return OSAI_OK;
+}
+
+osai_status_t git_workspace_sync_start(uint32_t workspace_id,
+                                      const char *revision) {
+  osai_git_workspace_t *workspace = lookup_workspace(workspace_id);
+  if (workspace == 0) {
+    return OSAI_ERR_INVALID;
+  }
+  return git_workspace_sync_start_as(workspace->owner_cell_id, workspace_id,
+                                     revision);
 }
 
 osai_status_t git_workspace_sync_finish(uint32_t workspace_id) {
@@ -248,14 +274,21 @@ osai_status_t git_workspace_sync_finish(uint32_t workspace_id) {
   return OSAI_OK;
 }
 
-osai_status_t git_workspace_patch_apply_start(uint32_t workspace_id,
-                                             const char *patch_id,
-                                             uint64_t patch_bytes) {
+static osai_status_t git_workspace_patch_apply_start_as(
+    uint32_t actor_cell_id, uint32_t workspace_id, const char *patch_id,
+    uint64_t patch_bytes) {
   osai_git_workspace_t *workspace = lookup_workspace(workspace_id);
   if (workspace == 0 || workspace->state != OSAI_GIT_WORKSPACE_READY ||
       !str_nonempty(patch_id) ||
       string_length(patch_id) >= OSAI_GIT_WORKSPACE_PATCH_ID_MAX ||
       patch_bytes == 0) {
+    return OSAI_ERR_INVALID;
+  }
+  if (security_reject_credential_material(patch_id) != OSAI_OK) {
+    return OSAI_ERR_INVALID;
+  }
+  if (authorize_workspace_actor(workspace, actor_cell_id, "patch") !=
+      OSAI_OK) {
     return OSAI_ERR_INVALID;
   }
 
@@ -287,6 +320,18 @@ osai_status_t git_workspace_patch_apply_start(uint32_t workspace_id,
   return OSAI_OK;
 }
 
+osai_status_t git_workspace_patch_apply_start(uint32_t workspace_id,
+                                             const char *patch_id,
+                                             uint64_t patch_bytes) {
+  osai_git_workspace_t *workspace = lookup_workspace(workspace_id);
+  if (workspace == 0) {
+    return OSAI_ERR_INVALID;
+  }
+  return git_workspace_patch_apply_start_as(workspace->owner_cell_id,
+                                            workspace_id, patch_id,
+                                            patch_bytes);
+}
+
 osai_status_t git_workspace_patch_apply_finish(uint32_t workspace_id) {
   osai_git_workspace_t *workspace = lookup_workspace(workspace_id);
   if (workspace == 0 ||
@@ -310,10 +355,15 @@ osai_status_t git_workspace_patch_apply_finish(uint32_t workspace_id) {
   return OSAI_OK;
 }
 
-osai_status_t git_workspace_patch_revert_start(uint32_t workspace_id) {
+static osai_status_t git_workspace_patch_revert_start_as(
+    uint32_t actor_cell_id, uint32_t workspace_id) {
   osai_git_workspace_t *workspace = lookup_workspace(workspace_id);
   if (workspace == 0 || workspace->state != OSAI_GIT_WORKSPACE_READY ||
       workspace->patch_depth == 0) {
+    return OSAI_ERR_INVALID;
+  }
+  if (authorize_workspace_actor(workspace, actor_cell_id, "revert") !=
+      OSAI_OK) {
     return OSAI_ERR_INVALID;
   }
 
@@ -329,6 +379,15 @@ osai_status_t git_workspace_patch_revert_start(uint32_t workspace_id) {
   klog("git-workspace: %u revert start patch=%s\n", workspace_id,
        workspace->pending_patch_id);
   return OSAI_OK;
+}
+
+osai_status_t git_workspace_patch_revert_start(uint32_t workspace_id) {
+  osai_git_workspace_t *workspace = lookup_workspace(workspace_id);
+  if (workspace == 0) {
+    return OSAI_ERR_INVALID;
+  }
+  return git_workspace_patch_revert_start_as(workspace->owner_cell_id,
+                                             workspace_id);
 }
 
 osai_status_t git_workspace_patch_revert_finish(uint32_t workspace_id) {
@@ -405,10 +464,16 @@ void git_workspace_self_test(void) {
   conflict.patch_buffer_bytes = 32 * 1024;
   kassert(git_workspace_create(&conflict) == OSAI_OK);
 
+  kassert(git_workspace_sync_start_as(3, 0, "r2-denied") ==
+          OSAI_ERR_INVALID);
   kassert(git_workspace_sync_start(0, "r2") == OSAI_OK);
   kassert(git_workspace_sync_finish(0) == OSAI_OK);
 
   kassert(git_workspace_patch_apply_finish(0) == OSAI_ERR_INVALID);
+  kassert(git_workspace_patch_apply_start_as(3, 0, "feature/denied", 128) ==
+          OSAI_ERR_INVALID);
+  kassert(git_workspace_patch_apply_start(0, "token=bad", 128) ==
+          OSAI_ERR_INVALID);
 
   kassert(git_workspace_sync_start(1, "conflict") == OSAI_OK);
   kassert(git_workspace_sync_finish(1) == OSAI_ERR_INVALID);
@@ -416,6 +481,7 @@ void git_workspace_self_test(void) {
   kassert(git_workspace_patch_apply_start(0, "feature/add-logging", 2048) ==
           OSAI_OK);
   kassert(git_workspace_patch_apply_finish(0) == OSAI_OK);
+  kassert(git_workspace_patch_revert_start_as(3, 0) == OSAI_ERR_INVALID);
   kassert(git_workspace_patch_revert_start(0) == OSAI_OK);
   kassert(git_workspace_patch_revert_finish(0) == OSAI_OK);
 

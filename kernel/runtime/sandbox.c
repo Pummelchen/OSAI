@@ -2,6 +2,7 @@
 #include <osai/assert.h>
 #include <osai/klog.h>
 #include <osai/sandbox.h>
+#include <osai/security.h>
 
 #define MAX_SANDBOXES 4U
 #define SANDBOX_BUILD_ARENA_BASE 25U
@@ -146,8 +147,22 @@ osai_status_t sandbox_create(const osai_sandbox_manifest_t *manifest) {
 }
 
 osai_status_t sandbox_start_build(uint32_t sandbox_id) {
+  if (sandbox_id >= MAX_SANDBOXES) {
+    return OSAI_ERR_INVALID;
+  }
+  return sandbox_start_build_as(g_sandboxes[sandbox_id].manifest.cell_id,
+                                sandbox_id);
+}
+
+osai_status_t sandbox_start_build_as(uint32_t actor_cell_id,
+                                     uint32_t sandbox_id) {
   if (sandbox_id >= MAX_SANDBOXES ||
       g_sandboxes[sandbox_id].state != OSAI_SANDBOX_CREATED) {
+    return OSAI_ERR_INVALID;
+  }
+  if (security_authorize_sandbox(sandbox_id,
+                                 g_sandboxes[sandbox_id].manifest.cell_id,
+                                 actor_cell_id, "build") != OSAI_OK) {
     return OSAI_ERR_INVALID;
   }
   g_sandboxes[sandbox_id].state = OSAI_SANDBOX_BUILDING;
@@ -176,8 +191,26 @@ osai_status_t sandbox_finish_build(uint32_t sandbox_id,
 }
 
 osai_status_t sandbox_rollback(uint32_t sandbox_id) {
+  if (sandbox_id >= MAX_SANDBOXES) {
+    return OSAI_ERR_INVALID;
+  }
+  return sandbox_rollback_as(g_sandboxes[sandbox_id].manifest.cell_id,
+                             sandbox_id);
+}
+
+osai_status_t sandbox_rollback_as(uint32_t actor_cell_id,
+                                  uint32_t sandbox_id) {
   if (sandbox_id >= MAX_SANDBOXES ||
       g_sandboxes[sandbox_id].state != OSAI_SANDBOX_BUILT) {
+    return OSAI_ERR_INVALID;
+  }
+  if (security_authorize_sandbox(sandbox_id,
+                                 g_sandboxes[sandbox_id].manifest.cell_id,
+                                 actor_cell_id, "rollback") != OSAI_OK ||
+      security_authorize_rollback("sandbox", actor_cell_id ==
+                                                 g_sandboxes[sandbox_id]
+                                                     .manifest.cell_id) !=
+          OSAI_OK) {
     return OSAI_ERR_INVALID;
   }
   g_sandboxes[sandbox_id].state = OSAI_SANDBOX_ROLLED_BACK;
@@ -207,8 +240,10 @@ void sandbox_self_test(void) {
 
   kassert(sandbox_create(&manifest) == OSAI_OK);
   kassert(sandbox_create(&manifest) == OSAI_ERR_BUSY);
+  kassert(sandbox_start_build_as(1, 0) == OSAI_ERR_INVALID);
   kassert(sandbox_start_build(0) == OSAI_OK);
   kassert(sandbox_finish_build(0, "rev-candidate") == OSAI_OK);
+  kassert(sandbox_rollback_as(1, 0) == OSAI_ERR_INVALID);
   kassert(sandbox_rollback(0) == OSAI_OK);
 
   osai_sandbox_manifest_t invalid;

@@ -1,6 +1,7 @@
 #include <osai/assert.h>
 #include <osai/initramfs.h>
 #include <osai/klog.h>
+#include <osai/security.h>
 #include <osai/service.h>
 #include <osai/syscall.h>
 #include <osai/user.h>
@@ -97,12 +98,21 @@ uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
     return reject_syscall(syscall, arg0, arg1, "unknown");
   }
   if (user_process_has_capability(entry->required_capability) != OSAI_OK) {
+    const osai_user_process_t *process = user_current_process();
+    uint64_t granted = process != 0 ? process->capability_mask : 0;
+    (void)security_authorize_capability(entry->name, granted,
+                                        entry->required_capability);
     return reject_syscall(syscall, arg0, arg1, "missing-capability");
   }
 
   if (syscall == OSAI_SYSCALL_LOG) {
     if (vmm_validate_user_buffer(arg0, arg1, 0) != OSAI_OK) {
       return reject_syscall(syscall, arg0, arg1, "bad-user-buffer");
+    }
+    const char *log_src = (const char *)(uintptr_t)arg0;
+    if (security_reject_credential_material_buffer(log_src, arg1) !=
+        OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "log-secret-denied");
     }
     user_process_note_syscall(0);
     klog_write((const char *)(uintptr_t)arg0, arg1);
@@ -128,6 +138,8 @@ uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
     const osai_initramfs_config_t *config = initramfs_config();
     const osai_initramfs_file_t *file = 0;
     if (config == 0 ||
+        security_authorize_fs_read(config->service_descriptor_path) !=
+            OSAI_OK ||
         initramfs_lookup(config->service_descriptor_path, &file) != OSAI_OK ||
         file == 0 || file->base == 0 || file->size == 0 ||
         arg1 < file->size ||
@@ -146,6 +158,9 @@ uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
     char command[128];
     if (copy_user_string(arg0, arg1, command, sizeof(command)) != OSAI_OK) {
       return reject_syscall(syscall, arg0, arg1, "bad-user-string");
+    }
+    if (security_reject_credential_material(command) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "osctl-secret-denied");
     }
     klog("user: osctl command='%s'\n", command);
     if (osctl_execute(command) != OSAI_OK) {
@@ -182,7 +197,7 @@ uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
   }
 
   if (syscall == OSAI_SYSCALL_SERVICE_UPDATE) {
-    char signature[64];
+    char signature[128];
     if (copy_user_string(arg0, arg1, signature, sizeof(signature)) != OSAI_OK) {
       return reject_syscall(syscall, arg0, arg1, "bad-update-signature");
     }

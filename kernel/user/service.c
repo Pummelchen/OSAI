@@ -379,6 +379,9 @@ static osai_status_t handle_log(const char *service_name, const char *message) {
   if (service == 0 || !token_safe(message)) {
     return OSAI_ERR_INVALID;
   }
+  if (security_reject_credential_material(message) != OSAI_OK) {
+    return OSAI_ERR_INVALID;
+  }
   ++service->log_records;
   klog("service-manager: log %s %s records=%lu\n", service_name, message,
        service->log_records);
@@ -443,7 +446,10 @@ static osai_status_t handle_update(const char *signature) {
   }
   if (require_service_capability(OSAI_CAP_UPDATE) != OSAI_OK) {
     ++g_init_service.update_rejections;
-    security_record_denied_operation();
+    const osai_user_process_t *process = user_current_process();
+    uint64_t granted = process != 0 ? process->capability_mask : 0;
+    (void)security_authorize_capability("service.update", granted,
+                                        OSAI_CAP_UPDATE);
     return OSAI_ERR_INVALID;
   }
 
@@ -464,6 +470,11 @@ static osai_status_t handle_rollback(const char *service_name) {
     return OSAI_ERR_INVALID;
   }
   if (require_service_capability(OSAI_CAP_SERVICE_ROLLBACK) != OSAI_OK) {
+    ++g_init_service.rollback_count;
+    (void)security_authorize_rollback(service_name, 0);
+    return OSAI_ERR_INVALID;
+  }
+  if (security_authorize_rollback(service_name, 1) != OSAI_OK) {
     ++g_init_service.rollback_count;
     return OSAI_ERR_INVALID;
   }
