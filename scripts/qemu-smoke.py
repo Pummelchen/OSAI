@@ -13,6 +13,8 @@ TARGETS = [
     "VMM map/unmap self-test passed",
     "VMM MMIO device mappings installed",
     "arena: self-test passed",
+    "sandbox: lifecycle self-test passed",
+    "\"sandbox_transitions\":4",
     "core-lease: isolation self-test passed",
     "virtio-blk: read/error/reset self-test passed",
     "virtio-net: malformed packet/drop self-test passed",

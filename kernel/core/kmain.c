@@ -10,6 +10,7 @@
 #include <osai/klog.h>
 #include <osai/model_arena.h>
 #include <osai/pmm.h>
+#include <osai/sandbox.h>
 #include <osai/service.h>
 #include <osai/smp.h>
 #include <osai/syscall.h>
@@ -63,6 +64,7 @@ void kmain(const osai_boot_info_t *boot) {
   kheap_self_test();
   arena_manager_init();
   arena_self_test();
+  sandbox_self_test();
   core_lease_self_test();
   uint64_t translated = 0;
   uint32_t flags = 0;

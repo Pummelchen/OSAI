@@ -4,6 +4,7 @@
 #include <osai/kheap.h>
 #include <osai/klog.h>
 #include <osai/pmm.h>
+#include <osai/sandbox.h>
 #include <osai/smp.h>
 #include <osai/telemetry.h>
 #include <osai/timer.h>
@@ -13,10 +14,11 @@ void telemetry_emit_boot_summary(void) {
   klog("telemetry: boot_summary cpu_online=%u pmm_total=%lu pmm_free=%lu timer_hz=%lu\n",
        smp_online_count(), pmm_total_pages(), pmm_free_pages(),
        timer_frequency_hz());
-  klog("telemetry: {\"cpu_count\":%u,\"pmm_total_pages\":%lu,\"pmm_free_pages\":%lu,\"kheap_pages\":%lu,\"kheap_bytes\":%lu,\"arena_active\":%lu,\"arena_committed_pages\":%lu,\"hot_core_mask\":%u,\"irq_isolated_mask\":%u,\"migration_total\":%lu,\"context_switch_total\":%lu,\"virtio_block_sectors\":%lu,\"ai_cell_transitions\":%lu}\n",
+  klog("telemetry: {\"cpu_count\":%u,\"pmm_total_pages\":%lu,\"pmm_free_pages\":%lu,\"kheap_pages\":%lu,\"kheap_bytes\":%lu,\"arena_active\":%lu,\"arena_committed_pages\":%lu,\"sandbox_active\":%lu,\"sandbox_transitions\":%lu,\"hot_core_mask\":%u,\"irq_isolated_mask\":%u,\"migration_total\":%lu,\"context_switch_total\":%lu,\"virtio_block_sectors\":%lu,\"ai_cell_transitions\":%lu}\n",
        smp_online_count(), pmm_total_pages(), pmm_free_pages(),
        kheap_pages_allocated(), kheap_bytes_allocated(),
        arena_active_count(), arena_committed_pages(),
+       sandbox_active_count(), sandbox_transition_count(),
        smp_hot_core_mask(), smp_irq_isolated_mask(),
        core_lease_migration_count(),
        core_lease_involuntary_context_switch_count(),
