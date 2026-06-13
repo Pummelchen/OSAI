@@ -1,6 +1,7 @@
 #include <osai/arena.h>
 #include <osai/ai_cell.h>
 #include <osai/assert.h>
+#include <osai/cpu_ai_runtime.h>
 #include <osai/core_lease.h>
 #include <osai/klog.h>
 #include <osai/model_arena.h>
@@ -236,6 +237,16 @@ osai_status_t ai_cell_prepare(uint32_t cell_id) {
     ++g_transition_count;
     return OSAI_ERR_INVALID;
   }
+  if (cpu_ai_runtime_bind_model(cell_id, cell->manifest.model_arena_id) != OSAI_OK) {
+    destroy_cell_arenas(cell);
+    release_nic_queue(cell_id, cell->manifest.nic_queue_id);
+    release_workspace(cell_id, cell->manifest.git_workspace_id);
+    kassert(core_lease_release(cell_id) == OSAI_OK);
+    kassert(model_arena_release(cell->manifest.model_arena_id) == OSAI_OK);
+    cell->state = OSAI_AI_CELL_FAILED;
+    ++g_transition_count;
+    return OSAI_ERR_INVALID;
+  }
 
   cell->state = OSAI_AI_CELL_READY;
   ++g_transition_count;
@@ -264,6 +275,7 @@ osai_status_t ai_cell_stop(uint32_t cell_id) {
     return OSAI_ERR_INVALID;
   }
 
+  kassert(cpu_ai_runtime_unbind_model(cell_id) == OSAI_OK);
   kassert(model_arena_release(cell->manifest.model_arena_id) == OSAI_OK);
   kassert(core_lease_release(cell_id) == OSAI_OK);
   release_nic_queue(cell_id, cell->manifest.nic_queue_id);
@@ -281,11 +293,10 @@ uint64_t ai_cell_transition_count(void) {
 
 void ai_cell_self_test(void) {
   ai_cell_runtime_init();
-
   osai_ai_cell_manifest_t invalid;
   invalid.name = "invalid";
   invalid.core_mask = 0;
-  invalid.model_arena_id = 1;
+  invalid.model_arena_id = 2;
   invalid.kv_cache_bytes = 4096;
   invalid.source_index_bytes = 4096;
   invalid.nic_queue_id = 1;
@@ -297,14 +308,14 @@ void ai_cell_self_test(void) {
   invalid.git_workspace_id = 1;
   kassert(ai_cell_create(3, &invalid) == OSAI_ERR_INVALID);
 
-  invalid.model_arena_id = 1;
+  invalid.model_arena_id = 2;
   invalid.git_workspace_id = 99;
   kassert(ai_cell_create(3, &invalid) == OSAI_ERR_INVALID);
 
   osai_ai_cell_manifest_t manifest;
   manifest.name = "codex-app-agent";
   manifest.core_mask = 0x2;
-  manifest.model_arena_id = 1;
+  manifest.model_arena_id = 2;
   manifest.kv_cache_bytes = 64 * 1024;
   manifest.source_index_bytes = 128 * 1024;
   manifest.nic_queue_id = 1;
@@ -312,11 +323,26 @@ void ai_cell_self_test(void) {
   kassert(ai_cell_create(0, &manifest) == OSAI_OK);
   kassert(ai_cell_prepare(0) == OSAI_OK);
   kassert(ai_cell_start(0) == OSAI_OK);
+  char output[32];
+  uint64_t out = 0;
+  const uint8_t piece[] = {'A', 'B', 'C', 'D'};
+  kassert(cpu_ai_runtime_decode_piece(0, piece, sizeof(piece), output,
+                                     sizeof(output), &out) == OSAI_OK);
+  kassert(cpu_ai_runtime_decode_count(0) == 1);
+  kassert(output[0] == '1');
+  kassert(output[1] == 'B');
+  kassert(output[2] == '1');
+  kassert(output[3] == 'F');
+  kassert(output[4] == '2');
+  kassert(output[5] == '3');
+  kassert(output[6] == '2');
+  kassert(output[7] == '7');
+  kassert(output[8] == '\0');
 
   osai_ai_cell_manifest_t conflict;
   conflict.name = "conflict-agent";
   conflict.core_mask = 0x2;
-  conflict.model_arena_id = 1;
+  conflict.model_arena_id = 2;
   conflict.kv_cache_bytes = 64 * 1024;
   conflict.source_index_bytes = 128 * 1024;
   conflict.nic_queue_id = 2;
@@ -327,7 +353,7 @@ void ai_cell_self_test(void) {
   osai_ai_cell_manifest_t nic_conflict;
   nic_conflict.name = "nic-conflict-agent";
   nic_conflict.core_mask = 0x4;
-  nic_conflict.model_arena_id = 1;
+  nic_conflict.model_arena_id = 2;
   nic_conflict.kv_cache_bytes = 64 * 1024;
   nic_conflict.source_index_bytes = 128 * 1024;
   nic_conflict.nic_queue_id = 1;

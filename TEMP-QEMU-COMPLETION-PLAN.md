@@ -4,7 +4,7 @@ This file is a working plan for moving OSAI from the current QEMU status through
 
 ## Current Baseline
 
-Current baseline is QEMU milestone 20: AArch64 UEFI boot, PMM/VMM, exceptions, SMP, split VirtIO block/net, versioned VirtIO-backed read-only filesystem metadata, parsed config manifest, real EL0 `/init` ELF selected from the manifest, explicit syscall table, process/capability metadata, user pointer validation, bad syscall tests, userspace service-manager policy, build/test sandbox metadata, rollback state, syscall service control, VMM-backed heap, AI Cell resource MVP, structured boot telemetry, and `make qemu-smoke`.
+Current baseline is QEMU milestone 26: AArch64 UEFI boot, PMM/VMM, exceptions, SMP, split VirtIO block/net, versioned VirtIO-backed read-only filesystem metadata, parsed config manifest, real EL0 `/init` ELF selected from the manifest, explicit syscall table, process/capability metadata, user pointer validation, bad syscall tests, userspace service-manager policy, build/test sandbox metadata, rollback state, syscall service control, VMM-backed heap, AI Cell runtime integration, source-index service with file/symbol/incremental-update fixtures, git workspace state machine fixtures, and low-latency UDP/TCP parser smoke paths in-kernel.
 
 ## Milestone Plan
 
@@ -45,4 +45,8 @@ Current baseline is QEMU milestone 20: AArch64 UEFI boot, PMM/VMM, exceptions, S
 
 ## Current Work Slice
 
-The next code slice is milestone 21: add a source index service with source-index arena records, file records, symbol-record stubs, and an incremental update API.
+Milestone 27 is now implemented:
+- telemetry JSON payload now includes scheduler migration/context-switch counters and richer runtime counters,
+- smoke + benchmark/CI script scaffolding is available for matrix verification.
+
+Next code slice is milestone 28 (security model hardening and signed-update policy checks), followed by milestones 29-33.

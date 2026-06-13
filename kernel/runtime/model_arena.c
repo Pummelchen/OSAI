@@ -2,6 +2,7 @@
 #include <osai/assert.h>
 #include <osai/klog.h>
 #include <osai/model_arena.h>
+#include <osai/vmm.h>
 
 #define MAX_MODEL_ARENAS 4U
 
@@ -9,6 +10,32 @@ static osai_model_arena_t g_model_arenas[MAX_MODEL_ARENAS];
 
 static int str_nonempty(const char *value) {
   return value != 0 && value[0] != '\0';
+}
+
+static void copy_bytes(void *dst, const void *src, uint64_t size) {
+  uint8_t *out = (uint8_t *)dst;
+  const uint8_t *in = (const uint8_t *)src;
+  for (uint64_t i = 0; i < size; ++i) {
+    out[i] = in[i];
+  }
+}
+
+static osai_status_t map_as_read_only(const osai_arena_t *arena) {
+  osai_arena_t *arena_rw = (osai_arena_t *)arena;
+  const uint64_t base = arena_rw->base;
+  const uint32_t flags = OSAI_VMM_PRESENT;
+
+  for (uint64_t i = 0; i < arena_rw->page_count; ++i) {
+    const uint64_t va = base + (i * UINT64_C(4096));
+    const uint64_t pa = (uint64_t)(uintptr_t)arena_rw->pages[i];
+    if (vmm_unmap_page(va) != OSAI_OK) {
+      return OSAI_ERR_INVALID;
+    }
+    if (vmm_map_page(va, pa, flags) != OSAI_OK) {
+      return OSAI_ERR_INVALID;
+    }
+  }
+  return OSAI_OK;
 }
 
 void model_arena_init(void) {
@@ -33,8 +60,15 @@ osai_status_t model_arena_register(uint32_t arena_id, const char *name,
 
   const osai_arena_t *arena = 0;
   if (arena_create(arena_id, OSAI_ARENA_MODEL_WEIGHTS, 0, name, size,
-                   OSAI_ARENA_FLAG_READ_ONLY | OSAI_ARENA_FLAG_SHARED,
+                   OSAI_ARENA_FLAG_SHARED,
                    &arena) != OSAI_OK) {
+    return OSAI_ERR_INVALID;
+  }
+
+  const uint64_t copy_size = size < arena->size ? size : arena->size;
+  copy_bytes((void *)(uintptr_t)arena->base, base, copy_size);
+  if (map_as_read_only(arena) != OSAI_OK) {
+    kassert(arena_destroy(arena_id) == OSAI_OK);
     return OSAI_ERR_INVALID;
   }
 
@@ -75,8 +109,8 @@ osai_status_t model_arena_release(uint32_t arena_id) {
 
 void model_arena_self_test(void) {
   model_arena_init();
-  static const uint8_t tiny_model_seed = 0xaa;
-  kassert(model_arena_register(1, "tiny-shared-weights", &tiny_model_seed,
+  static const uint8_t tiny_model_seed[4096] = {0xaa};
+  kassert(model_arena_register(1, "tiny-shared-weights", tiny_model_seed,
                                4096) == OSAI_OK);
   const osai_model_arena_t *a = 0;
   const osai_model_arena_t *b = 0;

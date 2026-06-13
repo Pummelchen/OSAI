@@ -6,13 +6,17 @@
 #include <osai/exception.h>
 #include <osai/gic.h>
 #include <osai/initramfs.h>
+#include <osai/cpu_ai_runtime.h>
 #include <osai/kheap.h>
+#include <osai/git_workspace.h>
 #include <osai/klog.h>
 #include <osai/model_arena.h>
 #include <osai/pmm.h>
 #include <osai/sandbox.h>
+#include <osai/source_index.h>
 #include <osai/service.h>
 #include <osai/smp.h>
+#include <osai/network_stack.h>
 #include <osai/syscall.h>
 #include <osai/telemetry.h>
 #include <osai/timer.h>
@@ -64,6 +68,10 @@ void kmain(const osai_boot_info_t *boot) {
   kheap_self_test();
   arena_manager_init();
   arena_self_test();
+  source_index_runtime_init();
+  source_index_self_test();
+  git_workspace_runtime_init();
+  git_workspace_self_test();
   sandbox_self_test();
   core_lease_self_test();
   uint64_t translated = 0;
@@ -90,11 +98,13 @@ void kmain(const osai_boot_info_t *boot) {
 
   virtio_block_self_test();
   virtio_net_self_test();
+  network_stack_self_test();
   initramfs_self_test();
   syscall_self_test();
   user_process_table_init();
   service_supervisor_init();
   model_arena_self_test();
+  cpu_ai_runtime_self_test();
   ai_cell_self_test();
   telemetry_emit_boot_summary();
 

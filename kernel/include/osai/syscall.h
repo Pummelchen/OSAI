@@ -11,6 +11,8 @@
 #define OSAI_CAP_LOG UINT64_C(1)
 #define OSAI_CAP_EXIT UINT64_C(2)
 #define OSAI_CAP_OSCTL UINT64_C(4)
+#define OSAI_CAP_SERVICE_ROLLBACK UINT64_C(8)
+#define OSAI_CAP_UPDATE UINT64_C(16)
 
 uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
                           uint64_t arg2);

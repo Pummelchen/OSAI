@@ -16,11 +16,22 @@ typedef struct osai_service {
   const char *name;
   const char *restart_policy;
   const char *log_policy;
+  uint32_t max_restarts;
   osai_service_state_t state;
   int exit_code;
   uint64_t starts;
   uint64_t restart_attempts;
   uint64_t log_records;
+  uint64_t update_attempts;
+  uint64_t update_rejections;
+  uint64_t rollback_count;
+
+  char restart_policy_snapshot[16];
+  char log_policy_snapshot[16];
+  uint32_t max_restarts_snapshot;
+  uint64_t starts_snapshot;
+  uint64_t restart_attempts_snapshot;
+  uint64_t log_records_snapshot;
 } osai_service_t;
 
 void service_supervisor_init(void);
