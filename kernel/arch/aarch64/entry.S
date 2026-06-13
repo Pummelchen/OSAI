@@ -3,6 +3,7 @@
 .type kernel_entry, %function
 
 kernel_entry:
+  msr daifset, #0xf
   mov x20, x0
   ldr x0, =__bss_start
   ldr x1, =__bss_end

@@ -118,6 +118,7 @@ KERNEL_OBJECTS="
   $KERNEL_BUILD_DIR/panic.o
   $KERNEL_BUILD_DIR/assert.o
   $KERNEL_BUILD_DIR/pmm.o
+  $KERNEL_BUILD_DIR/mmu.o
 "
 
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/entry.S" -o "$KERNEL_BUILD_DIR/entry.o"
@@ -126,6 +127,7 @@ KERNEL_OBJECTS="
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/core/panic.c" -o "$KERNEL_BUILD_DIR/panic.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/core/assert.c" -o "$KERNEL_BUILD_DIR/assert.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/mm/pmm.c" -o "$KERNEL_BUILD_DIR/pmm.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/mmu.c" -o "$KERNEL_BUILD_DIR/mmu.o"
 
 "$LD_LLD" \
   -nostdlib \

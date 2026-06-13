@@ -2,9 +2,7 @@
 #include <osai/klog.h>
 #include <osai/types.h>
 
-#define PL011_UARTFR 0x18U
 #define PL011_UARTDR 0x00U
-#define PL011_UARTFR_TXFF (1U << 5)
 
 static volatile uint32_t *g_uart_base;
 
@@ -13,8 +11,6 @@ static void uart_putc(char c) {
     return;
   }
 
-  while ((g_uart_base[PL011_UARTFR / 4] & PL011_UARTFR_TXFF) != 0) {
-  }
   g_uart_base[PL011_UARTDR / 4] = (uint32_t)c;
 }
 
