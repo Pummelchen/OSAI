@@ -28,7 +28,8 @@ qemu-dry-run:
 qemu-smoke: image
 	python3 ./scripts/qemu-smoke.py
 
-qemu-preview: qemu-smoke
+qemu-preview: image
+	python3 ./scripts/qemu-preview.py
 
 qemu-matrix:
 	python3 ./scripts/qemu-matrix.py

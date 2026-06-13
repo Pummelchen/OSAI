@@ -4,7 +4,7 @@ This file is a working plan for moving OSAI from the current QEMU status through
 
 ## Current Baseline
 
-Current baseline is QEMU milestone 26: AArch64 UEFI boot, PMM/VMM, exceptions, SMP, split VirtIO block/net, versioned VirtIO-backed read-only filesystem metadata, parsed config manifest, real EL0 `/init` ELF selected from the manifest, explicit syscall table, process/capability metadata, user pointer validation, bad syscall tests, userspace service-manager policy, build/test sandbox metadata, rollback state, syscall service control, VMM-backed heap, AI Cell runtime integration, source-index service with file/symbol/incremental-update fixtures, git workspace state machine fixtures, and low-latency UDP/TCP parser smoke paths in-kernel.
+Current baseline is QEMU milestone 33: AArch64 UEFI boot, PMM/VMM, exceptions, SMP, split VirtIO block/net, versioned VirtIO-backed read-only filesystem metadata, parsed config manifest, real EL0 `/init` ELF selected from the manifest, explicit syscall table, process/capability metadata, user pointer validation, bad syscall tests, userspace service-manager policy, build/test sandbox metadata with rollback state, syscall-based service control, VMM-backed heap, AI Cell runtime integration, source-index service with file/symbol/incremental-update fixtures, Git workspace state machine fixtures, low-latency UDP/TCP parser smoke paths, security policy fixtures, persistence/rollback metadata fixtures, correctness benchmark schema, QEMU preview manifest generation, and hardware readiness gate documentation.
 
 ## Milestone Plan
 
@@ -45,8 +45,13 @@ Current baseline is QEMU milestone 26: AArch64 UEFI boot, PMM/VMM, exceptions, S
 
 ## Current Work Slice
 
-Milestone 27 is now implemented:
-- telemetry JSON payload now includes scheduler migration/context-switch counters and richer runtime counters,
-- smoke + benchmark/CI script scaffolding is available for matrix verification.
+Milestones 28-33 are now implemented for the QEMU correctness track:
 
-Next code slice is milestone 28 (security model hardening and signed-update policy checks), followed by milestones 29-33.
+- Milestone 28: security policy module, signed-update stub validation, credential-material rejection, deny counters, and telemetry.
+- Milestone 29: persistence snapshot and rollback metadata for boot config, service, workspace, and sandbox records.
+- Milestone 30: correctness benchmark schema with explicit gates and no hardware performance claims.
+- Milestone 31: local QEMU matrix covers smoke, benchmark, preview, and dry-run command contracts.
+- Milestone 32: `make qemu-preview` emits a preview manifest and benchmark report under `build/`.
+- Milestone 33: local hardware readiness gate is documented in `HARDWARE-READINESS.md`.
+
+Next engineering slice after this QEMU gate is x86_64/Intel Desktop bring-up planning and implementation.

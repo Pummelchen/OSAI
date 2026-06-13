@@ -147,11 +147,13 @@ KERNEL_OBJECTS="
   $KERNEL_BUILD_DIR/service.o
   $KERNEL_BUILD_DIR/syscall.o
   $KERNEL_BUILD_DIR/core_lease.o
+  $KERNEL_BUILD_DIR/security.o
   $KERNEL_BUILD_DIR/cpu_ai_runtime.o
   $KERNEL_BUILD_DIR/user.o
   $KERNEL_BUILD_DIR/model_arena.o
   $KERNEL_BUILD_DIR/ai_cell.o
   $KERNEL_BUILD_DIR/sandbox.o
+  $KERNEL_BUILD_DIR/persistence.o
   $KERNEL_BUILD_DIR/source_index.o
   $KERNEL_BUILD_DIR/network_stack.o
   $KERNEL_BUILD_DIR/git_workspace.o
@@ -180,11 +182,13 @@ KERNEL_OBJECTS="
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/user/service.c" -o "$KERNEL_BUILD_DIR/service.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/user/syscall.c" -o "$KERNEL_BUILD_DIR/syscall.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/core_lease.c" -o "$KERNEL_BUILD_DIR/core_lease.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/security.c" -o "$KERNEL_BUILD_DIR/security.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/user/user.c" -o "$KERNEL_BUILD_DIR/user.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/model_arena.c" -o "$KERNEL_BUILD_DIR/model_arena.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/ai_cell.c" -o "$KERNEL_BUILD_DIR/ai_cell.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/cpu_ai_runtime.c" -o "$KERNEL_BUILD_DIR/cpu_ai_runtime.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/sandbox.c" -o "$KERNEL_BUILD_DIR/sandbox.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/persistence.c" -o "$KERNEL_BUILD_DIR/persistence.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/source_index.c" -o "$KERNEL_BUILD_DIR/source_index.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/network_stack.c" -o "$KERNEL_BUILD_DIR/network_stack.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/git_workspace.c" -o "$KERNEL_BUILD_DIR/git_workspace.o"

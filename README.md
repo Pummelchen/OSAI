@@ -57,6 +57,7 @@ Detailed design documentation lives in the GitHub Wiki:
 - [Platform Ports](https://github.com/Pummelchen/OSAI/wiki/QEMU-on-macOS)
 - [Performance Targets](https://github.com/Pummelchen/OSAI/wiki/Performance-Targets)
 - [Codex Work Packages](https://github.com/Pummelchen/OSAI/wiki/Codex-Work-Packages)
+- [Local Hardware Readiness Gate](HARDWARE-READINESS.md)
 
 ## Status
 

@@ -1,5 +1,6 @@
 #include <osai/assert.h>
 #include <osai/klog.h>
+#include <osai/security.h>
 #include <osai/service.h>
 #include <osai/syscall.h>
 #include <osai/user.h>
@@ -203,7 +204,7 @@ static osai_status_t parse_key_value(const char *token, const char *expected_key
 static osai_status_t parse_restart_token(const char *token, service_config_t *config) {
   const char *value = 0;
   if (parse_key_value(token, "restart", &value) != OSAI_OK) {
-    klog("service-manager: invalid restart token='%s'\n", token);
+    klog("service-manager: invalid restart field='%s'\n", token);
     return OSAI_ERR_INVALID;
   }
   if (set_restart_policy(value) != OSAI_OK) {
@@ -217,7 +218,7 @@ static osai_status_t parse_restart_token(const char *token, service_config_t *co
 static osai_status_t parse_log_token(const char *token, service_config_t *config) {
   const char *value = 0;
   if (parse_key_value(token, "log", &value) != OSAI_OK) {
-    klog("service-manager: invalid log token='%s'\n", token);
+    klog("service-manager: invalid log field='%s'\n", token);
     return OSAI_ERR_INVALID;
   }
   if (set_log_policy(value) != OSAI_OK) {
@@ -232,7 +233,7 @@ static osai_status_t parse_max_restarts_token(const char *token,
                                              service_config_t *config) {
   const char *value = 0;
   if (parse_key_value(token, "max_restarts", &value) != OSAI_OK) {
-    klog("service-manager: invalid max_restarts token='%s'\n", token);
+    klog("service-manager: invalid max_restarts field='%s'\n", token);
     return OSAI_ERR_INVALID;
   }
   if (parse_u32(value, &config->max_restarts) != OSAI_OK) {
@@ -375,14 +376,21 @@ static osai_status_t handle_start(const char *service_name) {
 
 static osai_status_t handle_update(const char *signature) {
   if (signature == 0 || signature[0] == '\0') {
+    security_record_denied_operation();
+    return OSAI_ERR_INVALID;
+  }
+  if (security_reject_credential_material(signature) != OSAI_OK) {
+    ++g_init_service.update_rejections;
     return OSAI_ERR_INVALID;
   }
   if (require_service_capability(OSAI_CAP_UPDATE) != OSAI_OK) {
     ++g_init_service.update_rejections;
+    security_record_denied_operation();
     return OSAI_ERR_INVALID;
   }
 
-  if (token_safe(signature) == 0) {
+  if (token_safe(signature) == 0 ||
+      security_validate_update_signature(signature) != OSAI_OK) {
     ++g_init_service.update_rejections;
     return OSAI_ERR_INVALID;
   }
