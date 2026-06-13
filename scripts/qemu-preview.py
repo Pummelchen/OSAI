@@ -45,10 +45,12 @@ def main() -> int:
         "image": "build/osai-aarch64.img",
         "virtio_test_block": "build/osai-virtio-test.img",
         "benchmark_report": "build/qemu-benchmark-report.json",
+        "release_candidate_contract": "contracts/qemu-rc-v1.json",
         "contracts": {
             "architecture": "aarch64",
             "firmware": "UEFI",
             "machine": "qemu-virt",
+            "release_candidate_contract_schema": "osai.qemu.release_candidate_contract.v1",
             "userspace": "EL0 /init plus /bin/service-manager from VirtIO-backed read-only filesystem",
             "performance_claims_allowed": False,
         },

@@ -1,0 +1,192 @@
+{
+  "schema": "osai.qemu.release_candidate_contract.v1",
+  "status": "frozen",
+  "release_candidate": "qemu-rc-1",
+  "scope": {
+    "architecture": "aarch64",
+    "machine": "qemu-virt",
+    "firmware": "UEFI",
+    "accelerators": ["hvf", "tcg"],
+    "benchmark_type": "qemu-correctness",
+    "performance_claims_allowed": false
+  },
+  "syscall_abi": {
+    "version": 1,
+    "syscalls": [
+      {"number": 1, "name": "log", "capability": "OSAI_CAP_LOG"},
+      {"number": 2, "name": "exit", "capability": "OSAI_CAP_EXIT"},
+      {"number": 3, "name": "osctl", "capability": "OSAI_CAP_OSCTL"},
+      {"number": 4, "name": "read_service_descriptor", "capability": "OSAI_CAP_FS_READ"},
+      {"number": 5, "name": "service_status", "capability": "OSAI_CAP_SERVICE_CONTROL"},
+      {"number": 6, "name": "service_start", "capability": "OSAI_CAP_SERVICE_CONTROL"},
+      {"number": 7, "name": "service_stop", "capability": "OSAI_CAP_SERVICE_CONTROL"},
+      {"number": 8, "name": "service_restart", "capability": "OSAI_CAP_SERVICE_CONTROL"},
+      {"number": 9, "name": "service_rollback", "capability": "OSAI_CAP_SERVICE_ROLLBACK"},
+      {"number": 10, "name": "service_update", "capability": "OSAI_CAP_UPDATE"}
+    ],
+    "capabilities": [
+      {"bit": 1, "name": "OSAI_CAP_LOG"},
+      {"bit": 2, "name": "OSAI_CAP_EXIT"},
+      {"bit": 4, "name": "OSAI_CAP_OSCTL"},
+      {"bit": 8, "name": "OSAI_CAP_SERVICE_ROLLBACK"},
+      {"bit": 16, "name": "OSAI_CAP_UPDATE"},
+      {"bit": 32, "name": "OSAI_CAP_FS_READ"},
+      {"bit": 64, "name": "OSAI_CAP_SERVICE_CONTROL"}
+    ]
+  },
+  "telemetry_schema": {
+    "schema": "osai.qemu.telemetry.v1",
+    "minimums": {
+      "cpu_count": 1,
+      "pmm_total_pages": 1,
+      "pmm_free_pages": 1,
+      "virtio_block_sectors": 1,
+      "ai_cell_transitions": 1,
+      "cpu_ai_model_loads": 4,
+      "cpu_ai_model_load_failures": 3,
+      "cpu_ai_tokenizer_calls": 4,
+      "cpu_ai_runtime_calls": 4,
+      "cpu_ai_kv_writes": 16,
+      "cpu_ai_shared_weight_binds": 4,
+      "cpu_ai_gpu_rejects": 1,
+      "security_denied_ops": 16,
+      "security_capability_denials": 3,
+      "security_fs_denials": 1,
+      "security_workspace_denials": 4,
+      "security_sandbox_denials": 3,
+      "security_rollback_denials": 1,
+      "security_update_policy_rejects": 1,
+      "security_credential_rejects": 3,
+      "security_signature_rejects": 1,
+      "persistence_snapshots": 5,
+      "persistence_rollbacks": 5,
+      "persistence_disk_writes": 1,
+      "persistence_disk_loads": 1,
+      "network_udp_tx": 1,
+      "network_udp_rx": 1,
+      "network_udp_flows": 1,
+      "network_tcp_connections": 1,
+      "network_tcp_timeouts": 1,
+      "network_rx_packets": 4,
+      "network_tx_packets": 4,
+      "network_packet_drops": 2,
+      "network_packet_lifecycle": 12,
+      "service_child_descriptors": 1,
+      "service_transitions": 8,
+      "control_plane_syscalls": 8,
+      "control_plane_denials": 4,
+      "service_descriptor_reads": 1,
+      "user_process_transitions": 6,
+      "user_process_loaded": 2,
+      "user_process_running": 2,
+      "user_process_exited": 2
+    },
+    "equals": {
+      "migration_total": 0,
+      "context_switch_total": 0,
+      "user_process_failed": 0,
+      "persistence_checksum_errors": 0
+    }
+  },
+  "filesystem_format": {
+    "name": "OSAI read-only initramfs",
+    "magic": "OSAIROFS2",
+    "version": 2,
+    "header_sector": 1,
+    "sector_size": 512,
+    "header_bytes": 512,
+    "block_size": 512,
+    "max_files": 4,
+    "path_max": 64,
+    "data_offset": 4096,
+    "flags": ["read_only"],
+    "entry_type": "file",
+    "entry_flags": ["executable", "manifest"],
+    "required_paths": [
+      "/init",
+      "/bin/service-manager",
+      "/etc/osai-init.conf",
+      "/etc/services/source-index.svc"
+    ],
+    "manifest_path": "/etc/osai-init.conf",
+    "manifest_keys": [
+      "service",
+      "service_manager",
+      "service_descriptor",
+      "mode",
+      "child_service",
+      "child_parent",
+      "child_restart"
+    ]
+  },
+  "persistence_format": {
+    "name": "OSAI QEMU mutable state sector",
+    "magic": "OSAIPST1",
+    "version": 1,
+    "sector": 1536,
+    "sector_bytes": 512,
+    "max_snapshots": 8,
+    "label_max": 32,
+    "checksum": "fnv1a64 over sector with checksum field zeroed",
+    "snapshot_kinds": [
+      "boot_config",
+      "service",
+      "workspace",
+      "sandbox",
+      "update"
+    ]
+  },
+  "service_descriptor_format": {
+    "name": "OSAI service descriptor",
+    "encoding": "ascii key=value lines",
+    "path": "/etc/services/source-index.svc",
+    "required_keys": ["name", "parent", "restart", "start", "status"],
+    "expected_values": {
+      "name": "/svc/source-index",
+      "parent": "/init",
+      "restart": "never",
+      "start": "true",
+      "status": "true"
+    }
+  },
+  "cpu_matrix": {
+    "schema": "osai.qemu.cpu_matrix.v1",
+    "arm64_boot_tiers": [
+      {"name": "fast-local-hvf-host", "cpu": "host", "accelerator": "hvf", "validation": "qemu-smoke-default"},
+      {"name": "baseline-cortex-a53", "cpu": "cortex-a53", "accelerator": "tcg", "validation": "qemu-boot-probe"},
+      {"name": "common-cortex-a72", "cpu": "cortex-a72", "accelerator": "tcg", "validation": "qemu-boot-probe"},
+      {"name": "server-neoverse-n1", "cpu": "neoverse-n1", "accelerator": "tcg", "validation": "qemu-boot-probe"},
+      {"name": "server-neoverse-n2", "cpu": "neoverse-n2", "accelerator": "tcg", "validation": "qemu-boot-probe"},
+      {"name": "performance-neoverse-v1", "cpu": "neoverse-v1", "accelerator": "tcg", "validation": "qemu-boot-probe"},
+      {"name": "future-max", "cpu": "max", "accelerator": "tcg", "validation": "qemu-boot-probe"}
+    ],
+    "x86_64_command_tiers": [
+      {"name": "intel-desktop-conservative", "cpu": "Skylake-Client", "validation": "dry-run"},
+      {"name": "intel-desktop-alderlake-compat", "cpu": "max", "validation": "dry-run"},
+      {"name": "intel-server-skylake", "cpu": "Skylake-Server", "validation": "dry-run"},
+      {"name": "intel-server-cascadelake", "cpu": "Cascadelake-Server", "validation": "dry-run"},
+      {"name": "intel-server-cooperlake", "cpu": "Cooperlake", "validation": "dry-run"},
+      {"name": "intel-server-icelake", "cpu": "Icelake-Server", "validation": "dry-run"},
+      {"name": "intel-server-sapphirerapids", "cpu": "SapphireRapids", "validation": "dry-run"},
+      {"name": "intel-server-graniterapids", "cpu": "GraniteRapids", "validation": "dry-run"},
+      {"name": "intel-server-diamondrapids", "cpu": "DiamondRapids", "validation": "dry-run"},
+      {"name": "intel-server-sierraforest", "cpu": "SierraForest", "validation": "dry-run"},
+      {"name": "intel-server-clearwaterforest", "cpu": "ClearwaterForest", "validation": "dry-run"},
+      {"name": "amd-epyc", "cpu": "EPYC", "validation": "dry-run"},
+      {"name": "amd-epyc-rome", "cpu": "EPYC-Rome", "validation": "dry-run"},
+      {"name": "amd-epyc-milan", "cpu": "EPYC-Milan", "validation": "dry-run"},
+      {"name": "amd-epyc-genoa", "cpu": "EPYC-Genoa", "validation": "dry-run"},
+      {"name": "amd-epyc-turin", "cpu": "EPYC-Turin", "validation": "dry-run"}
+    ]
+  },
+  "out_of_scope_before_intel": [
+    "performance claims against Linux or BSD",
+    "x86_64 OSAI kernel boot",
+    "Intel APIC, HPET, TSC-deadline, PCIe, NVMe, and NIC hardware drivers",
+    "production update signing and key management",
+    "production filesystem with mutable POSIX-like semantics",
+    "real model file formats and production tokenizer/model runtimes",
+    "network throughput benchmarking",
+    "multi-user security policy and remote administration hardening"
+  ]
+}

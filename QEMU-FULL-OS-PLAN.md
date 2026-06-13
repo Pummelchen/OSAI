@@ -9,6 +9,8 @@ to justify Intel Desktop bring-up.
 The current QEMU image boots through AArch64 UEFI, initializes kernel memory,
 drivers, telemetry, `/init`, security fixtures, persistence metadata, AI Cell
 runtime fixtures, and correctness benchmark/preview gates.
+The QEMU release-candidate contract is frozen in
+`contracts/qemu-rc-v1.json`.
 
 The current implementation still has important MVP/stub areas:
 
@@ -64,9 +66,14 @@ The current implementation still has important MVP/stub areas:
 
 - Run smoke, fault matrix, benchmark, preview, and documentation checks.
 - Freeze the QEMU ABI and telemetry schema.
+- Freeze the read-only filesystem, persistence, and service descriptor formats.
+- Include ARM64 CPU boot-probe tiers and Intel/AMD x86_64 command-profile tiers
+  in the readiness gate.
+- Document what remains out of scope before Intel Desktop bring-up.
 - Only then start Intel Desktop code.
 
 ## Current Slice
 
-The active engineering slice is real process lifecycle under the full-core
-workdown. The detailed checklist lives in `QEMU-FULL-OS-CORE-WORKDOWN.md`.
+The active engineering slice is the QEMU release-candidate gate under the
+full-core workdown. The detailed checklist lives in
+`QEMU-FULL-OS-CORE-WORKDOWN.md`.

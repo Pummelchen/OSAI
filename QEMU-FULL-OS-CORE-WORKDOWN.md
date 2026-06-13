@@ -148,16 +148,18 @@ Goal: freeze the QEMU full OS core contract.
 
 Required work:
 
-- [ ] Expand `make qemu-readiness-gate` to include CPU matrix tiers.
-- [ ] Freeze syscall ABI.
-- [ ] Freeze telemetry schema.
-- [ ] Freeze filesystem format.
-- [ ] Freeze persistence record format.
-- [ ] Freeze service descriptor format.
-- [ ] Document what remains out of scope for Intel bring-up.
+- [x] Expand `make qemu-readiness-gate` to include CPU matrix tiers.
+- [x] Freeze syscall ABI.
+- [x] Freeze telemetry schema.
+- [x] Freeze filesystem format.
+- [x] Freeze persistence record format.
+- [x] Freeze service descriptor format.
+- [x] Document what remains out of scope for Intel bring-up.
 
 Definition of done:
 
 - A single QEMU release-candidate gate proves process, userspace control,
   persistence, networking, CPU-AI runtime, security, and documentation
   contracts are stable enough to start Intel Desktop work.
+- The frozen contract lives at `contracts/qemu-rc-v1.json`.
+- The readiness gate writes and validates `build/qemu-cpu-matrix-report.json`.

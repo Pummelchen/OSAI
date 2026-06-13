@@ -14,9 +14,13 @@ artifacts. It writes:
 
 - `build/qemu-benchmark-report.json`
 - `build/qemu-preview-manifest.json`
+- `build/qemu-cpu-matrix-report.json`
 - `build/qemu-readiness-report.json`
 
 The readiness report schema is `osai.qemu.hardware_readiness_gate.v1`.
+The frozen release-candidate contract schema is
+`osai.qemu.release_candidate_contract.v1` and lives at
+`contracts/qemu-rc-v1.json`.
 
 The benchmark harness is a correctness benchmark only. It does not authorize
 performance claims against Linux, BSD, or hardware targets.
@@ -31,7 +35,12 @@ Before moving to Intel Desktop bring-up, these contracts must remain stable:
   the exception path.
 - Real EL0 `/init` ELF is loaded from the VirtIO-backed read-only filesystem.
 - Syscalls enforce process capabilities and user pointer validation.
-- Security policy rejects credential material and unsigned update payloads.
+- Syscall ABI, telemetry schema, read-only initramfs format, persistence record
+  format, and service descriptor format are frozen in
+  `contracts/qemu-rc-v1.json`.
+- Security policy enforces capabilities, filesystem boundaries, workspace and
+  sandbox ownership, rollback authorization, credential rejection, and
+  signed-update format validation.
 - Persistence metadata can snapshot and roll back boot, service, workspace, and
   sandbox records.
 - VirtIO block and VirtIO net self-tests pass.
@@ -40,6 +49,22 @@ Before moving to Intel Desktop bring-up, these contracts must remain stable:
   paths all emit telemetry.
 - Hot AI core telemetry reports zero migration and zero involuntary context
   switches in the QEMU gate.
+- CPU matrix tiers validate the default ARM64 host/HVF smoke path, ARM64 TCG
+  boot probes for `cortex-a53`, `cortex-a72`, `neoverse-n1`, `neoverse-n2`,
+  `neoverse-v1`, and `max`, plus x86_64 Intel/AMD command profiles.
+
+## Out of Scope Before Intel
+
+The QEMU release-candidate gate intentionally does not claim:
+
+- performance wins against Linux or BSD;
+- x86_64 OSAI kernel boot;
+- Intel APIC, HPET, TSC-deadline, PCIe, NVMe, and NIC hardware drivers;
+- production update signing and key management;
+- a production mutable filesystem;
+- real model file formats or production CPU-AI model runtimes;
+- network throughput benchmarking;
+- multi-user security policy and remote administration hardening.
 
 ## Intel Desktop Entry Criteria
 
@@ -48,8 +73,11 @@ Intel Desktop work can begin only after:
 - `make qemu-readiness-gate` passes locally.
 - The QEMU preview manifest exists at `build/qemu-preview-manifest.json`.
 - The QEMU benchmark report exists at `build/qemu-benchmark-report.json`.
+- The QEMU CPU matrix report exists at `build/qemu-cpu-matrix-report.json`.
 - The QEMU readiness report exists at `build/qemu-readiness-report.json`.
 - The readiness report status is `pass`.
+- The release-candidate contract exists at `contracts/qemu-rc-v1.json` and
+  remains frozen.
 - No QEMU benchmark result is represented as a hardware performance claim.
 - The GitHub Wiki platform pages are updated for the current gate.
 

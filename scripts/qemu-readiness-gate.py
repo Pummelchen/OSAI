@@ -9,6 +9,9 @@ from typing import Any, Dict, List
 REPORT_SCHEMA = "osai.qemu.hardware_readiness_gate.v1"
 BENCHMARK_SCHEMA = "osai.qemu.correctness_benchmark.v1"
 PREVIEW_SCHEMA = "osai.qemu.preview.v1"
+CPU_MATRIX_SCHEMA = "osai.qemu.cpu_matrix.v1"
+CONTRACT_SCHEMA = "osai.qemu.release_candidate_contract.v1"
+CONTRACT_PATH = "contracts/qemu-rc-v1.json"
 
 FROZEN_QEMU_CONTRACTS = [
     {
@@ -30,6 +33,10 @@ FROZEN_QEMU_CONTRACTS = [
     {
         "id": "qemu.syscall.capabilities",
         "description": "Syscalls enforce process capabilities and user pointer validation.",
+    },
+    {
+        "id": "qemu.abi.freeze",
+        "description": "QEMU RC contract freezes syscall ABI, telemetry schema, filesystem format, persistence format, and service descriptor format.",
     },
     {
         "id": "qemu.virtio.block-net",
@@ -62,6 +69,8 @@ INTEL_DESKTOP_ENTRY_CRITERIA = [
     "QEMU performance_claims_allowed is false.",
     "QEMU benchmark_type remains qemu-correctness.",
     "Controlled page, read-only write, and NX fault scenarios pass.",
+    "QEMU CPU matrix report validates ARM64 boot tiers and x86_64 command tiers.",
+    "QEMU RC contract remains frozen at osai.qemu.release_candidate_contract.v1.",
     "Platform and benchmark documentation describe QEMU as correctness-only.",
 ]
 
@@ -190,6 +199,7 @@ def validate_preview(manifest: Dict[str, Any], benchmark: Dict[str, Any], failur
     check_equal(manifest.get("schema"), PREVIEW_SCHEMA, "preview.schema", failures)
     check_equal(manifest.get("status"), "pass", "preview.status", failures)
     check_equal(manifest.get("benchmark_schema"), BENCHMARK_SCHEMA, "preview.benchmark_schema", failures)
+    check_equal(manifest.get("release_candidate_contract"), CONTRACT_PATH, "preview.release_candidate_contract", failures)
 
     contracts = manifest.get("contracts", {})
     if not isinstance(contracts, dict):
@@ -199,14 +209,88 @@ def validate_preview(manifest: Dict[str, Any], benchmark: Dict[str, Any], failur
     check_equal(contracts.get("architecture"), "aarch64", "preview.contracts.architecture", failures)
     check_equal(contracts.get("firmware"), "UEFI", "preview.contracts.firmware", failures)
     check_equal(contracts.get("machine"), "qemu-virt", "preview.contracts.machine", failures)
+    check_equal(contracts.get("release_candidate_contract_schema"), CONTRACT_SCHEMA, "preview.contracts.release_candidate_contract_schema", failures)
     check_bool(contracts.get("performance_claims_allowed"), False, "preview.contracts.performance_claims_allowed", failures)
 
-    benchmark_telemetry = benchmark.get("telemetry", {})
+    benchmark_telemetry = benchmark.get("telemetry", {}) if isinstance(benchmark, dict) else {}
     preview_telemetry = manifest.get("telemetry", {})
     if isinstance(benchmark_telemetry, dict) and isinstance(preview_telemetry, dict):
         for key in REQUIRED_TELEMETRY_EQUALS:
             if preview_telemetry.get(key) != benchmark_telemetry.get(key):
                 failures.append(f"preview.telemetry.{key} does not match benchmark telemetry")
+
+def validate_contract(contract: Dict[str, Any], failures: List[str]) -> Dict[str, Any]:
+    check_equal(contract.get("schema"), CONTRACT_SCHEMA, "contract.schema", failures)
+    check_equal(contract.get("status"), "frozen", "contract.status", failures)
+    check_bool(contract.get("scope", {}).get("performance_claims_allowed"), False, "contract.scope.performance_claims_allowed", failures)
+    check_equal(contract.get("scope", {}).get("benchmark_type"), "qemu-correctness", "contract.scope.benchmark_type", failures)
+
+    syscall_abi = contract.get("syscall_abi", {})
+    syscalls = syscall_abi.get("syscalls", [])
+    capabilities = syscall_abi.get("capabilities", [])
+    check_equal(syscall_abi.get("version"), 1, "contract.syscall_abi.version", failures)
+    if len(syscalls) != 10:
+        failures.append(f"contract.syscall_abi.syscalls expected 10 entries, got {len(syscalls)}")
+    if len(capabilities) != 7:
+        failures.append(f"contract.syscall_abi.capabilities expected 7 entries, got {len(capabilities)}")
+    expected_syscall_numbers = list(range(1, 11))
+    actual_syscall_numbers = [entry.get("number") for entry in syscalls]
+    if actual_syscall_numbers != expected_syscall_numbers:
+        failures.append(f"contract.syscall_abi numbers expected {expected_syscall_numbers}, got {actual_syscall_numbers}")
+
+    telemetry_schema = contract.get("telemetry_schema", {})
+    check_equal(telemetry_schema.get("schema"), "osai.qemu.telemetry.v1", "contract.telemetry_schema.schema", failures)
+    check_equal(telemetry_schema.get("minimums"), REQUIRED_TELEMETRY_MINIMUMS, "contract.telemetry_schema.minimums", failures)
+    check_equal(telemetry_schema.get("equals"), REQUIRED_TELEMETRY_EQUALS, "contract.telemetry_schema.equals", failures)
+
+    filesystem = contract.get("filesystem_format", {})
+    check_equal(filesystem.get("magic"), "OSAIROFS2", "contract.filesystem.magic", failures)
+    check_equal(filesystem.get("version"), 2, "contract.filesystem.version", failures)
+    check_equal(filesystem.get("manifest_path"), "/etc/osai-init.conf", "contract.filesystem.manifest_path", failures)
+    required_paths = filesystem.get("required_paths", [])
+    for path in ["/init", "/bin/service-manager", "/etc/osai-init.conf", "/etc/services/source-index.svc"]:
+        if path not in required_paths:
+            failures.append(f"contract.filesystem.required_paths missing {path}")
+
+    persistence = contract.get("persistence_format", {})
+    check_equal(persistence.get("magic"), "OSAIPST1", "contract.persistence.magic", failures)
+    check_equal(persistence.get("version"), 1, "contract.persistence.version", failures)
+    check_equal(persistence.get("sector"), 1536, "contract.persistence.sector", failures)
+
+    descriptor = contract.get("service_descriptor_format", {})
+    check_equal(descriptor.get("path"), "/etc/services/source-index.svc", "contract.service_descriptor.path", failures)
+    for key in ["name", "parent", "restart", "start", "status"]:
+        if key not in descriptor.get("required_keys", []):
+            failures.append(f"contract.service_descriptor.required_keys missing {key}")
+
+    out_of_scope = contract.get("out_of_scope_before_intel", [])
+    if len(out_of_scope) < 5:
+        failures.append("contract.out_of_scope_before_intel is too short")
+    return contract
+
+
+def validate_cpu_matrix(report: Dict[str, Any], contract: Dict[str, Any], failures: List[str]) -> None:
+    check_equal(report.get("schema"), CPU_MATRIX_SCHEMA, "cpu_matrix.schema", failures)
+    check_equal(report.get("status"), "pass", "cpu_matrix.status", failures)
+    check_equal(report.get("contract"), CONTRACT_PATH, "cpu_matrix.contract", failures)
+    tiers = report.get("tiers", [])
+    if not isinstance(tiers, list) or not tiers:
+        failures.append("cpu_matrix.tiers missing or empty")
+        return
+    failed = [tier.get("name") for tier in tiers if tier.get("status") != "pass"]
+    if failed:
+        failures.append(f"cpu_matrix failed tiers: {failed}")
+
+    contract_matrix = contract.get("cpu_matrix", {})
+    required_names = set()
+    for tier in contract_matrix.get("arm64_boot_tiers", []):
+        required_names.add(tier.get("name"))
+    for tier in contract_matrix.get("x86_64_command_tiers", []):
+        required_names.add(tier.get("name"))
+    actual_names = {tier.get("name") for tier in tiers}
+    missing = sorted(name for name in required_names if name not in actual_names)
+    if missing:
+        failures.append(f"cpu_matrix missing contract tiers: {missing}")
 
 
 def validate_docs(root: str, failures: List[str]) -> Dict[str, bool]:
@@ -214,6 +298,7 @@ def validate_docs(root: str, failures: List[str]) -> Dict[str, bool]:
         "HARDWARE-READINESS.md": [
             "make qemu-readiness-gate",
             "osai.qemu.hardware_readiness_gate.v1",
+            "osai.qemu.release_candidate_contract.v1",
             "correctness benchmark only",
         ],
         "QEMU-FULL-OS-PLAN.md": [
@@ -255,13 +340,21 @@ def main() -> int:
 
     benchmark_path = os.path.join(build_dir, "qemu-benchmark-report.json")
     preview_path = os.path.join(build_dir, "qemu-preview-manifest.json")
+    cpu_matrix_path = os.path.join(build_dir, "qemu-cpu-matrix-report.json")
     readiness_path = os.path.join(build_dir, "qemu-readiness-report.json")
+    contract_path = os.path.join(root, CONTRACT_PATH)
 
+    contract = load_json(contract_path, failures)
     benchmark = load_json(benchmark_path, failures)
     preview = load_json(preview_path, failures)
+    cpu_matrix = load_json(cpu_matrix_path, failures)
+    if contract:
+        validate_contract(contract, failures)
     telemetry = validate_benchmark(benchmark, failures) if benchmark else {}
     if preview:
         validate_preview(preview, benchmark, failures)
+    if cpu_matrix and contract:
+        validate_cpu_matrix(cpu_matrix, contract, failures)
     doc_checks = validate_docs(root, failures)
 
     report = {
@@ -274,13 +367,18 @@ def main() -> int:
         "artifacts": {
             "benchmark_report": "build/qemu-benchmark-report.json",
             "preview_manifest": "build/qemu-preview-manifest.json",
+            "cpu_matrix_report": "build/qemu-cpu-matrix-report.json",
+            "release_candidate_contract": CONTRACT_PATH,
             "readiness_report": "build/qemu-readiness-report.json",
         },
+        "release_candidate_contract_schema": contract.get("schema") if contract else None,
         "frozen_qemu_contracts": FROZEN_QEMU_CONTRACTS,
         "intel_desktop_entry_criteria": INTEL_DESKTOP_ENTRY_CRITERIA,
         "benchmark_schema": benchmark.get("schema") if benchmark else None,
         "preview_schema": preview.get("schema") if preview else None,
+        "cpu_matrix_schema": cpu_matrix.get("schema") if cpu_matrix else None,
         "performance_claims_allowed": benchmark.get("performance_claims_allowed") if benchmark else None,
+        "out_of_scope_before_intel": contract.get("out_of_scope_before_intel", []) if contract else [],
         "telemetry": telemetry,
         "documentation": doc_checks,
         "failures": failures,
