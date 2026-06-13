@@ -6,6 +6,7 @@ BUILD_DIR="$ROOT_DIR/build"
 EFI_BUILD_DIR="$BUILD_DIR/uefi"
 KERNEL_BUILD_DIR="$BUILD_DIR/kernel"
 IMAGE_PATH="${OSAI_AARCH64_IMAGE:-$BUILD_DIR/osai-aarch64.img}"
+TEST_BLOCK_IMAGE="${OSAI_TEST_BLOCK_IMAGE:-$BUILD_DIR/osai-virtio-test.img}"
 LOADER_OBJ="$EFI_BUILD_DIR/loader_main.obj"
 LOADER_EFI="$EFI_BUILD_DIR/BOOTAA64.EFI"
 KERNEL_ELF="$KERNEL_BUILD_DIR/kernel.elf"
@@ -111,21 +112,45 @@ KERNEL_CFLAGS="
   -I$ROOT_DIR/kernel/include
 "
 
+if [ "${OSAI_FAULT_TEST:-}" = "page" ]; then
+  KERNEL_CFLAGS="$KERNEL_CFLAGS -DOSAI_FAULT_TEST_PAGE=1"
+fi
+
 KERNEL_OBJECTS="
   $KERNEL_BUILD_DIR/entry.o
+  $KERNEL_BUILD_DIR/secondary.o
+  $KERNEL_BUILD_DIR/vectors.o
   $KERNEL_BUILD_DIR/kmain.o
   $KERNEL_BUILD_DIR/klog.o
   $KERNEL_BUILD_DIR/panic.o
   $KERNEL_BUILD_DIR/assert.o
+  $KERNEL_BUILD_DIR/exception.o
+  $KERNEL_BUILD_DIR/timer.o
+  $KERNEL_BUILD_DIR/gic.o
+  $KERNEL_BUILD_DIR/smp.o
+  $KERNEL_BUILD_DIR/virtio_mmio.o
+  $KERNEL_BUILD_DIR/service.o
+  $KERNEL_BUILD_DIR/model_arena.o
+  $KERNEL_BUILD_DIR/ai_cell.o
   $KERNEL_BUILD_DIR/pmm.o
   $KERNEL_BUILD_DIR/mmu.o
 "
 
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/entry.S" -o "$KERNEL_BUILD_DIR/entry.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/secondary.S" -o "$KERNEL_BUILD_DIR/secondary.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/vectors.S" -o "$KERNEL_BUILD_DIR/vectors.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/core/kmain.c" -o "$KERNEL_BUILD_DIR/kmain.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/core/klog.c" -o "$KERNEL_BUILD_DIR/klog.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/core/panic.c" -o "$KERNEL_BUILD_DIR/panic.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/core/assert.c" -o "$KERNEL_BUILD_DIR/assert.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/exception.c" -o "$KERNEL_BUILD_DIR/exception.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/timer.c" -o "$KERNEL_BUILD_DIR/timer.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/gic.c" -o "$KERNEL_BUILD_DIR/gic.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/smp.c" -o "$KERNEL_BUILD_DIR/smp.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/dev/virtio/virtio_mmio.c" -o "$KERNEL_BUILD_DIR/virtio_mmio.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/user/service.c" -o "$KERNEL_BUILD_DIR/service.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/model_arena.c" -o "$KERNEL_BUILD_DIR/model_arena.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/ai_cell.c" -o "$KERNEL_BUILD_DIR/ai_cell.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/mm/pmm.c" -o "$KERNEL_BUILD_DIR/pmm.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/mmu.c" -o "$KERNEL_BUILD_DIR/mmu.o"
 
@@ -148,3 +173,9 @@ dd if=/dev/zero of="$IMAGE_PATH" bs=1m count=64 status=none
 "$MCOPY" -i "$IMAGE_PATH" "$KERNEL_ELF" ::/EFI/OSAI/kernel.elf
 
 printf '%s\n' "Created $IMAGE_PATH"
+
+printf '%s\n' "Creating VirtIO block test image: $TEST_BLOCK_IMAGE"
+rm -f "$TEST_BLOCK_IMAGE"
+dd if=/dev/zero of="$TEST_BLOCK_IMAGE" bs=512 count=2048 status=none
+printf 'OSAI-VIRTIO-BLOCK-TEST\n' | dd of="$TEST_BLOCK_IMAGE" bs=512 count=1 conv=notrunc status=none
+printf '%s\n' "Created $TEST_BLOCK_IMAGE"

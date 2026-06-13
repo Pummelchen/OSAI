@@ -114,10 +114,17 @@ machine="${OSAI_QEMU_MACHINE:-virt}"
 memory="${OSAI_QEMU_MEMORY:-2G}"
 smp="${OSAI_QEMU_SMP:-4}"
 image="${OSAI_AARCH64_IMAGE:-build/osai-aarch64.img}"
+test_block_image="${OSAI_TEST_BLOCK_IMAGE:-build/osai-virtio-test.img}"
 
 if [ "$dry_run" -eq 0 ] && [ ! -f "$image" ]; then
   printf '%s\n' "error: missing AArch64 boot image: $image" >&2
   printf '%s\n' "       Complete WP-003/WP-004 image creation first, or set OSAI_AARCH64_IMAGE=/path/to/image.img." >&2
+  exit 1
+fi
+
+if [ "$dry_run" -eq 0 ] && [ ! -f "$test_block_image" ]; then
+  printf '%s\n' "error: missing VirtIO test block image: $test_block_image" >&2
+  printf '%s\n' "       Run make image first, or set OSAI_TEST_BLOCK_IMAGE=/path/to/image.img." >&2
   exit 1
 fi
 
@@ -126,12 +133,17 @@ set -- "$qemu" \
   -cpu "$cpu" \
   -m "$memory" \
   -smp "$smp" \
+  -global virtio-mmio.force-legacy=false \
   -nographic \
   -serial mon:stdio \
   -drive "if=pflash,format=raw,readonly=on,file=$firmware" \
   -drive "if=virtio,format=raw,file=$image" \
+  -drive "if=none,format=raw,readonly=on,id=osai_test_block,file=$test_block_image" \
+  -device virtio-blk-device,drive=osai_test_block \
   -netdev user,id=net0,hostfwd=tcp::2222-:22 \
-  -device virtio-net-pci,netdev=net0
+  -device virtio-net-pci,netdev=net0 \
+  -netdev user,id=net1 \
+  -device virtio-net-device,netdev=net1
 
 if [ "$dry_run" -eq 1 ]; then
   print_command "$@"

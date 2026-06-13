@@ -1,7 +1,15 @@
 #include <osai/assert.h>
+#include <osai/ai_cell.h>
 #include <osai/boot_info.h>
+#include <osai/exception.h>
+#include <osai/gic.h>
 #include <osai/klog.h>
+#include <osai/model_arena.h>
 #include <osai/pmm.h>
+#include <osai/service.h>
+#include <osai/smp.h>
+#include <osai/timer.h>
+#include <osai/virtio_mmio.h>
 #include <osai/vmm.h>
 
 static const char g_vmm_rodata_probe[] = "vmm-rodata";
@@ -17,6 +25,18 @@ void kmain(const osai_boot_info_t *boot) {
        boot->memory_map, boot->memory_map_size, boot->memory_descriptor_size);
   klog("boot: kernel=[0x%lx, 0x%lx)\n",
        boot->kernel_phys_base, boot->kernel_phys_end);
+
+  exception_init();
+  exception_self_test();
+  timer_init();
+  timer_self_test();
+  smp_init_qemu_virt();
+  smp_self_test();
+  virtio_block_self_test();
+  virtio_net_self_test();
+  service_supervisor_self_test();
+  model_arena_self_test();
+  ai_cell_self_test();
 
   pmm_init(boot);
 
@@ -40,6 +60,12 @@ void kmain(const osai_boot_info_t *boot) {
   kassert((flags & OSAI_VMM_DEVICE) != 0);
   kassert((flags & OSAI_VMM_EXECUTABLE) == 0);
   klog("VMM translation test passed\n");
+  gic_init_qemu_virt();
+  gic_self_test();
+
+#if defined(OSAI_FAULT_TEST_PAGE)
+  exception_trigger_page_fault_for_test();
+#endif
 
   void *pages[1024];
   for (unsigned i = 0; i < 1024; ++i) {

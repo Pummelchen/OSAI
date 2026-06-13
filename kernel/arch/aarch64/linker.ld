@@ -8,6 +8,8 @@ SECTIONS
   .text : ALIGN(0x1000) {
     __text_start = .;
     *(.text.entry)
+    *(.text.secondary)
+    *(.text.vectors)
     *(.text .text.*)
     __text_end = .;
   }

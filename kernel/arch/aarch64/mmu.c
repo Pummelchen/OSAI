@@ -58,7 +58,8 @@ static uint64_t table_descriptor(const uint64_t *table) {
 }
 
 static uint64_t page_descriptor(uint64_t physical_address, uint64_t attrs) {
-  return (physical_address & PTE_ADDR_MASK) | attrs | PTE_VALID | PTE_AF;
+  return (physical_address & PTE_ADDR_MASK) | attrs | PTE_VALID | PTE_TABLE |
+         PTE_AF;
 }
 
 static uint64_t block_descriptor(uint64_t physical_address, uint64_t attrs) {

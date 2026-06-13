@@ -62,7 +62,7 @@ Detailed design documentation lives in the GitHub Wiki:
 
 OSAI is currently in early design and bring-up.
 
-The repository now contains the first AArch64 QEMU-on-macOS boot path: a UEFI loader, ELF64 kernel handoff, serial kernel logging, an initial physical memory manager self-test, and early virtual memory setup.
+The repository now contains the first AArch64 QEMU-on-macOS boot path: a UEFI loader, ELF64 kernel handoff, serial kernel logging, exception diagnostics, generic timer discovery, GIC discovery, SMP/per-core state discovery, VirtIO block and network smoke tests, a minimal control-plane supervisor, AI Cell lifecycle metadata, shared model arena metadata, an initial physical memory manager self-test, and early virtual memory setup.
 
 The first engineering target remains a useful bootable QEMU prototype on macOS. Production-oriented targets follow in this order: Intel Desktop, Intel Xeon, and ARM/NVIDIA N1X-compatible SoCs.
 
