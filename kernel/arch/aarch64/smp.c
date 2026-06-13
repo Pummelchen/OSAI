@@ -47,6 +47,9 @@ void smp_secondary_main(uint64_t cpu_id) {
     g_cpu_states[cpu_id].cpu_id = (uint32_t)cpu_id;
     g_cpu_states[cpu_id].mpidr = read_mpidr_el1();
     g_cpu_states[cpu_id].role = OSAI_CPU_ROLE_RESERVED_IDLE;
+    g_cpu_states[cpu_id].lease_owner_id = 0;
+    g_cpu_states[cpu_id].irq_routed_away = 1;
+    g_cpu_states[cpu_id].tick_suppressed = 1;
     g_cpu_states[cpu_id].online = 1;
   }
 
@@ -61,11 +64,18 @@ void smp_init_qemu_virt(void) {
     g_cpu_states[i].online = 0;
     g_cpu_states[i].mpidr = i;
     g_cpu_states[i].role = OSAI_CPU_ROLE_OFFLINE;
+    g_cpu_states[i].lease_owner_id = 0;
+    g_cpu_states[i].irq_routed_away = 0;
+    g_cpu_states[i].tick_suppressed = 0;
+    g_cpu_states[i].migration_count = 0;
+    g_cpu_states[i].involuntary_context_switch_count = 0;
   }
 
   g_cpu_states[0].online = 1;
   g_cpu_states[0].mpidr = read_mpidr_el1();
   g_cpu_states[0].role = OSAI_CPU_ROLE_HOUSEKEEPING;
+  g_cpu_states[0].irq_routed_away = 0;
+  g_cpu_states[0].tick_suppressed = 0;
 
   klog("smp: boot cpu mpidr=0x%lx role=housekeeping\n",
        g_cpu_states[0].mpidr);
@@ -100,6 +110,80 @@ const osai_cpu_state_t *smp_cpu_state(uint32_t cpu_id) {
   return &g_cpu_states[cpu_id];
 }
 
+osai_status_t smp_mark_core_leased(uint32_t cpu_id, uint32_t owner_id) {
+  if (cpu_id == 0 || cpu_id >= OSAI_MAX_CPUS || owner_id == UINT32_MAX ||
+      g_cpu_states[cpu_id].online == 0 ||
+      g_cpu_states[cpu_id].role != OSAI_CPU_ROLE_RESERVED_IDLE) {
+    return OSAI_ERR_INVALID;
+  }
+
+  if (g_cpu_states[cpu_id].lease_owner_id != 0 &&
+      g_cpu_states[cpu_id].lease_owner_id != owner_id + 1U) {
+    ++g_cpu_states[cpu_id].migration_count;
+    return OSAI_ERR_BUSY;
+  }
+
+  g_cpu_states[cpu_id].role = OSAI_CPU_ROLE_AI_HOT;
+  g_cpu_states[cpu_id].lease_owner_id = owner_id + 1U;
+  g_cpu_states[cpu_id].irq_routed_away = 1;
+  g_cpu_states[cpu_id].tick_suppressed = 1;
+  klog("smp: cpu%u leased owner=%u role=ai-hot irq_routed_away=1 tick_suppressed=1\n",
+       cpu_id, owner_id);
+  return OSAI_OK;
+}
+
+osai_status_t smp_release_core_lease(uint32_t cpu_id, uint32_t owner_id) {
+  if (cpu_id == 0 || cpu_id >= OSAI_MAX_CPUS ||
+      g_cpu_states[cpu_id].online == 0 ||
+      g_cpu_states[cpu_id].role != OSAI_CPU_ROLE_AI_HOT ||
+      g_cpu_states[cpu_id].lease_owner_id != owner_id + 1U) {
+    return OSAI_ERR_INVALID;
+  }
+
+  g_cpu_states[cpu_id].role = OSAI_CPU_ROLE_RESERVED_IDLE;
+  g_cpu_states[cpu_id].lease_owner_id = 0;
+  g_cpu_states[cpu_id].irq_routed_away = 1;
+  g_cpu_states[cpu_id].tick_suppressed = 1;
+  klog("smp: cpu%u released owner=%u role=reserved-idle\n", cpu_id, owner_id);
+  return OSAI_OK;
+}
+
+uint32_t smp_hot_core_mask(void) {
+  uint32_t mask = 0;
+  for (uint32_t cpu = 0; cpu < OSAI_MAX_CPUS; ++cpu) {
+    if (g_cpu_states[cpu].role == OSAI_CPU_ROLE_AI_HOT) {
+      mask |= UINT32_C(1) << cpu;
+    }
+  }
+  return mask;
+}
+
+uint32_t smp_irq_isolated_mask(void) {
+  uint32_t mask = 0;
+  for (uint32_t cpu = 0; cpu < OSAI_MAX_CPUS; ++cpu) {
+    if (g_cpu_states[cpu].irq_routed_away != 0) {
+      mask |= UINT32_C(1) << cpu;
+    }
+  }
+  return mask;
+}
+
+uint64_t smp_total_migration_count(void) {
+  uint64_t total = 0;
+  for (uint32_t cpu = 0; cpu < OSAI_MAX_CPUS; ++cpu) {
+    total += g_cpu_states[cpu].migration_count;
+  }
+  return total;
+}
+
+uint64_t smp_total_involuntary_context_switch_count(void) {
+  uint64_t total = 0;
+  for (uint32_t cpu = 0; cpu < OSAI_MAX_CPUS; ++cpu) {
+    total += g_cpu_states[cpu].involuntary_context_switch_count;
+  }
+  return total;
+}
+
 uint32_t smp_online_count(void) {
   return count_online();
 }
@@ -107,6 +191,7 @@ uint32_t smp_online_count(void) {
 void smp_self_test(void) {
   kassert(g_cpu_states[0].online != 0);
   kassert(g_cpu_states[0].role == OSAI_CPU_ROLE_HOUSEKEEPING);
+  kassert(g_cpu_states[0].tick_suppressed == 0);
   kassert(smp_online_count() >= 1);
   klog("smp: per-core registry self-test passed\n");
 }

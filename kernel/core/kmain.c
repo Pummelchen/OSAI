@@ -2,6 +2,7 @@
 #include <osai/ai_cell.h>
 #include <osai/arena.h>
 #include <osai/boot_info.h>
+#include <osai/core_lease.h>
 #include <osai/exception.h>
 #include <osai/gic.h>
 #include <osai/initramfs.h>
@@ -61,6 +62,7 @@ void kmain(const osai_boot_info_t *boot) {
   kheap_self_test();
   arena_manager_init();
   arena_self_test();
+  core_lease_self_test();
   uint64_t translated = 0;
   uint32_t flags = 0;
   kassert(vmm_translate((uint64_t)(uintptr_t)&kmain, &translated, &flags) == OSAI_OK);
