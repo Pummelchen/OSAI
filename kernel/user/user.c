@@ -125,6 +125,21 @@ static void reset_process_slot(osai_user_process_t *process) {
   process->stack_guard_high = 0;
 }
 
+static osai_status_t validate_process_transition(osai_user_process_state_t from,
+                                                 osai_user_process_state_t to) {
+  if (from == OSAI_USER_PROCESS_EMPTY && to == OSAI_USER_PROCESS_LOADED) {
+    return OSAI_OK;
+  }
+  if (from == OSAI_USER_PROCESS_LOADED && to == OSAI_USER_PROCESS_RUNNING) {
+    return OSAI_OK;
+  }
+  if (from == OSAI_USER_PROCESS_RUNNING &&
+      (to == OSAI_USER_PROCESS_EXITED || to == OSAI_USER_PROCESS_FAILED)) {
+    return OSAI_OK;
+  }
+  return OSAI_ERR_INVALID;
+}
+
 static void transition_process(osai_user_process_t *process,
                                osai_user_process_state_t state,
                                int exit_code) {
@@ -132,6 +147,7 @@ static void transition_process(osai_user_process_t *process,
   if (process->state == state && process->exit_code == exit_code) {
     return;
   }
+  kassert(validate_process_transition(process->state, state) == OSAI_OK);
 
   process->state = state;
   process->exit_code = exit_code;
@@ -171,6 +187,30 @@ void user_process_table_init(void) {
   g_process_exited_count = 0;
   g_process_failed_count = 0;
   klog("user: process table initialized slots=%u\n", OSAI_MAX_USER_PROCESSES);
+}
+
+void user_process_lifecycle_self_test(void) {
+  kassert(validate_process_transition(OSAI_USER_PROCESS_EMPTY,
+                                      OSAI_USER_PROCESS_LOADED) == OSAI_OK);
+  kassert(validate_process_transition(OSAI_USER_PROCESS_LOADED,
+                                      OSAI_USER_PROCESS_RUNNING) == OSAI_OK);
+  kassert(validate_process_transition(OSAI_USER_PROCESS_RUNNING,
+                                      OSAI_USER_PROCESS_EXITED) == OSAI_OK);
+  kassert(validate_process_transition(OSAI_USER_PROCESS_RUNNING,
+                                      OSAI_USER_PROCESS_FAILED) == OSAI_OK);
+  kassert(validate_process_transition(OSAI_USER_PROCESS_EMPTY,
+                                      OSAI_USER_PROCESS_RUNNING) ==
+          OSAI_ERR_INVALID);
+  kassert(validate_process_transition(OSAI_USER_PROCESS_LOADED,
+                                      OSAI_USER_PROCESS_EXITED) ==
+          OSAI_ERR_INVALID);
+  kassert(validate_process_transition(OSAI_USER_PROCESS_EXITED,
+                                      OSAI_USER_PROCESS_RUNNING) ==
+          OSAI_ERR_INVALID);
+  kassert(validate_process_transition(OSAI_USER_PROCESS_FAILED,
+                                      OSAI_USER_PROCESS_RUNNING) ==
+          OSAI_ERR_INVALID);
+  klog("user: process lifecycle invalid/failed transition self-test passed\n");
 }
 
 const osai_user_process_t *user_current_process(void) {

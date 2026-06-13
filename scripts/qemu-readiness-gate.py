@@ -78,6 +78,8 @@ REQUIRED_TELEMETRY_MINIMUMS = {
     "network_udp_tx": 1,
     "network_udp_rx": 1,
     "network_tcp_connections": 1,
+    "service_child_descriptors": 1,
+    "service_transitions": 4,
     "user_process_transitions": 3,
     "user_process_loaded": 1,
     "user_process_running": 1,

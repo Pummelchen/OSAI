@@ -46,6 +46,9 @@ static osai_initramfs_file_t g_files[INITFS_MAX_FILES];
 static char g_file_paths[INITFS_MAX_FILES][INITFS_PATH_MAX];
 static char g_config_service_path[INITFS_PATH_MAX];
 static char g_config_mode[INITFS_MODE_MAX];
+static char g_config_child_service_path[INITFS_PATH_MAX];
+static char g_config_child_service_parent[INITFS_PATH_MAX];
+static char g_config_child_service_restart[INITFS_MODE_MAX];
 static osai_initramfs_config_t g_config;
 static uint32_t g_file_count;
 
@@ -134,6 +137,18 @@ static osai_status_t parse_config_line(const char *line, uint64_t len) {
     return copy_config_value(g_config_mode, INITFS_MODE_MAX, line + 5,
                              len - 5);
   }
+  if (len > 14 && bytes_eq(line, "child_service=", 14)) {
+    return copy_config_value(g_config_child_service_path, INITFS_PATH_MAX,
+                             line + 14, len - 14);
+  }
+  if (len > 13 && bytes_eq(line, "child_parent=", 13)) {
+    return copy_config_value(g_config_child_service_parent, INITFS_PATH_MAX,
+                             line + 13, len - 13);
+  }
+  if (len > 14 && bytes_eq(line, "child_restart=", 14)) {
+    return copy_config_value(g_config_child_service_restart, INITFS_MODE_MAX,
+                             line + 14, len - 14);
+  }
   klog("initramfs: rejected config line len=%lu\n", len);
   return OSAI_ERR_INVALID;
 }
@@ -146,6 +161,9 @@ static osai_status_t parse_config_manifest(const osai_initramfs_file_t *file) {
 
   g_config_service_path[0] = '\0';
   g_config_mode[0] = '\0';
+  g_config_child_service_path[0] = '\0';
+  g_config_child_service_parent[0] = '\0';
+  g_config_child_service_restart[0] = '\0';
   const char *bytes = (const char *)file->base;
   uint64_t line_start = 0;
   for (uint64_t i = 0; i <= file->size; ++i) {
@@ -161,16 +179,25 @@ static osai_status_t parse_config_manifest(const osai_initramfs_file_t *file) {
     }
   }
 
-  if (g_config_service_path[0] == '\0' || g_config_mode[0] == '\0') {
-    klog("initramfs: config missing required service/mode\n");
+  if (g_config_service_path[0] == '\0' || g_config_mode[0] == '\0' ||
+      g_config_child_service_path[0] == '\0' ||
+      g_config_child_service_parent[0] == '\0' ||
+      g_config_child_service_restart[0] == '\0') {
+    klog("initramfs: config missing required service/mode/child descriptor\n");
     return OSAI_ERR_INVALID;
   }
 
   g_config.service_path = g_config_service_path;
   g_config.mode = g_config_mode;
+  g_config.child_service_path = g_config_child_service_path;
+  g_config.child_service_parent = g_config_child_service_parent;
+  g_config.child_service_restart = g_config_child_service_restart;
   g_config.valid = 1;
   klog("initramfs: config service=%s mode=%s\n",
        g_config.service_path, g_config.mode);
+  klog("initramfs: child service=%s parent=%s restart=%s\n",
+       g_config.child_service_path, g_config.child_service_parent,
+       g_config.child_service_restart);
   return OSAI_OK;
 }
 
@@ -364,6 +391,9 @@ void initramfs_self_test(void) {
   kassert(parsed->valid != 0);
   kassert(str_eq(parsed->service_path, "/init"));
   kassert(str_eq(parsed->mode, "qemu-mvp"));
+  kassert(str_eq(parsed->child_service_path, "/svc/source-index"));
+  kassert(str_eq(parsed->child_service_parent, "/init"));
+  kassert(str_eq(parsed->child_service_restart, "never"));
   kassert(initramfs_lookup("/missing", &init) == OSAI_ERR_NOT_FOUND);
   klog("initramfs: rofs metadata/config self-test passed\n");
 }

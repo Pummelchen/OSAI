@@ -65,6 +65,8 @@ def main() -> int:
         "ai_cell_transitions",
         "migration_total",
         "context_switch_total",
+        "service_child_descriptors",
+        "service_transitions",
         "user_process_transitions",
         "user_process_loaded",
         "user_process_running",
@@ -88,6 +90,8 @@ def main() -> int:
         "udp_path_exercised": telemetry["network_udp_tx"] >= 1
         and telemetry["network_udp_rx"] >= 1,
         "tcp_path_exercised": telemetry["network_tcp_connections"] >= 1,
+        "child_service_supervised": telemetry["service_child_descriptors"] >= 1
+        and telemetry["service_transitions"] >= 4,
         "user_process_lifecycle_complete": telemetry["user_process_loaded"] >= 1
         and telemetry["user_process_running"] >= 1
         and telemetry["user_process_exited"] >= 1

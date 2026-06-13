@@ -9,6 +9,7 @@
 #include <osai/pmm.h>
 #include <osai/sandbox.h>
 #include <osai/security.h>
+#include <osai/service.h>
 #include <osai/smp.h>
 #include <osai/source_index.h>
 #include <osai/telemetry.h>
@@ -22,7 +23,7 @@ void telemetry_emit_boot_summary(void) {
       smp_online_count(), pmm_total_pages(), pmm_free_pages(),
       timer_frequency_hz());
   klog(
-      "telemetry: {\"cpu_count\":%u,\"pmm_total_pages\":%lu,\"pmm_free_pages\":%lu,\"kheap_pages\":%lu,\"kheap_bytes\":%lu,\"arena_active\":%lu,\"arena_committed_pages\":%lu,\"sandbox_active\":%lu,\"sandbox_transitions\":%lu,\"persistence_snapshots\":%lu,\"persistence_rollbacks\":%lu,\"persistence_rejects\":%lu,\"hot_core_mask\":%u,\"irq_isolated_mask\":%u,\"migration_total\":%lu,\"context_switch_total\":%lu,\"source_index_active\":%lu,\"source_index_files\":%lu,\"source_index_symbols\":%lu,\"source_index_updates\":%lu,\"security_denied_ops\":%lu,\"security_credential_rejects\":%lu,\"security_signature_accepts\":%lu,\"security_signature_rejects\":%lu,\"virtio_block_sectors\":%lu,\"ai_cell_transitions\":%lu,\"git_workspace_active\":%lu,\"git_workspace_syncs\":%lu,\"git_workspace_applies\":%lu,\"git_workspace_reverts\":%lu,\"git_workspace_conflicts\":%lu,\"network_udp_tx\":%lu,\"network_udp_rx\":%lu,\"network_udp_malformed\":%lu,\"network_udp_dropped\":%lu,\"network_tcp_connections\":%lu,\"network_tcp_handshakes\":%lu,\"network_tcp_resets\":%lu,\"network_queue_bindings\":%lu,\"network_udp_p50\":%lu,\"network_udp_p95\":%lu,\"network_udp_p99\":%lu,\"network_tcp_p50\":%lu,\"network_tcp_p95\":%lu,\"network_tcp_p99\":%lu,\"user_process_transitions\":%lu,\"user_process_loaded\":%lu,\"user_process_running\":%lu,\"user_process_exited\":%lu,\"user_process_failed\":%lu}\n",
+      "telemetry: {\"cpu_count\":%u,\"pmm_total_pages\":%lu,\"pmm_free_pages\":%lu,\"kheap_pages\":%lu,\"kheap_bytes\":%lu,\"arena_active\":%lu,\"arena_committed_pages\":%lu,\"sandbox_active\":%lu,\"sandbox_transitions\":%lu,\"persistence_snapshots\":%lu,\"persistence_rollbacks\":%lu,\"persistence_rejects\":%lu,\"hot_core_mask\":%u,\"irq_isolated_mask\":%u,\"migration_total\":%lu,\"context_switch_total\":%lu,\"source_index_active\":%lu,\"source_index_files\":%lu,\"source_index_symbols\":%lu,\"source_index_updates\":%lu,\"security_denied_ops\":%lu,\"security_credential_rejects\":%lu,\"security_signature_accepts\":%lu,\"security_signature_rejects\":%lu,\"virtio_block_sectors\":%lu,\"ai_cell_transitions\":%lu,\"git_workspace_active\":%lu,\"git_workspace_syncs\":%lu,\"git_workspace_applies\":%lu,\"git_workspace_reverts\":%lu,\"git_workspace_conflicts\":%lu,\"network_udp_tx\":%lu,\"network_udp_rx\":%lu,\"network_udp_malformed\":%lu,\"network_udp_dropped\":%lu,\"network_tcp_connections\":%lu,\"network_tcp_handshakes\":%lu,\"network_tcp_resets\":%lu,\"network_queue_bindings\":%lu,\"network_udp_p50\":%lu,\"network_udp_p95\":%lu,\"network_udp_p99\":%lu,\"network_tcp_p50\":%lu,\"network_tcp_p95\":%lu,\"network_tcp_p99\":%lu,\"service_child_descriptors\":%lu,\"service_transitions\":%lu,\"user_process_transitions\":%lu,\"user_process_loaded\":%lu,\"user_process_running\":%lu,\"user_process_exited\":%lu,\"user_process_failed\":%lu}\n",
       smp_online_count(), pmm_total_pages(), pmm_free_pages(),
       kheap_pages_allocated(), kheap_bytes_allocated(),
       arena_active_count(), arena_committed_pages(),
@@ -47,6 +48,7 @@ void telemetry_emit_boot_summary(void) {
       network_stack_udp_latency_p50_ns(), network_stack_udp_latency_p95_ns(),
       network_stack_udp_latency_p99_ns(), network_stack_tcp_latency_p50_ns(),
       network_stack_tcp_latency_p95_ns(), network_stack_tcp_latency_p99_ns(),
+      service_child_descriptor_count(), service_transition_count(),
       user_process_transition_count(), user_process_loaded_count(),
       user_process_running_count(), user_process_exited_count(),
       user_process_failed_count());

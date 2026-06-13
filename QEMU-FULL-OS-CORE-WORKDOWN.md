@@ -22,15 +22,17 @@ Required work:
 - [x] Make `sys_exit` mark the current process exited or failed.
 - [x] Return cleanly from EL0 exit to a kernel continuation.
 - [x] Emit process lifecycle telemetry.
-- [ ] Add child service descriptors under `/init`.
-- [ ] Allow `/init` to supervise at least one child-style service record.
-- [ ] Add process table tests for invalid transitions and failed exits.
+- [x] Add child service descriptors under `/init`.
+- [x] Allow `/init` to supervise at least one child-style service record.
+- [x] Add process table tests for invalid transitions and failed exits.
 
 Definition of done:
 
 - QEMU boot proves `/init` loads, runs, exits, and the kernel resumes after EL0.
 - Telemetry includes loaded, running, exited, failed, and transition counters.
 - Smoke and benchmark gates fail if process lifecycle telemetry disappears.
+- Smoke and benchmark gates fail if `/init` no longer defines, starts, and
+  reports the child `/svc/source-index` service record.
 
 ## Phase Q2: Real Userspace Control Plane
 

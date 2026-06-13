@@ -39,5 +39,7 @@ osai_status_t service_start_init(void);
 osai_status_t service_exit(const char *name, int exit_code);
 osai_status_t osctl_execute(const char *command);
 void service_supervisor_self_test(void);
+uint64_t service_child_descriptor_count(void);
+uint64_t service_transition_count(void);
 
 #endif

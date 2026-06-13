@@ -25,10 +25,12 @@ TARGETS = [
     "network: stack initialized",
     "network: udp/tcp path self-test passed",
     "initramfs: config service=/init mode=qemu-mvp",
+    "initramfs: child service=/svc/source-index parent=/init restart=never",
     "initramfs: mounted rofs version=2",
     "initramfs: rofs metadata/config self-test passed",
     "syscall: table self-test passed entries=3",
     "user: process table initialized slots=4",
+    "user: process lifecycle invalid/failed transition self-test passed",
     "user: process pid=1 name=/init state=loaded",
     "security: self-test passed denied=2 credential_rejects=1 signature_accepts=1 signature_rejects=1",
     "model-arena: shared read-only arena self-test passed",
@@ -69,6 +71,10 @@ TARGETS = [
     "service-manager: restart denied /init policy=never attempts=1",
     "/init: restart denied by policy",
     "service: /init state=running",
+    "service-manager: defined child /svc/source-index parent=/init restart=never",
+    "service: /svc/source-index state=running",
+    "osctl: /svc/source-index state=running",
+    "/init: child service supervised",
     "/init: service setup complete",
     "rejected=3",
     "user: /init exited status=0",
@@ -80,6 +86,7 @@ TARGETS = [
     "\"user_process_running\":1",
     "\"user_process_exited\":1",
     "\"user_process_failed\":0",
+    "\"service_child_descriptors\":1",
 ]
 
 

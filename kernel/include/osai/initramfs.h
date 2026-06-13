@@ -16,6 +16,9 @@ typedef struct osai_initramfs_file {
 typedef struct osai_initramfs_config {
   const char *service_path;
   const char *mode;
+  const char *child_service_path;
+  const char *child_service_parent;
+  const char *child_service_restart;
   uint32_t valid;
 } osai_initramfs_config_t;
 

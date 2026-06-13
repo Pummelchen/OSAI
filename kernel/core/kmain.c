@@ -105,6 +105,7 @@ void kmain(const osai_boot_info_t *boot) {
   initramfs_self_test();
   syscall_self_test();
   user_process_table_init();
+  user_process_lifecycle_self_test();
   security_self_test();
   service_supervisor_init();
   model_arena_self_test();

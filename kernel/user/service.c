@@ -14,8 +14,14 @@ static const char k_policy_always[] = "always";
 static const char k_policy_default[] = "unset";
 static const char k_log_serial[] = "serial";
 static const char k_log_off[] = "off";
+static const char k_init_service_name[] = "/init";
+static const char k_child_service_name[] = "/svc/source-index";
+static const char k_child_parent_name[] = "/init";
 
 static osai_service_t g_init_service;
+static osai_service_t g_child_service;
+static uint64_t g_child_descriptor_count;
+static uint64_t g_service_transition_count;
 
 static int str_eq(const char *lhs, const char *rhs) {
   if (lhs == 0 || rhs == 0) {
@@ -109,6 +115,37 @@ static void service_snapshot_capture(void) {
   g_init_service.starts_snapshot = g_init_service.starts;
   g_init_service.restart_attempts_snapshot = g_init_service.restart_attempts;
   g_init_service.log_records_snapshot = g_init_service.log_records;
+}
+
+static void reset_service(osai_service_t *service, const char *name) {
+  service->name = name;
+  service->restart_policy = k_policy_default;
+  service->log_policy = k_log_off;
+  service->max_restarts = UINT32_C(0xffffffff);
+  service->state = OSAI_SERVICE_STOPPED;
+  service->exit_code = 0;
+  service->starts = 0;
+  service->restart_attempts = 0;
+  service->log_records = 0;
+  service->update_attempts = 0;
+  service->update_rejections = 0;
+  service->rollback_count = 0;
+  copy_str(service->restart_policy_snapshot, k_policy_default);
+  copy_str(service->log_policy_snapshot, k_log_off);
+  service->max_restarts_snapshot = service->max_restarts;
+  service->starts_snapshot = 0;
+  service->restart_attempts_snapshot = 0;
+  service->log_records_snapshot = 0;
+}
+
+static osai_service_t *find_service(const char *name) {
+  if (str_eq(name, g_init_service.name)) {
+    return &g_init_service;
+  }
+  if (g_child_service.name != 0 && str_eq(name, g_child_service.name)) {
+    return &g_child_service;
+  }
+  return 0;
 }
 
 static void service_snapshot_restore(void) {
@@ -318,60 +355,79 @@ static int token_safe(const char *token) {
 }
 
 static osai_status_t handle_status(const char *service_name) {
-  if (!str_eq(service_name, g_init_service.name)) {
+  osai_service_t *service = find_service(service_name);
+  if (service == 0) {
     return OSAI_ERR_INVALID;
   }
   klog(
-      "osctl: /init state=%s starts=%lu restarts=%lu logs=%lu restart_policy=%s "
+      "osctl: %s state=%s starts=%lu restarts=%lu logs=%lu restart_policy=%s "
       "log_policy=%s max_restarts=%lu exit_code=%u\n",
-      service_state_name(g_init_service.state), g_init_service.starts,
-      g_init_service.restart_attempts, g_init_service.log_records,
-      g_init_service.restart_policy, g_init_service.log_policy,
-      (unsigned long)g_init_service.max_restarts, (unsigned)g_init_service.exit_code);
+      service->name, service_state_name(service->state), service->starts,
+      service->restart_attempts, service->log_records,
+      service->restart_policy, service->log_policy,
+      (unsigned long)service->max_restarts, (unsigned)service->exit_code);
   return OSAI_OK;
 }
 
 static osai_status_t handle_log(const char *service_name, const char *message) {
-  if (!str_eq(service_name, g_init_service.name) || !token_safe(message)) {
+  osai_service_t *service = find_service(service_name);
+  if (service == 0 || !token_safe(message)) {
     return OSAI_ERR_INVALID;
   }
-  ++g_init_service.log_records;
+  ++service->log_records;
   klog("service-manager: log %s %s records=%lu\n", service_name, message,
-       g_init_service.log_records);
+       service->log_records);
   return OSAI_OK;
 }
 
 static osai_status_t handle_restart(const char *service_name) {
-  if (!str_eq(service_name, g_init_service.name)) {
+  osai_service_t *service = find_service(service_name);
+  if (service == 0) {
     return OSAI_ERR_INVALID;
   }
 
-  ++g_init_service.restart_attempts;
-  if (str_eq(g_init_service.restart_policy, k_policy_never)) {
-    klog("service-manager: restart denied /init policy=%s attempts=%lu\n",
-         g_init_service.restart_policy, g_init_service.restart_attempts);
+  ++service->restart_attempts;
+  if (str_eq(service->restart_policy, k_policy_never)) {
+    klog("service-manager: restart denied %s policy=%s attempts=%lu\n",
+         service->name, service->restart_policy, service->restart_attempts);
     return OSAI_ERR_INVALID;
   }
 
-  if (g_init_service.max_restarts != UINT32_C(0xffffffff) &&
-      g_init_service.restart_attempts > g_init_service.max_restarts) {
-    klog("service-manager: restart denied /init max_restarts=%lu attempts=%lu\n",
-         (unsigned long)g_init_service.max_restarts,
-         g_init_service.restart_attempts);
+  if (service->max_restarts != UINT32_C(0xffffffff) &&
+      service->restart_attempts > service->max_restarts) {
+    klog("service-manager: restart denied %s max_restarts=%lu attempts=%lu\n",
+         service->name, (unsigned long)service->max_restarts,
+         service->restart_attempts);
     return OSAI_ERR_INVALID;
   }
 
-  g_init_service.state = OSAI_SERVICE_STOPPED;
-  klog("service-manager: restart allowed /init attempts=%lu\n",
-       g_init_service.restart_attempts);
+  service->state = OSAI_SERVICE_STOPPED;
+  ++g_service_transition_count;
+  klog("service-manager: restart allowed %s attempts=%lu\n",
+       service->name, service->restart_attempts);
   return OSAI_OK;
 }
 
 static osai_status_t handle_start(const char *service_name) {
-  if (!str_eq(service_name, g_init_service.name)) {
+  osai_service_t *service = find_service(service_name);
+  if (service == 0) {
     return OSAI_ERR_INVALID;
   }
-  return service_start_init();
+  if (service == &g_init_service) {
+    return service_start_init();
+  }
+  if (service->state != OSAI_SERVICE_STOPPED &&
+      service->state != OSAI_SERVICE_EXITED) {
+    return OSAI_ERR_INVALID;
+  }
+  service->state = OSAI_SERVICE_STARTING;
+  ++service->starts;
+  ++g_service_transition_count;
+  klog("service: %s state=starting\n", service->name);
+  service->state = OSAI_SERVICE_RUNNING;
+  ++g_service_transition_count;
+  klog("service: %s state=running\n", service->name);
+  return OSAI_OK;
 }
 
 static osai_status_t handle_update(const char *signature) {
@@ -418,6 +474,28 @@ static osai_status_t handle_rollback(const char *service_name) {
   return OSAI_OK;
 }
 
+static osai_status_t handle_define(const char *service_name,
+                                   const char *parent_token,
+                                   const char *restart_token) {
+  const char *parent = 0;
+  const char *restart = 0;
+  if (!str_eq(service_name, k_child_service_name) ||
+      parse_key_value(parent_token, "parent", &parent) != OSAI_OK ||
+      parse_key_value(restart_token, "restart", &restart) != OSAI_OK ||
+      !str_eq(parent, k_child_parent_name) ||
+      !str_eq(restart, k_policy_never)) {
+    return OSAI_ERR_INVALID;
+  }
+
+  reset_service(&g_child_service, k_child_service_name);
+  g_child_service.restart_policy = k_policy_never;
+  ++g_child_descriptor_count;
+  klog("service-manager: defined child %s parent=%s restart=%s descriptors=%lu\n",
+       g_child_service.name, k_child_parent_name, g_child_service.restart_policy,
+       g_child_descriptor_count);
+  return OSAI_OK;
+}
+
 static osai_status_t tokenize_command(char *command, uint32_t *argc,
                                      const char *tokens[OSAI_OSCTL_MAX_TOKENS]) {
   uint32_t count = 0;
@@ -454,18 +532,10 @@ static osai_status_t tokenize_command(char *command, uint32_t *argc,
 }
 
 void service_supervisor_init(void) {
-  g_init_service.name = "/init";
-  g_init_service.restart_policy = k_policy_default;
-  g_init_service.log_policy = k_log_off;
-  g_init_service.max_restarts = UINT32_C(0xffffffff);
-  g_init_service.state = OSAI_SERVICE_STOPPED;
-  g_init_service.exit_code = 0;
-  g_init_service.starts = 0;
-  g_init_service.restart_attempts = 0;
-  g_init_service.log_records = 0;
-  g_init_service.update_attempts = 0;
-  g_init_service.update_rejections = 0;
-  g_init_service.rollback_count = 0;
+  reset_service(&g_init_service, k_init_service_name);
+  reset_service(&g_child_service, 0);
+  g_child_descriptor_count = 0;
+  g_service_transition_count = 0;
   service_snapshot_capture();
   klog("service: supervisor initialized\n");
 }
@@ -484,8 +554,10 @@ osai_status_t service_start_init(void) {
 
   g_init_service.state = OSAI_SERVICE_STARTING;
   ++g_init_service.starts;
+  ++g_service_transition_count;
   klog("service: /init state=starting\n");
   g_init_service.state = OSAI_SERVICE_RUNNING;
+  ++g_service_transition_count;
   klog("service: /init state=running\n");
   return OSAI_OK;
 }
@@ -501,6 +573,7 @@ osai_status_t service_exit(const char *name, int exit_code) {
   g_init_service.exit_code = exit_code;
   g_init_service.state =
       exit_code == 0 ? OSAI_SERVICE_EXITED : OSAI_SERVICE_FAILED;
+  ++g_service_transition_count;
   klog("service: %s state=%s exit_code=%u\n", name,
        service_state_name(g_init_service.state), (unsigned)exit_code);
   return OSAI_OK;
@@ -556,12 +629,13 @@ osai_status_t osctl_execute(const char *command) {
     service = tokens[1];
   }
 
-  if (!token_safe(action) || !str_eq(service, g_init_service.name)) {
-    klog("service: osctl wrong target service='%s' expected='%s' action='%s'\n",
-         service, g_init_service.name, action);
+  if (!token_safe(action)) {
     return OSAI_ERR_INVALID;
   }
 
+  if (str_eq(action, "define") && argc == 5U) {
+    return handle_define(service, tokens[3], tokens[4]);
+  }
   if (str_eq(action, "status") && argc == 3U) {
     return handle_status(service);
   }
@@ -601,10 +675,23 @@ void service_supervisor_self_test(void) {
   kassert(osctl_execute("service restart /init") == OSAI_ERR_INVALID);
   kassert(osctl_execute("service start /init") == OSAI_OK);
   kassert(osctl_execute("service status /init") == OSAI_OK);
+  kassert(osctl_execute(
+              "service define /svc/source-index parent=/init restart=never") ==
+          OSAI_OK);
+  kassert(osctl_execute("service start /svc/source-index") == OSAI_OK);
+  kassert(osctl_execute("service status /svc/source-index") == OSAI_OK);
   kassert(service_exit("/init", 0) == OSAI_OK);
   kassert(osctl_execute("service status /init") == OSAI_OK);
   kassert(osctl_execute("service rollback /init") == OSAI_ERR_INVALID);
   kassert(osctl_execute("service destroy /init") == OSAI_ERR_INVALID);
   kassert(osctl_execute("service update /init test") == OSAI_ERR_INVALID);
   klog("service: supervisor self-test passed\n");
+}
+
+uint64_t service_child_descriptor_count(void) {
+  return g_child_descriptor_count;
+}
+
+uint64_t service_transition_count(void) {
+  return g_service_transition_count;
 }

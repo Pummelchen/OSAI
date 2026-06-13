@@ -33,6 +33,7 @@ typedef struct osai_user_process {
 } osai_user_process_t;
 
 void user_process_table_init(void);
+void user_process_lifecycle_self_test(void);
 const osai_user_process_t *user_current_process(void);
 osai_status_t user_process_has_capability(uint64_t capability);
 void user_process_note_syscall(uint32_t rejected);
