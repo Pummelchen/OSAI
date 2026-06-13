@@ -81,9 +81,7 @@ uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
     klog("user: /init exited status=%u syscalls=%lu rejected=%lu\n",
          (unsigned)arg0, process != 0 ? process->syscall_count : 0,
          process != 0 ? process->rejected_syscall_count : 0);
-    for (;;) {
-      __asm__ volatile("wfe");
-    }
+    return user_process_note_exit((int)arg0);
   }
 
   if (syscall == OSAI_SYSCALL_OSCTL) {

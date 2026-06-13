@@ -71,11 +71,20 @@ static uint32_t elf_magic(const uint8_t *ident) {
 
 static osai_user_process_t g_process_table[OSAI_MAX_USER_PROCESSES];
 static osai_user_process_t *g_current_process;
+static uint64_t g_process_transition_count;
+static uint64_t g_process_loaded_count;
+static uint64_t g_process_running_count;
+static uint64_t g_process_exited_count;
+static uint64_t g_process_failed_count;
+
+extern uint64_t aarch64_enter_user(uint64_t entry, uint64_t stack);
 
 static void copy_process(osai_user_process_t *dst,
                          const osai_user_process_t *src) {
   dst->pid = src->pid;
   dst->name = src->name;
+  dst->state = src->state;
+  dst->exit_code = src->exit_code;
   dst->capability_mask = src->capability_mask;
   dst->syscall_count = src->syscall_count;
   dst->rejected_syscall_count = src->rejected_syscall_count;
@@ -85,15 +94,82 @@ static void copy_process(osai_user_process_t *dst,
   dst->stack_guard_high = src->stack_guard_high;
 }
 
+static const char *process_state_name(osai_user_process_state_t state) {
+  switch (state) {
+  case OSAI_USER_PROCESS_EMPTY:
+    return "empty";
+  case OSAI_USER_PROCESS_LOADED:
+    return "loaded";
+  case OSAI_USER_PROCESS_RUNNING:
+    return "running";
+  case OSAI_USER_PROCESS_EXITED:
+    return "exited";
+  case OSAI_USER_PROCESS_FAILED:
+    return "failed";
+  default:
+    return "unknown";
+  }
+}
+
+static void reset_process_slot(osai_user_process_t *process) {
+  process->pid = 0;
+  process->name = 0;
+  process->state = OSAI_USER_PROCESS_EMPTY;
+  process->exit_code = 0;
+  process->capability_mask = 0;
+  process->syscall_count = 0;
+  process->rejected_syscall_count = 0;
+  process->entry = 0;
+  process->stack_top = 0;
+  process->stack_guard_low = 0;
+  process->stack_guard_high = 0;
+}
+
+static void transition_process(osai_user_process_t *process,
+                               osai_user_process_state_t state,
+                               int exit_code) {
+  kassert(process != 0);
+  if (process->state == state && process->exit_code == exit_code) {
+    return;
+  }
+
+  process->state = state;
+  process->exit_code = exit_code;
+  ++g_process_transition_count;
+
+  switch (state) {
+  case OSAI_USER_PROCESS_LOADED:
+    ++g_process_loaded_count;
+    break;
+  case OSAI_USER_PROCESS_RUNNING:
+    ++g_process_running_count;
+    break;
+  case OSAI_USER_PROCESS_EXITED:
+    ++g_process_exited_count;
+    break;
+  case OSAI_USER_PROCESS_FAILED:
+    ++g_process_failed_count;
+    break;
+  default:
+    break;
+  }
+
+  klog("user: process pid=%u name=%s state=%s exit_code=%u transitions=%lu\n",
+       process->pid, process->name != 0 ? process->name : "(none)",
+       process_state_name(state), (unsigned)exit_code,
+       g_process_transition_count);
+}
+
 void user_process_table_init(void) {
   for (uint32_t i = 0; i < OSAI_MAX_USER_PROCESSES; ++i) {
-    g_process_table[i].pid = 0;
-    g_process_table[i].name = 0;
-    g_process_table[i].capability_mask = 0;
-    g_process_table[i].syscall_count = 0;
-    g_process_table[i].rejected_syscall_count = 0;
+    reset_process_slot(&g_process_table[i]);
   }
   g_current_process = 0;
+  g_process_transition_count = 0;
+  g_process_loaded_count = 0;
+  g_process_running_count = 0;
+  g_process_exited_count = 0;
+  g_process_failed_count = 0;
   klog("user: process table initialized slots=%u\n", OSAI_MAX_USER_PROCESSES);
 }
 
@@ -116,6 +192,16 @@ void user_process_note_syscall(uint32_t rejected) {
       ++g_current_process->rejected_syscall_count;
     }
   }
+}
+
+uint64_t user_process_note_exit(int exit_code) {
+  if (g_current_process != 0) {
+    transition_process(g_current_process,
+                       exit_code == 0 ? OSAI_USER_PROCESS_EXITED
+                                      : OSAI_USER_PROCESS_FAILED,
+                       exit_code);
+  }
+  return OSAI_USER_EXIT_RETURN_MAGIC | ((uint64_t)(uint32_t)exit_code);
 }
 
 static osai_status_t validate_ehdr(const osai_initramfs_file_t *file,
@@ -249,6 +335,8 @@ osai_status_t user_load_init(const osai_initramfs_file_t *file,
   process->entry = ehdr->entry;
   process->pid = 1;
   process->name = file->path;
+  process->state = OSAI_USER_PROCESS_LOADED;
+  process->exit_code = 0;
   process->capability_mask = OSAI_CAP_LOG | OSAI_CAP_EXIT | OSAI_CAP_OSCTL;
   process->syscall_count = 0;
   process->rejected_syscall_count = 0;
@@ -257,29 +345,53 @@ osai_status_t user_load_init(const osai_initramfs_file_t *file,
   }
 
   copy_process(&g_process_table[0], process);
+  g_process_table[0].state = OSAI_USER_PROCESS_EMPTY;
+  transition_process(&g_process_table[0], OSAI_USER_PROCESS_LOADED, 0);
+  copy_process(process, &g_process_table[0]);
   klog("user: loaded %s ELF pid=%u caps=0x%lx entry=0x%lx stack=0x%lx guard=[0x%lx,0x%lx]\n",
        process->name, process->pid, process->capability_mask, process->entry,
        process->stack_top, process->stack_guard_low, process->stack_guard_high);
   return OSAI_OK;
 }
 
-void user_process_run(const osai_user_process_t *process) {
+int user_process_run(const osai_user_process_t *process) {
   kassert(process != 0);
   g_current_process = &g_process_table[0];
   copy_process(g_current_process, process);
   uint64_t entry = process->entry;
   uint64_t stack = process->stack_top;
-  uint64_t spsr = 0;
+  transition_process(g_current_process, OSAI_USER_PROCESS_RUNNING, 0);
 
   klog("user: entering EL0 %s pid=%u entry=0x%lx stack=0x%lx\n",
        g_current_process->name, g_current_process->pid, entry, stack);
 
-  __asm__ volatile(
-      "msr sp_el0, %[stack]\n"
-      "msr elr_el1, %[entry]\n"
-      "msr spsr_el1, %[spsr]\n"
-      "eret\n"
-      :
-      : [stack] "r"(stack), [entry] "r"(entry), [spsr] "r"(spsr)
-      : "memory");
+  uint64_t encoded = aarch64_enter_user(entry, stack);
+  kassert((encoded & OSAI_USER_EXIT_RETURN_MASK) ==
+          OSAI_USER_EXIT_RETURN_MAGIC);
+  int exit_code = (int)(uint32_t)encoded;
+
+  klog("user: kernel resumed after EL0 pid=%u state=%s exit_code=%u transitions=%lu\n",
+       g_current_process->pid, process_state_name(g_current_process->state),
+       (unsigned)exit_code, g_process_transition_count);
+  return exit_code;
+}
+
+uint64_t user_process_transition_count(void) {
+  return g_process_transition_count;
+}
+
+uint64_t user_process_loaded_count(void) {
+  return g_process_loaded_count;
+}
+
+uint64_t user_process_running_count(void) {
+  return g_process_running_count;
+}
+
+uint64_t user_process_exited_count(void) {
+  return g_process_exited_count;
+}
+
+uint64_t user_process_failed_count(void) {
+  return g_process_failed_count;
 }

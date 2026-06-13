@@ -68,4 +68,5 @@ The current implementation still has important MVP/stub areas:
 
 ## Current Slice
 
-Phase Q1 is now the active slice.
+The active engineering slice is real process lifecycle under the full-core
+workdown. The detailed checklist lives in `QEMU-FULL-OS-CORE-WORKDOWN.md`.

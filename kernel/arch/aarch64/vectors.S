@@ -15,6 +15,11 @@
   mrs x2, elr_el1
   mrs x3, far_el1
   bl aarch64_exception_entry
+  lsr x9, x0, #32
+  movz x10, #0x4f53, lsl #16
+  movk x10, #0x4149
+  cmp x9, x10
+  b.eq aarch64_return_from_user_exit
   eret
 .endm
 

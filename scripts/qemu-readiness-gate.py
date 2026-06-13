@@ -78,11 +78,16 @@ REQUIRED_TELEMETRY_MINIMUMS = {
     "network_udp_tx": 1,
     "network_udp_rx": 1,
     "network_tcp_connections": 1,
+    "user_process_transitions": 3,
+    "user_process_loaded": 1,
+    "user_process_running": 1,
+    "user_process_exited": 1,
 }
 
 REQUIRED_TELEMETRY_EQUALS = {
     "migration_total": 0,
     "context_switch_total": 0,
+    "user_process_failed": 0,
 }
 
 

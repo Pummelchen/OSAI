@@ -65,6 +65,11 @@ def main() -> int:
         "ai_cell_transitions",
         "migration_total",
         "context_switch_total",
+        "user_process_transitions",
+        "user_process_loaded",
+        "user_process_running",
+        "user_process_exited",
+        "user_process_failed",
     }
     missing = sorted(expected_keys - set(telemetry.keys()))
     if missing:
@@ -83,6 +88,10 @@ def main() -> int:
         "udp_path_exercised": telemetry["network_udp_tx"] >= 1
         and telemetry["network_udp_rx"] >= 1,
         "tcp_path_exercised": telemetry["network_tcp_connections"] >= 1,
+        "user_process_lifecycle_complete": telemetry["user_process_loaded"] >= 1
+        and telemetry["user_process_running"] >= 1
+        and telemetry["user_process_exited"] >= 1
+        and telemetry["user_process_failed"] == 0,
     }
     failed_gates = sorted(name for name, passed in gates.items() if not passed)
     if failed_gates:

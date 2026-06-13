@@ -29,6 +29,7 @@ TARGETS = [
     "initramfs: rofs metadata/config self-test passed",
     "syscall: table self-test passed entries=3",
     "user: process table initialized slots=4",
+    "user: process pid=1 name=/init state=loaded",
     "security: self-test passed denied=2 credential_rejects=1 signature_accepts=1 signature_rejects=1",
     "model-arena: shared read-only arena self-test passed",
     "core-lease: owner=0 mask=0x2 acquired",
@@ -57,6 +58,7 @@ TARGETS = [
     "\"security_signature_accepts\":1",
     "\"security_signature_rejects\":1",
     "user: loaded /init ELF",
+    "user: process pid=1 name=/init state=running",
     "user: rejected syscall=99",
     "user: rejected syscall=1",
     "/init: bad syscall tests passed",
@@ -70,6 +72,14 @@ TARGETS = [
     "/init: service setup complete",
     "rejected=3",
     "user: /init exited status=0",
+    "user: process pid=1 name=/init state=exited",
+    "user: kernel resumed after EL0 pid=1 state=exited exit_code=0",
+    "kernel: /init returned to kernel exit_code=0",
+    "\"user_process_transitions\":3",
+    "\"user_process_loaded\":1",
+    "\"user_process_running\":1",
+    "\"user_process_exited\":1",
+    "\"user_process_failed\":0",
 ]
 
 

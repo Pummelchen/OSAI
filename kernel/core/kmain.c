@@ -141,7 +141,11 @@ void kmain(const osai_boot_info_t *boot) {
   kassert(init_config != 0);
   kassert(initramfs_lookup(init_config->service_path, &init_file) == OSAI_OK);
   kassert(user_load_init(init_file, &init_process) == OSAI_OK);
-  user_process_run(&init_process);
+  int init_exit_code = user_process_run(&init_process);
+  kassert(init_exit_code == 0);
+  klog("kernel: /init returned to kernel exit_code=%u\n",
+       (unsigned)init_exit_code);
+  telemetry_emit_boot_summary();
 
   for (;;) {
     __asm__ volatile("wfe");
