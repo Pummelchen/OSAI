@@ -1,11 +1,18 @@
 #include <osai/assert.h>
+#include <osai/arena.h>
 #include <osai/cpu_ai_runtime.h>
 #include <osai/klog.h>
 #include <osai/model_arena.h>
 
 #define CPU_AI_MAGIC UINT32_C(0x4941494d)
 #define CPU_AI_VERSION UINT16_C(1)
+#define CPU_AI_HEADER_BYTES UINT16_C(72)
 #define CPU_AI_QUANTIZATION_SUPPORTED UINT16_C(8)
+#define CPU_AI_FLAG_CPU_ONLY UINT32_C(1)
+#define CPU_AI_FLAG_GPU_REQUIRED UINT32_C(1 << 1)
+#define CPU_AI_TOKENIZER_BYTE UINT32_C(1)
+#define CPU_AI_RUNTIME_DETERMINISTIC UINT32_C(1)
+#define CPU_AI_MAX_TOKENS 32U
 
 #define OSAI_CPU_AI_RUNTIME_STATE_EMPTY 0U
 #define OSAI_CPU_AI_RUNTIME_STATE_BOUND 1U
@@ -13,20 +20,46 @@
 typedef struct {
   uint32_t magic;
   uint16_t version;
+  uint16_t header_bytes;
   uint16_t quantization;
+  uint16_t reserved0;
+  uint32_t flags;
+  uint32_t tokenizer_id;
+  uint32_t runtime_id;
+  uint64_t weights_offset;
+  uint64_t weights_size;
+  uint64_t tokenizer_offset;
+  uint64_t tokenizer_size;
+  uint64_t kv_bytes_required;
   uint8_t key;
   uint8_t stride;
-  uint8_t reserved[6];
-} cpu_ai_model_header_t;
+  uint8_t reserved1[6];
+} cpu_ai_model_manifest_t;
+
+typedef struct {
+  uint32_t token_id;
+  uint8_t source_byte;
+} cpu_ai_token_t;
 
 typedef struct {
   uint8_t state;
   uint32_t model_arena_id;
   const uint8_t *model_base;
   uint64_t model_size;
+  const uint8_t *weights_base;
+  uint64_t weights_size;
+  const uint8_t *tokenizer_base;
+  uint64_t tokenizer_size;
+  uint32_t tokenizer_id;
+  uint32_t runtime_id;
+  uint64_t kv_base;
+  uint64_t kv_bytes;
+  uint64_t kv_cursor;
+  uint64_t kv_writes;
   uint64_t decode_calls;
   uint64_t bytes_in;
   uint64_t bytes_out;
+  uint16_t quantization;
   uint8_t key;
   uint8_t stride;
   const char *model_name;
@@ -34,6 +67,13 @@ typedef struct {
 
 static osai_cpu_ai_runtime_cell_t g_cells[OSAI_CPU_AI_RUNTIME_MAX_CELLS];
 static const char k_hex[] = "0123456789ABCDEF";
+static uint64_t g_model_load_count;
+static uint64_t g_model_load_failure_count;
+static uint64_t g_tokenizer_call_count;
+static uint64_t g_runtime_call_count;
+static uint64_t g_kv_write_count;
+static uint64_t g_shared_weight_bind_count;
+static uint64_t g_gpu_reject_count;
 
 static int validate_cell_id(uint32_t cell_id) {
   return cell_id < OSAI_CPU_AI_RUNTIME_MAX_CELLS;
@@ -60,16 +100,151 @@ static int bytes_equal(const char *lhs, const char *rhs) {
   }
 }
 
+static int range_in_model(uint64_t offset, uint64_t size, uint64_t model_size) {
+  if (size == 0 || offset >= model_size) {
+    return 0;
+  }
+  return size <= model_size - offset;
+}
+
+static osai_status_t validate_model_manifest(
+    const osai_model_arena_t *model,
+    const cpu_ai_model_manifest_t **manifest_out) {
+  if (model == 0 || model->base == 0 ||
+      model->size < sizeof(cpu_ai_model_manifest_t) || model->read_only == 0) {
+    return OSAI_ERR_INVALID;
+  }
+
+  const cpu_ai_model_manifest_t *manifest =
+      (const cpu_ai_model_manifest_t *)(const void *)model->base;
+  if (manifest->magic != CPU_AI_MAGIC ||
+      manifest->version != CPU_AI_VERSION ||
+      manifest->header_bytes < sizeof(cpu_ai_model_manifest_t) ||
+      manifest->quantization != CPU_AI_QUANTIZATION_SUPPORTED ||
+      manifest->stride == 0 || manifest->stride > 32U ||
+      manifest->tokenizer_id != CPU_AI_TOKENIZER_BYTE ||
+      manifest->runtime_id != CPU_AI_RUNTIME_DETERMINISTIC ||
+      (manifest->flags & CPU_AI_FLAG_CPU_ONLY) == 0 ||
+      (manifest->flags & CPU_AI_FLAG_GPU_REQUIRED) != 0 ||
+      !range_in_model(manifest->weights_offset, manifest->weights_size,
+                      model->size) ||
+      !range_in_model(manifest->tokenizer_offset, manifest->tokenizer_size,
+                      model->size) ||
+      manifest->kv_bytes_required == 0) {
+    return OSAI_ERR_INVALID;
+  }
+
+  if (manifest_out != 0) {
+    *manifest_out = manifest;
+  }
+  return OSAI_OK;
+}
+
+static osai_status_t tokenizer_encode(osai_cpu_ai_runtime_cell_t *cell,
+                                      const uint8_t *piece,
+                                      uint64_t piece_bytes,
+                                      cpu_ai_token_t *tokens,
+                                      uint64_t token_capacity,
+                                      uint64_t *token_count) {
+  if (cell == 0 || piece == 0 || tokens == 0 || token_count == 0 ||
+      cell->tokenizer_id != CPU_AI_TOKENIZER_BYTE ||
+      piece_bytes > token_capacity) {
+    return OSAI_ERR_INVALID;
+  }
+
+  for (uint64_t i = 0; i < piece_bytes; ++i) {
+    tokens[i].token_id = piece[i];
+    tokens[i].source_byte = piece[i];
+  }
+  *token_count = piece_bytes;
+  ++g_tokenizer_call_count;
+  return OSAI_OK;
+}
+
+static osai_status_t kv_record_tokens(osai_cpu_ai_runtime_cell_t *cell,
+                                      const cpu_ai_token_t *tokens,
+                                      uint64_t token_count) {
+  if (cell == 0 || tokens == 0 || token_count == 0) {
+    return OSAI_OK;
+  }
+  if (cell->kv_base == 0 || cell->kv_bytes == 0) {
+    return OSAI_ERR_INVALID;
+  }
+
+  const uint64_t record_bytes = token_count * sizeof(uint32_t);
+  if (record_bytes > cell->kv_bytes ||
+      cell->kv_cursor > cell->kv_bytes - record_bytes) {
+    return OSAI_ERR_NO_MEMORY;
+  }
+
+  uint32_t *kv = (uint32_t *)(uintptr_t)(cell->kv_base + cell->kv_cursor);
+  for (uint64_t i = 0; i < token_count; ++i) {
+    kv[i] = tokens[i].token_id;
+  }
+  cell->kv_cursor += record_bytes;
+  cell->kv_writes += token_count;
+  g_kv_write_count += token_count;
+  return OSAI_OK;
+}
+
+static osai_status_t runtime_decode_tokens(osai_cpu_ai_runtime_cell_t *cell,
+                                           const cpu_ai_token_t *tokens,
+                                           uint64_t token_count, char *output,
+                                           uint64_t output_capacity,
+                                           uint64_t *output_bytes) {
+  if (cell == 0 || tokens == 0 || output == 0 || output_bytes == 0 ||
+      cell->runtime_id != CPU_AI_RUNTIME_DETERMINISTIC) {
+    return OSAI_ERR_INVALID;
+  }
+
+  const uint64_t required_output = token_count * 2U;
+  if (required_output + 1U > output_capacity) {
+    return OSAI_ERR_NO_MEMORY;
+  }
+
+  if (kv_record_tokens(cell, tokens, token_count) != OSAI_OK) {
+    return OSAI_ERR_NO_MEMORY;
+  }
+
+  for (uint64_t i = 0; i < token_count; ++i) {
+    const uint8_t mix =
+        (uint8_t)(tokens[i].token_id ^
+                  (uint8_t)(cell->key + (cell->stride * i)));
+    output[(i * 2U)] = k_hex[(mix >> 4) & 0x0fU];
+    output[(i * 2U) + 1U] = k_hex[mix & 0x0fU];
+  }
+
+  output[required_output] = '\0';
+  *output_bytes = required_output;
+  ++g_runtime_call_count;
+  return OSAI_OK;
+}
+
 void cpu_ai_runtime_init(void) {
   for (uint32_t i = 0; i < OSAI_CPU_AI_RUNTIME_MAX_CELLS; ++i) {
     bytes_zero(&g_cells[i], sizeof(g_cells[i]));
   }
+  g_model_load_count = 0;
+  g_model_load_failure_count = 0;
+  g_tokenizer_call_count = 0;
+  g_runtime_call_count = 0;
+  g_kv_write_count = 0;
+  g_shared_weight_bind_count = 0;
+  g_gpu_reject_count = 0;
   klog("cpu-ai-runtime: initialized cells=%u\n",
        OSAI_CPU_AI_RUNTIME_MAX_CELLS);
 }
 
 osai_status_t cpu_ai_runtime_bind_model(uint32_t cell_id,
                                         uint32_t model_arena_id) {
+  return cpu_ai_runtime_bind_model_with_kv(cell_id, model_arena_id,
+                                           UINT64_C(0), UINT64_C(0));
+}
+
+osai_status_t cpu_ai_runtime_bind_model_with_kv(uint32_t cell_id,
+                                                uint32_t model_arena_id,
+                                                uint64_t kv_base,
+                                                uint64_t kv_bytes) {
   if (!validate_cell_id(cell_id)) {
     return OSAI_ERR_INVALID;
   }
@@ -81,19 +256,23 @@ osai_status_t cpu_ai_runtime_bind_model(uint32_t cell_id,
 
   const osai_model_arena_t *model = 0;
   if (model_arena_acquire(model_arena_id, &model) != OSAI_OK) {
+    ++g_model_load_failure_count;
     return OSAI_ERR_INVALID;
   }
 
-  if (model->size < sizeof(cpu_ai_model_header_t)) {
-    kassert(model_arena_release(model_arena_id) == OSAI_OK);
-    return OSAI_ERR_INVALID;
-  }
-
-  const cpu_ai_model_header_t *header =
-      (const cpu_ai_model_header_t *)(const void *)model->base;
-  if (header->magic != CPU_AI_MAGIC || header->version != CPU_AI_VERSION ||
-      header->quantization != CPU_AI_QUANTIZATION_SUPPORTED ||
-      header->stride == 0 || header->stride > 32U) {
+  const cpu_ai_model_manifest_t *manifest = 0;
+  const cpu_ai_model_manifest_t *raw_manifest =
+      model->size >= sizeof(cpu_ai_model_manifest_t)
+          ? (const cpu_ai_model_manifest_t *)(const void *)model->base
+          : 0;
+  if (validate_model_manifest(model, &manifest) != OSAI_OK ||
+      kv_base == 0 || kv_bytes < manifest->kv_bytes_required) {
+    if (raw_manifest != 0 &&
+        raw_manifest->magic == CPU_AI_MAGIC &&
+        (raw_manifest->flags & CPU_AI_FLAG_GPU_REQUIRED) != 0) {
+      ++g_gpu_reject_count;
+    }
+    ++g_model_load_failure_count;
     kassert(model_arena_release(model_arena_id) == OSAI_OK);
     return OSAI_ERR_INVALID;
   }
@@ -102,17 +281,36 @@ osai_status_t cpu_ai_runtime_bind_model(uint32_t cell_id,
   cell->model_arena_id = model_arena_id;
   cell->model_base = (const uint8_t *)model->base;
   cell->model_size = model->size;
-  cell->key = header->key;
-  cell->stride = header->stride;
+  cell->weights_base = cell->model_base + manifest->weights_offset;
+  cell->weights_size = manifest->weights_size;
+  cell->tokenizer_base = cell->model_base + manifest->tokenizer_offset;
+  cell->tokenizer_size = manifest->tokenizer_size;
+  cell->tokenizer_id = manifest->tokenizer_id;
+  cell->runtime_id = manifest->runtime_id;
+  cell->kv_base = kv_base;
+  cell->kv_bytes = kv_bytes;
+  cell->kv_cursor = 0;
+  cell->kv_writes = 0;
+  cell->quantization = manifest->quantization;
+  cell->key = manifest->key;
+  cell->stride = manifest->stride;
   cell->model_name = model->name;
   cell->decode_calls = 0;
   cell->bytes_in = 0;
   cell->bytes_out = 0;
+  ++g_model_load_count;
+  ++g_shared_weight_bind_count;
 
-  klog("cpu-ai-runtime: cell=%u bound model_id=%u name=%s size=%lu quant=%u stride=%u\n",
+  klog("cpu-ai-runtime: model manifest loaded cell=%u model_id=%u name=%s quant=%u tokenizer=%u runtime=%u weights=%lu tokenizer_bytes=%lu kv_required=%lu\n",
        cell_id, model_arena_id,
        cell->model_name != 0 ? cell->model_name : "<anonymous>",
-       cell->model_size, header->quantization, cell->stride);
+       cell->quantization, cell->tokenizer_id, cell->runtime_id,
+       cell->weights_size, cell->tokenizer_size, manifest->kv_bytes_required);
+  klog("cpu-ai-runtime: cell=%u bound model_id=%u name=%s size=%lu quant=%u stride=%u kv=0x%lx kv_bytes=%lu\n",
+       cell_id, model_arena_id,
+       cell->model_name != 0 ? cell->model_name : "<anonymous>",
+       cell->model_size, cell->quantization, cell->stride, cell->kv_base,
+       cell->kv_bytes);
   return OSAI_OK;
 }
 
@@ -156,26 +354,28 @@ osai_status_t cpu_ai_runtime_decode_piece(uint32_t cell_id, const uint8_t *piece
     return OSAI_OK;
   }
 
-  const uint64_t required_output = piece_bytes * 2U;
-  if (required_output + 1U > output_capacity) {
+  if (piece_bytes > CPU_AI_MAX_TOKENS) {
+    return OSAI_ERR_INVALID;
+  }
+
+  cpu_ai_token_t tokens[CPU_AI_MAX_TOKENS];
+  uint64_t token_count = 0;
+  if (tokenizer_encode(cell, piece, piece_bytes, tokens, CPU_AI_MAX_TOKENS,
+                       &token_count) != OSAI_OK) {
+    return OSAI_ERR_INVALID;
+  }
+
+  if (runtime_decode_tokens(cell, tokens, token_count, output, output_capacity,
+                            output_bytes) != OSAI_OK) {
     return OSAI_ERR_NO_MEMORY;
   }
 
-  for (uint64_t i = 0; i < piece_bytes; ++i) {
-    const uint8_t mix =
-        (uint8_t)(piece[i] ^ (uint8_t)(cell->key + (cell->stride * i)));
-    output[(i * 2U)] = k_hex[(mix >> 4) & 0x0fU];
-    output[(i * 2U) + 1U] = k_hex[mix & 0x0fU];
-  }
-
-  output[required_output] = '\0';
-  *output_bytes = required_output;
   ++cell->decode_calls;
   cell->bytes_in += piece_bytes;
-  cell->bytes_out += required_output;
+  cell->bytes_out += *output_bytes;
 
   klog("cpu-ai-runtime: cell=%u decode piece_len=%lu output_len=%lu\n", cell_id,
-       piece_bytes, required_output);
+       piece_bytes, *output_bytes);
   return OSAI_OK;
 }
 
@@ -186,47 +386,151 @@ uint64_t cpu_ai_runtime_decode_count(uint32_t cell_id) {
   return g_cells[cell_id].decode_calls;
 }
 
+uint64_t cpu_ai_runtime_model_load_count(void) {
+  return g_model_load_count;
+}
+
+uint64_t cpu_ai_runtime_model_load_failure_count(void) {
+  return g_model_load_failure_count;
+}
+
+uint64_t cpu_ai_runtime_tokenizer_call_count(void) {
+  return g_tokenizer_call_count;
+}
+
+uint64_t cpu_ai_runtime_runtime_call_count(void) {
+  return g_runtime_call_count;
+}
+
+uint64_t cpu_ai_runtime_kv_write_count(void) {
+  return g_kv_write_count;
+}
+
+uint64_t cpu_ai_runtime_shared_weight_bind_count(void) {
+  return g_shared_weight_bind_count;
+}
+
+uint64_t cpu_ai_runtime_gpu_reject_count(void) {
+  return g_gpu_reject_count;
+}
+
 void cpu_ai_runtime_self_test(void) {
   cpu_ai_runtime_init();
 
-  static const uint8_t model_image[] = {
-      0x4d,
-      0x49,
-      0x41,
-      0x49,
-      0x01,
-      0x00,
-      0x08,
-      0x00,
-      0x5a,
-      0x03,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
+  typedef struct {
+    cpu_ai_model_manifest_t manifest;
+    uint8_t weights[32];
+    uint8_t tokenizer[16];
+  } cpu_ai_test_model_image_t;
+
+  static const cpu_ai_test_model_image_t model_image = {
+      {
+          CPU_AI_MAGIC,
+          CPU_AI_VERSION,
+          CPU_AI_HEADER_BYTES,
+          CPU_AI_QUANTIZATION_SUPPORTED,
+          0,
+          CPU_AI_FLAG_CPU_ONLY,
+          CPU_AI_TOKENIZER_BYTE,
+          CPU_AI_RUNTIME_DETERMINISTIC,
+          sizeof(cpu_ai_model_manifest_t),
+          32,
+          sizeof(cpu_ai_model_manifest_t) + 32,
+          16,
+          4096,
+          0x5a,
+          0x03,
+          {0},
+      },
+      {0xaa, 0xbb, 0xcc, 0xdd},
+      {'b', 'y', 't', 'e'},
+  };
+  static const cpu_ai_test_model_image_t gpu_model_image = {
+      {
+          CPU_AI_MAGIC,
+          CPU_AI_VERSION,
+          CPU_AI_HEADER_BYTES,
+          CPU_AI_QUANTIZATION_SUPPORTED,
+          0,
+          CPU_AI_FLAG_CPU_ONLY | CPU_AI_FLAG_GPU_REQUIRED,
+          CPU_AI_TOKENIZER_BYTE,
+          CPU_AI_RUNTIME_DETERMINISTIC,
+          sizeof(cpu_ai_model_manifest_t),
+          32,
+          sizeof(cpu_ai_model_manifest_t) + 32,
+          16,
+          4096,
+          0x5a,
+          0x03,
+          {0},
+      },
+      {0},
+      {0},
   };
 
-  kassert(model_arena_register(2, "cpu-ai-mvp", model_image,
+  kassert(sizeof(cpu_ai_model_manifest_t) == CPU_AI_HEADER_BYTES);
+  kassert(model_arena_register(2, "cpu-ai-mvp", &model_image,
                                sizeof(model_image)) == OSAI_OK);
+  kassert(model_arena_register(3, "gpu-rejected-model", &gpu_model_image,
+                               sizeof(gpu_model_image)) == OSAI_OK);
 
-  kassert(cpu_ai_runtime_bind_model(0, 2) == OSAI_OK);
+  const osai_arena_t *kv0 = 0;
+  const osai_arena_t *kv1 = 0;
+  kassert(arena_create(5, OSAI_ARENA_KV_CACHE, 0, "cpu-ai-kv-0", 4096, 0,
+                       &kv0) == OSAI_OK);
+  kassert(arena_create(6, OSAI_ARENA_KV_CACHE, 1, "cpu-ai-kv-1", 4096, 0,
+                       &kv1) == OSAI_OK);
+
+  kassert(cpu_ai_runtime_bind_model_with_kv(0, 2, kv0->base, kv0->size) ==
+          OSAI_OK);
+  kassert(cpu_ai_runtime_bind_model_with_kv(1, 2, kv1->base, kv1->size) ==
+          OSAI_OK);
+  kassert(cpu_ai_runtime_bind_model_with_kv(2, 99, kv1->base, kv1->size) ==
+          OSAI_ERR_INVALID);
+  kassert(cpu_ai_runtime_bind_model_with_kv(2, 3, kv1->base, kv1->size) ==
+          OSAI_ERR_INVALID);
+  kassert(model_arena_unregister(3) == OSAI_OK);
+  kassert(cpu_ai_runtime_bind_model_with_kv(2, 2, kv1->base, 16) ==
+          OSAI_ERR_INVALID);
+
+  const osai_model_arena_t *shared = 0;
+  kassert(model_arena_acquire(2, &shared) == OSAI_OK);
+  kassert(shared->ref_count == 3);
+  kassert(model_arena_release(2) == OSAI_OK);
   const uint8_t piece[] = {'A', 'B', 'C', 'D'};
   char output[32];
+  char output1[32];
   uint64_t out = 0;
   kassert(cpu_ai_runtime_decode_piece(0, piece, sizeof(piece), output,
                                      sizeof(output), &out) == OSAI_OK);
   kassert(out == 8);
   kassert(cpu_ai_runtime_decode_count(0) == 1);
   kassert(bytes_equal(output, "1B1F2327"));
+  kassert(cpu_ai_runtime_decode_piece(1, piece, sizeof(piece), output1,
+                                     sizeof(output1), &out) == OSAI_OK);
+  kassert(bytes_equal(output1, "1B1F2327"));
+  kassert(cpu_ai_runtime_tokenizer_call_count() == 2);
+  kassert(cpu_ai_runtime_runtime_call_count() == 2);
+  kassert(cpu_ai_runtime_kv_write_count() == 8);
+  kassert(cpu_ai_runtime_model_load_failure_count() == 3);
+  kassert(cpu_ai_runtime_gpu_reject_count() == 1);
   kassert(cpu_ai_runtime_unbind_model(0) == OSAI_OK);
+  kassert(cpu_ai_runtime_unbind_model(1) == OSAI_OK);
   klog("cpu-ai-runtime: deterministic decode fixture input=ABCD output=%s\n",
        output);
   kassert(cpu_ai_runtime_decode_piece(0, piece, sizeof(piece), output,
                                      sizeof(output), &out) == OSAI_ERR_INVALID);
+  kassert(arena_destroy(5) == OSAI_OK);
+  kassert(arena_destroy(6) == OSAI_OK);
+  klog("cpu-ai-runtime: tokenizer/runtime boundary self-test passed tokenizer_calls=%lu runtime_calls=%lu\n",
+       cpu_ai_runtime_tokenizer_call_count(),
+       cpu_ai_runtime_runtime_call_count());
+  klog("cpu-ai-runtime: multi-cell shared weights self-test passed loads=%lu shared_binds=%lu kv_writes=%lu\n",
+       cpu_ai_runtime_model_load_count(),
+       cpu_ai_runtime_shared_weight_bind_count(),
+       cpu_ai_runtime_kv_write_count());
+  klog("cpu-ai-runtime: model load failure self-test passed failures=%lu gpu_rejects=%lu\n",
+       cpu_ai_runtime_model_load_failure_count(),
+       cpu_ai_runtime_gpu_reject_count());
   klog("cpu-ai-runtime: self-test passed\n");
 }

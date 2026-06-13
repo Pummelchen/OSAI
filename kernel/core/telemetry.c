@@ -1,6 +1,7 @@
 #include <osai/ai_cell.h>
 #include <osai/arena.h>
 #include <osai/core_lease.h>
+#include <osai/cpu_ai_runtime.h>
 #include <osai/git_workspace.h>
 #include <osai/kheap.h>
 #include <osai/klog.h>
@@ -24,7 +25,7 @@ void telemetry_emit_boot_summary(void) {
       smp_online_count(), pmm_total_pages(), pmm_free_pages(),
       timer_frequency_hz());
   klog(
-      "telemetry: {\"cpu_count\":%u,\"pmm_total_pages\":%lu,\"pmm_free_pages\":%lu,\"kheap_pages\":%lu,\"kheap_bytes\":%lu,\"arena_active\":%lu,\"arena_committed_pages\":%lu,\"sandbox_active\":%lu,\"sandbox_transitions\":%lu,\"persistence_snapshots\":%lu,\"persistence_rollbacks\":%lu,\"persistence_rejects\":%lu,\"persistence_disk_writes\":%lu,\"persistence_disk_loads\":%lu,\"persistence_boot_loads\":%lu,\"persistence_checksum_errors\":%lu,\"hot_core_mask\":%u,\"irq_isolated_mask\":%u,\"migration_total\":%lu,\"context_switch_total\":%lu,\"source_index_active\":%lu,\"source_index_files\":%lu,\"source_index_symbols\":%lu,\"source_index_updates\":%lu,\"security_denied_ops\":%lu,\"security_credential_rejects\":%lu,\"security_signature_accepts\":%lu,\"security_signature_rejects\":%lu,\"virtio_block_sectors\":%lu,\"ai_cell_transitions\":%lu,\"git_workspace_active\":%lu,\"git_workspace_syncs\":%lu,\"git_workspace_applies\":%lu,\"git_workspace_reverts\":%lu,\"git_workspace_conflicts\":%lu,\"network_udp_tx\":%lu,\"network_udp_rx\":%lu,\"network_udp_malformed\":%lu,\"network_udp_dropped\":%lu,\"network_udp_flows\":%lu,\"network_tcp_connections\":%lu,\"network_tcp_handshakes\":%lu,\"network_tcp_resets\":%lu,\"network_tcp_timeouts\":%lu,\"network_queue_bindings\":%lu,\"network_rx_packets\":%lu,\"network_tx_packets\":%lu,\"network_packet_drops\":%lu,\"network_packet_lifecycle\":%lu,\"network_udp_p50\":%lu,\"network_udp_p95\":%lu,\"network_udp_p99\":%lu,\"network_udp_p999\":%lu,\"network_tcp_p50\":%lu,\"network_tcp_p95\":%lu,\"network_tcp_p99\":%lu,\"network_tcp_p999\":%lu,\"service_child_descriptors\":%lu,\"service_transitions\":%lu,\"control_plane_syscalls\":%lu,\"control_plane_denials\":%lu,\"service_descriptor_reads\":%lu,\"user_process_transitions\":%lu,\"user_process_loaded\":%lu,\"user_process_running\":%lu,\"user_process_exited\":%lu,\"user_process_failed\":%lu}\n",
+      "telemetry: {\"cpu_count\":%u,\"pmm_total_pages\":%lu,\"pmm_free_pages\":%lu,\"kheap_pages\":%lu,\"kheap_bytes\":%lu,\"arena_active\":%lu,\"arena_committed_pages\":%lu,\"sandbox_active\":%lu,\"sandbox_transitions\":%lu,\"persistence_snapshots\":%lu,\"persistence_rollbacks\":%lu,\"persistence_rejects\":%lu,\"persistence_disk_writes\":%lu,\"persistence_disk_loads\":%lu,\"persistence_boot_loads\":%lu,\"persistence_checksum_errors\":%lu,\"hot_core_mask\":%u,\"irq_isolated_mask\":%u,\"migration_total\":%lu,\"context_switch_total\":%lu,\"source_index_active\":%lu,\"source_index_files\":%lu,\"source_index_symbols\":%lu,\"source_index_updates\":%lu,\"security_denied_ops\":%lu,\"security_credential_rejects\":%lu,\"security_signature_accepts\":%lu,\"security_signature_rejects\":%lu,\"virtio_block_sectors\":%lu,\"ai_cell_transitions\":%lu,\"cpu_ai_model_loads\":%lu,\"cpu_ai_model_load_failures\":%lu,\"cpu_ai_tokenizer_calls\":%lu,\"cpu_ai_runtime_calls\":%lu,\"cpu_ai_kv_writes\":%lu,\"cpu_ai_shared_weight_binds\":%lu,\"cpu_ai_gpu_rejects\":%lu,\"git_workspace_active\":%lu,\"git_workspace_syncs\":%lu,\"git_workspace_applies\":%lu,\"git_workspace_reverts\":%lu,\"git_workspace_conflicts\":%lu,\"network_udp_tx\":%lu,\"network_udp_rx\":%lu,\"network_udp_malformed\":%lu,\"network_udp_dropped\":%lu,\"network_udp_flows\":%lu,\"network_tcp_connections\":%lu,\"network_tcp_handshakes\":%lu,\"network_tcp_resets\":%lu,\"network_tcp_timeouts\":%lu,\"network_queue_bindings\":%lu,\"network_rx_packets\":%lu,\"network_tx_packets\":%lu,\"network_packet_drops\":%lu,\"network_packet_lifecycle\":%lu,\"network_udp_p50\":%lu,\"network_udp_p95\":%lu,\"network_udp_p99\":%lu,\"network_udp_p999\":%lu,\"network_tcp_p50\":%lu,\"network_tcp_p95\":%lu,\"network_tcp_p99\":%lu,\"network_tcp_p999\":%lu,\"service_child_descriptors\":%lu,\"service_transitions\":%lu,\"control_plane_syscalls\":%lu,\"control_plane_denials\":%lu,\"service_descriptor_reads\":%lu,\"user_process_transitions\":%lu,\"user_process_loaded\":%lu,\"user_process_running\":%lu,\"user_process_exited\":%lu,\"user_process_failed\":%lu}\n",
       smp_online_count(), pmm_total_pages(), pmm_free_pages(),
       kheap_pages_allocated(), kheap_bytes_allocated(),
       arena_active_count(), arena_committed_pages(),
@@ -41,6 +42,13 @@ void telemetry_emit_boot_summary(void) {
       security_denied_operation_count(), security_credential_reject_count(),
       security_signature_accept_count(), security_signature_reject_count(),
       virtio_block_capacity_sectors(), ai_cell_transition_count(),
+      cpu_ai_runtime_model_load_count(),
+      cpu_ai_runtime_model_load_failure_count(),
+      cpu_ai_runtime_tokenizer_call_count(),
+      cpu_ai_runtime_runtime_call_count(),
+      cpu_ai_runtime_kv_write_count(),
+      cpu_ai_runtime_shared_weight_bind_count(),
+      cpu_ai_runtime_gpu_reject_count(),
       git_workspace_active_count(), git_workspace_sync_count(),
       git_workspace_apply_count(), git_workspace_revert_count(),
       git_workspace_conflict_count(),

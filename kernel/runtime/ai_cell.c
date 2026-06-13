@@ -25,6 +25,20 @@ static int str_nonempty(const char *value) {
   return value != 0 && value[0] != '\0';
 }
 
+static int str_equal(const char *lhs, const char *rhs) {
+  if (lhs == 0 || rhs == 0) {
+    return 0;
+  }
+  for (uint32_t i = 0;; ++i) {
+    if (lhs[i] != rhs[i]) {
+      return 0;
+    }
+    if (lhs[i] == '\0') {
+      return 1;
+    }
+  }
+}
+
 static osai_ai_cell_t *cell_by_id(uint32_t cell_id) {
   if (cell_id >= MAX_AI_CELLS) {
     return 0;
@@ -237,7 +251,10 @@ osai_status_t ai_cell_prepare(uint32_t cell_id) {
     ++g_transition_count;
     return OSAI_ERR_INVALID;
   }
-  if (cpu_ai_runtime_bind_model(cell_id, cell->manifest.model_arena_id) != OSAI_OK) {
+  if (cpu_ai_runtime_bind_model_with_kv(cell_id, cell->manifest.model_arena_id,
+                                        cell->kv_cache_base,
+                                        cell->manifest.kv_cache_bytes) !=
+      OSAI_OK) {
     destroy_cell_arenas(cell);
     release_nic_queue(cell_id, cell->manifest.nic_queue_id);
     release_workspace(cell_id, cell->manifest.git_workspace_id);
@@ -304,7 +321,7 @@ void ai_cell_self_test(void) {
   kassert(ai_cell_create(0, &invalid) == OSAI_ERR_INVALID);
 
   invalid.core_mask = 0x8;
-  invalid.model_arena_id = 3;
+  invalid.model_arena_id = 99;
   invalid.git_workspace_id = 1;
   kassert(ai_cell_create(3, &invalid) == OSAI_ERR_INVALID);
 
@@ -338,6 +355,23 @@ void ai_cell_self_test(void) {
   kassert(output[6] == '2');
   kassert(output[7] == '7');
   kassert(output[8] == '\0');
+
+  osai_ai_cell_manifest_t shared;
+  shared.name = "shared-weight-agent";
+  shared.core_mask = 0x4;
+  shared.model_arena_id = 2;
+  shared.kv_cache_bytes = 64 * 1024;
+  shared.source_index_bytes = 128 * 1024;
+  shared.nic_queue_id = 2;
+  shared.git_workspace_id = 2;
+  kassert(ai_cell_create(3, &shared) == OSAI_OK);
+  kassert(ai_cell_prepare(3) == OSAI_OK);
+  kassert(ai_cell_start(3) == OSAI_OK);
+  kassert(cpu_ai_runtime_decode_piece(3, piece, sizeof(piece), output,
+                                     sizeof(output), &out) == OSAI_OK);
+  kassert(str_equal(output, "1B1F2327"));
+  kassert(ai_cell_stop(3) == OSAI_OK);
+  klog("ai-cell: multi-cell shared model/private kv self-test passed\n");
 
   osai_ai_cell_manifest_t conflict;
   conflict.name = "conflict-agent";

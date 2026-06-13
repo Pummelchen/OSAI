@@ -18,6 +18,7 @@ typedef struct osai_model_arena {
 void model_arena_init(void);
 osai_status_t model_arena_register(uint32_t arena_id, const char *name,
                                    const void *base, uint64_t size);
+osai_status_t model_arena_unregister(uint32_t arena_id);
 osai_status_t model_arena_acquire(uint32_t arena_id,
                                   const osai_model_arena_t **arena);
 osai_status_t model_arena_release(uint32_t arena_id);

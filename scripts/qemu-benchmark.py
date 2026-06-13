@@ -60,6 +60,13 @@ def main() -> int:
         "security_signature_accepts",
         "security_signature_rejects",
         "virtio_block_sectors",
+        "cpu_ai_model_loads",
+        "cpu_ai_model_load_failures",
+        "cpu_ai_tokenizer_calls",
+        "cpu_ai_runtime_calls",
+        "cpu_ai_kv_writes",
+        "cpu_ai_shared_weight_binds",
+        "cpu_ai_gpu_rejects",
         "network_udp_tx",
         "network_udp_rx",
         "network_udp_malformed",
@@ -98,6 +105,13 @@ def main() -> int:
         "pmm_has_free_pages": telemetry["pmm_free_pages"] > 0,
         "virtio_block_visible": telemetry["virtio_block_sectors"] > 0,
         "ai_cell_transitions_present": telemetry["ai_cell_transitions"] >= 1,
+        "cpu_ai_runtime_boundaries": telemetry["cpu_ai_model_loads"] >= 4
+        and telemetry["cpu_ai_model_load_failures"] >= 3
+        and telemetry["cpu_ai_tokenizer_calls"] >= 4
+        and telemetry["cpu_ai_runtime_calls"] >= 4
+        and telemetry["cpu_ai_kv_writes"] >= 16
+        and telemetry["cpu_ai_shared_weight_binds"] >= 4
+        and telemetry["cpu_ai_gpu_rejects"] >= 1,
         "security_denials_recorded": telemetry["security_denied_ops"] >= 2,
         "persistence_rollbacks_present": telemetry["persistence_rollbacks"] >= 5,
         "disk_persistence_reloaded": telemetry["persistence_disk_writes"] >= 1

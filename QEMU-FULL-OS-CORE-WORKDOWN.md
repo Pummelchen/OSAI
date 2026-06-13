@@ -104,18 +104,20 @@ host actual CPU-only model code.
 
 Required work:
 
-- [ ] Add model-loader interface and manifest format.
-- [ ] Add tokenizer/runtime boundary.
-- [ ] Keep shared read-only model weights.
-- [ ] Keep private KV/cache arenas per AI Cell.
-- [ ] Add multi-cell shared-weight tests.
-- [ ] Add model load failure tests.
-- [ ] Keep GPU acceleration out of the runtime contract.
+- [x] Add model-loader interface and manifest format.
+- [x] Add tokenizer/runtime boundary.
+- [x] Keep shared read-only model weights.
+- [x] Keep private KV/cache arenas per AI Cell.
+- [x] Add multi-cell shared-weight tests.
+- [x] Add model load failure tests.
+- [x] Keep GPU acceleration out of the runtime contract.
 
 Definition of done:
 
 - AI Cells can bind a model manifest, shared weights, tokenizer boundary, and
   private KV/cache arena through enforceable resource contracts.
+- `make qemu-smoke` requires model load, load failure, tokenizer, runtime,
+  KV/cache write, shared-weight bind, and GPU rejection telemetry.
 
 ## Phase Q6: Security Enforcement
 

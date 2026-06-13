@@ -83,6 +83,21 @@ osai_status_t model_arena_register(uint32_t arena_id, const char *name,
   return OSAI_OK;
 }
 
+osai_status_t model_arena_unregister(uint32_t arena_id) {
+  if (arena_id >= MAX_MODEL_ARENAS || g_model_arenas[arena_id].base == 0 ||
+      g_model_arenas[arena_id].ref_count != 0) {
+    return OSAI_ERR_INVALID;
+  }
+
+  g_model_arenas[arena_id].name = 0;
+  g_model_arenas[arena_id].base = 0;
+  g_model_arenas[arena_id].size = 0;
+  g_model_arenas[arena_id].read_only = 1;
+  kassert(arena_destroy(arena_id) == OSAI_OK);
+  klog("model-arena: unregistered id=%u\n", arena_id);
+  return OSAI_OK;
+}
+
 osai_status_t model_arena_acquire(uint32_t arena_id,
                                   const osai_model_arena_t **arena) {
   if (arena_id >= MAX_MODEL_ARENAS || g_model_arenas[arena_id].base == 0) {
