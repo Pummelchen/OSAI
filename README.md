@@ -36,10 +36,12 @@ human request
 
 The goal is predictable, low-latency CPU AI execution without relying on CUDA, Metal, or vendor GPU acceleration.
 
-## More Detail
+## Documentation
 
-The detailed architecture, hardware targets, performance model, service manifest, and roadmap have been moved to the wiki-style documentation under [`docs/wiki/`](docs/wiki/).
+Detailed design and implementation planning lives under [`docs/`](docs/):
+
+- [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) — full 0-to-100% implementation plan for Codex-driven development.
 
 ## Project Status
 
-OSAI is currently a design-stage project. The next milestone is to define benchmark baselines, architecture documents, and a minimal bootable prototype plan.
+OSAI is currently a design-stage project. The next milestone is a QEMU-first bootable prototype on macOS, followed by Intel Desktop, Intel Xeon, and ARM/NVIDIA N1X-class hardware ports.
