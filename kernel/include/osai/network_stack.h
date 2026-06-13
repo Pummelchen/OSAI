@@ -22,21 +22,30 @@ osai_status_t network_stack_process_udp_frame(const uint8_t *frame,
                                             uint64_t frame_len);
 osai_status_t network_stack_process_tcp_frame(const uint8_t *frame,
                                             uint64_t frame_len);
+uint64_t network_stack_expire_tcp_flows(uint64_t now_ns);
 
 uint64_t network_stack_udp_tx_count(void);
 uint64_t network_stack_udp_rx_count(void);
 uint64_t network_stack_udp_malformed_count(void);
 uint64_t network_stack_udp_dropped_count(void);
+uint64_t network_stack_udp_flow_count(void);
 uint64_t network_stack_tcp_connections(void);
 uint64_t network_stack_tcp_handshake_count(void);
 uint64_t network_stack_tcp_reset_count(void);
+uint64_t network_stack_tcp_timeout_count(void);
 uint64_t network_stack_queue_bindings(void);
+uint64_t network_stack_rx_packet_count(void);
+uint64_t network_stack_tx_packet_count(void);
+uint64_t network_stack_packet_drop_count(void);
+uint64_t network_stack_packet_lifecycle_count(void);
 uint64_t network_stack_udp_latency_p50_ns(void);
 uint64_t network_stack_udp_latency_p95_ns(void);
 uint64_t network_stack_udp_latency_p99_ns(void);
+uint64_t network_stack_udp_latency_p999_ns(void);
 uint64_t network_stack_tcp_latency_p50_ns(void);
 uint64_t network_stack_tcp_latency_p95_ns(void);
 uint64_t network_stack_tcp_latency_p99_ns(void);
+uint64_t network_stack_tcp_latency_p999_ns(void);
 void network_stack_self_test(void);
 
 #endif

@@ -83,17 +83,19 @@ Goal: move beyond parser smoke paths into queue-backed packet flow.
 
 Required work:
 
-- [ ] Add queue-backed RX/TX packet ownership.
-- [ ] Add UDP flow table with per-core ownership.
-- [ ] Add minimal TCP state machine and timeouts.
-- [ ] Add packet lifetime/drop counters.
-- [ ] Preserve malformed packet tests.
-- [ ] Emit p50/p95/p99/p999 correctness telemetry.
+- [x] Add queue-backed RX/TX packet ownership.
+- [x] Add UDP flow table with per-core ownership.
+- [x] Add minimal TCP state machine and timeouts.
+- [x] Add packet lifetime/drop counters.
+- [x] Preserve malformed packet tests.
+- [x] Emit p50/p95/p99/p999 correctness telemetry.
 
 Definition of done:
 
 - QEMU network smoke proves packets move through queue metadata, not only
   parser fixtures.
+- `make qemu-smoke` requires queue-backed packet lifecycle telemetry,
+  UDP flow ownership, TCP timeout accounting, and p999 latency fields.
 
 ## Phase Q5: CPU-Only AI Runtime Depth
 

@@ -64,8 +64,16 @@ def main() -> int:
         "network_udp_rx",
         "network_udp_malformed",
         "network_udp_dropped",
+        "network_udp_flows",
         "network_tcp_connections",
+        "network_tcp_timeouts",
+        "network_rx_packets",
+        "network_tx_packets",
+        "network_packet_drops",
+        "network_packet_lifecycle",
         "network_queue_bindings",
+        "network_udp_p999",
+        "network_tcp_p999",
         "ai_cell_transitions",
         "migration_total",
         "context_switch_total",
@@ -98,8 +106,14 @@ def main() -> int:
         "no_hot_path_migration": telemetry["migration_total"] == 0,
         "no_hot_path_context_switches": telemetry["context_switch_total"] == 0,
         "udp_path_exercised": telemetry["network_udp_tx"] >= 1
-        and telemetry["network_udp_rx"] >= 1,
-        "tcp_path_exercised": telemetry["network_tcp_connections"] >= 1,
+        and telemetry["network_udp_rx"] >= 1
+        and telemetry["network_udp_flows"] >= 1,
+        "tcp_path_exercised": telemetry["network_tcp_connections"] >= 1
+        and telemetry["network_tcp_timeouts"] >= 1,
+        "queue_backed_packet_flow": telemetry["network_rx_packets"] >= 4
+        and telemetry["network_tx_packets"] >= 4
+        and telemetry["network_packet_drops"] >= 2
+        and telemetry["network_packet_lifecycle"] >= 12,
         "child_service_supervised": telemetry["service_child_descriptors"] >= 1
         and telemetry["service_transitions"] >= 8,
         "userspace_control_plane_active": telemetry["control_plane_syscalls"] >= 8
