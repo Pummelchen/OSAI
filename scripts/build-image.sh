@@ -150,6 +150,7 @@ KERNEL_OBJECTS="
   $KERNEL_BUILD_DIR/model_arena.o
   $KERNEL_BUILD_DIR/ai_cell.o
   $KERNEL_BUILD_DIR/pmm.o
+  $KERNEL_BUILD_DIR/arena.o
   $KERNEL_BUILD_DIR/kheap.o
   $KERNEL_BUILD_DIR/mmu.o
 "
@@ -176,6 +177,7 @@ KERNEL_OBJECTS="
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/model_arena.c" -o "$KERNEL_BUILD_DIR/model_arena.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/ai_cell.c" -o "$KERNEL_BUILD_DIR/ai_cell.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/mm/pmm.c" -o "$KERNEL_BUILD_DIR/pmm.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/mm/arena.c" -o "$KERNEL_BUILD_DIR/arena.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/mm/kheap.c" -o "$KERNEL_BUILD_DIR/kheap.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/mmu.c" -o "$KERNEL_BUILD_DIR/mmu.o"
 

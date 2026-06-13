@@ -1,18 +1,19 @@
+#include <osai/arena.h>
 #include <osai/ai_cell.h>
 #include <osai/assert.h>
 #include <osai/core_lease.h>
-#include <osai/kheap.h>
 #include <osai/klog.h>
 #include <osai/model_arena.h>
-#include <osai/pmm.h>
-#include <osai/vmm.h>
 
 #define MAX_AI_CELLS 4U
-#define PAGE_SIZE UINT64_C(4096)
 #define MAX_NIC_QUEUES 4U
 #define MAX_WORKSPACES 2U
-#define CELL_ARENA_BASE UINT64_C(0x49000000)
-#define CELL_ARENA_STRIDE UINT64_C(0x00400000)
+#define CELL_KV_ARENA_BASE 4U
+#define CELL_SOURCE_ARENA_BASE 8U
+#define CELL_BUILD_ARENA_BASE 12U
+#define CELL_LOG_ARENA_BASE 16U
+#define CELL_BUILD_OUTPUT_BYTES UINT64_C(65536)
+#define CELL_LOG_BYTES UINT64_C(65536)
 
 static osai_ai_cell_t g_ai_cells[MAX_AI_CELLS];
 static uint8_t g_nic_queue_owner[MAX_NIC_QUEUES];
@@ -52,10 +53,6 @@ static osai_status_t validate_manifest(const osai_ai_cell_manifest_t *manifest) 
   return OSAI_OK;
 }
 
-static uint64_t align_up(uint64_t value, uint64_t align) {
-  return (value + align - 1) & ~(align - 1);
-}
-
 static osai_status_t bind_nic_queue(uint32_t cell_id, uint32_t queue_id) {
   if (queue_id >= MAX_NIC_QUEUES || g_nic_queue_owner[queue_id] != 0) {
     return OSAI_ERR_BUSY;
@@ -87,49 +84,74 @@ static void release_workspace(uint32_t cell_id, uint32_t workspace_id) {
   }
 }
 
-static void release_memory_reservation(osai_ai_cell_t *cell) {
-  if (cell->reserved_pages == 0) {
-    return;
+static void destroy_cell_arenas(osai_ai_cell_t *cell) {
+  if (cell->kv_cache_arena_id != 0) {
+    kassert(arena_destroy(cell->kv_cache_arena_id) == OSAI_OK);
   }
-  uint64_t base = CELL_ARENA_BASE + ((uint64_t)cell->cell_id * CELL_ARENA_STRIDE);
-  for (uint64_t i = 0; i < cell->reserved_page_count; ++i) {
-    uint64_t va = base + (i * PAGE_SIZE);
-    kassert(vmm_unmap_page(va) == OSAI_OK);
-    if (cell->reserved_pages[i] != 0) {
-      pmm_free_page(cell->reserved_pages[i]);
-    }
+  if (cell->source_index_arena_id != 0) {
+    kassert(arena_destroy(cell->source_index_arena_id) == OSAI_OK);
   }
-  cell->reserved_pages = 0;
-  cell->reserved_page_count = 0;
+  if (cell->build_output_arena_id != 0) {
+    kassert(arena_destroy(cell->build_output_arena_id) == OSAI_OK);
+  }
+  if (cell->log_arena_id != 0) {
+    kassert(arena_destroy(cell->log_arena_id) == OSAI_OK);
+  }
+  cell->kv_cache_arena_id = 0;
+  cell->source_index_arena_id = 0;
+  cell->build_output_arena_id = 0;
+  cell->log_arena_id = 0;
   cell->kv_cache_base = 0;
   cell->source_index_base = 0;
+  cell->build_output_base = 0;
+  cell->log_base = 0;
 }
 
 static osai_status_t reserve_memory_arenas(osai_ai_cell_t *cell) {
-  uint64_t kv_bytes = align_up(cell->manifest.kv_cache_bytes, PAGE_SIZE);
-  uint64_t source_bytes = align_up(cell->manifest.source_index_bytes, PAGE_SIZE);
-  uint64_t page_count = (kv_bytes + source_bytes) / PAGE_SIZE;
-  void **pages = (void **)kheap_calloc(sizeof(void *) * page_count, 16);
-  if (pages == 0) {
+  const osai_arena_t *kv = 0;
+  const osai_arena_t *source = 0;
+  const osai_arena_t *build = 0;
+  const osai_arena_t *log = 0;
+  uint32_t kv_id = CELL_KV_ARENA_BASE + cell->cell_id;
+  uint32_t source_id = CELL_SOURCE_ARENA_BASE + cell->cell_id;
+  uint32_t build_id = CELL_BUILD_ARENA_BASE + cell->cell_id;
+  uint32_t log_id = CELL_LOG_ARENA_BASE + cell->cell_id;
+
+  if (arena_create(kv_id, OSAI_ARENA_KV_CACHE, cell->cell_id,
+                   "cell-kv-cache", cell->manifest.kv_cache_bytes, 0,
+                   &kv) != OSAI_OK) {
+    destroy_cell_arenas(cell);
     return OSAI_ERR_NO_MEMORY;
   }
+  cell->kv_cache_arena_id = kv_id;
 
-  uint64_t base = CELL_ARENA_BASE + ((uint64_t)cell->cell_id * CELL_ARENA_STRIDE);
-  cell->reserved_pages = pages;
-  cell->reserved_page_count = page_count;
-  cell->kv_cache_base = base;
-  cell->source_index_base = base + kv_bytes;
-
-  for (uint64_t i = 0; i < page_count; ++i) {
-    pages[i] = pmm_alloc_page();
-    if (pages[i] == 0 ||
-        vmm_map_page(base + (i * PAGE_SIZE), (uint64_t)(uintptr_t)pages[i],
-                     OSAI_VMM_PRESENT | OSAI_VMM_WRITABLE) != OSAI_OK) {
-      release_memory_reservation(cell);
-      return OSAI_ERR_NO_MEMORY;
-    }
+  if (arena_create(source_id, OSAI_ARENA_SOURCE_INDEX, cell->cell_id,
+                   "cell-source-index", cell->manifest.source_index_bytes, 0,
+                   &source) != OSAI_OK) {
+    destroy_cell_arenas(cell);
+    return OSAI_ERR_NO_MEMORY;
   }
+  cell->source_index_arena_id = source_id;
 
+  if (arena_create(build_id, OSAI_ARENA_BUILD_OUTPUT, cell->cell_id,
+                   "cell-build-output", CELL_BUILD_OUTPUT_BYTES, 0,
+                   &build) != OSAI_OK) {
+    destroy_cell_arenas(cell);
+    return OSAI_ERR_NO_MEMORY;
+  }
+  cell->build_output_arena_id = build_id;
+
+  if (arena_create(log_id, OSAI_ARENA_LOG, cell->cell_id, "cell-log",
+                   CELL_LOG_BYTES, 0, &log) != OSAI_OK) {
+    destroy_cell_arenas(cell);
+    return OSAI_ERR_NO_MEMORY;
+  }
+  cell->log_arena_id = log_id;
+
+  cell->kv_cache_base = kv->base;
+  cell->source_index_base = source->base;
+  cell->build_output_base = build->base;
+  cell->log_base = log->base;
   return OSAI_OK;
 }
 
@@ -157,10 +179,14 @@ void ai_cell_runtime_init(void) {
     g_ai_cells[i].cell_id = i;
     g_ai_cells[i].state = OSAI_AI_CELL_EMPTY;
     g_ai_cells[i].lifecycle_generation = 0;
-    g_ai_cells[i].reserved_pages = 0;
-    g_ai_cells[i].reserved_page_count = 0;
+    g_ai_cells[i].kv_cache_arena_id = 0;
+    g_ai_cells[i].source_index_arena_id = 0;
+    g_ai_cells[i].build_output_arena_id = 0;
+    g_ai_cells[i].log_arena_id = 0;
     g_ai_cells[i].kv_cache_base = 0;
     g_ai_cells[i].source_index_base = 0;
+    g_ai_cells[i].build_output_base = 0;
+    g_ai_cells[i].log_base = 0;
   }
   klog("ai-cell: runtime initialized\n");
 }
@@ -213,9 +239,9 @@ osai_status_t ai_cell_prepare(uint32_t cell_id) {
 
   cell->state = OSAI_AI_CELL_READY;
   ++g_transition_count;
-  klog("ai-cell: %u ready shared_model=%s refs=%u kv=0x%lx source=0x%lx pages=%lu nic_queue=%u workspace=%u\n",
+  klog("ai-cell: %u ready shared_model=%s refs=%u kv=0x%lx source=0x%lx build=0x%lx log=0x%lx nic_queue=%u workspace=%u\n",
        cell_id, arena->name, arena->ref_count, cell->kv_cache_base,
-       cell->source_index_base, cell->reserved_page_count,
+       cell->source_index_base, cell->build_output_base, cell->log_base,
        cell->manifest.nic_queue_id, cell->manifest.git_workspace_id);
   return OSAI_OK;
 }
@@ -242,7 +268,7 @@ osai_status_t ai_cell_stop(uint32_t cell_id) {
   kassert(core_lease_release(cell_id) == OSAI_OK);
   release_nic_queue(cell_id, cell->manifest.nic_queue_id);
   release_workspace(cell_id, cell->manifest.git_workspace_id);
-  release_memory_reservation(cell);
+  destroy_cell_arenas(cell);
   cell->state = OSAI_AI_CELL_STOPPED;
   ++g_transition_count;
   klog("ai-cell: %u stopped\n", cell_id);

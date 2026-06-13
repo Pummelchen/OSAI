@@ -28,10 +28,14 @@ typedef struct osai_ai_cell {
   osai_ai_cell_state_t state;
   osai_ai_cell_manifest_t manifest;
   uint64_t lifecycle_generation;
-  void **reserved_pages;
-  uint64_t reserved_page_count;
+  uint32_t kv_cache_arena_id;
+  uint32_t source_index_arena_id;
+  uint32_t build_output_arena_id;
+  uint32_t log_arena_id;
   uint64_t kv_cache_base;
   uint64_t source_index_base;
+  uint64_t build_output_base;
+  uint64_t log_base;
 } osai_ai_cell_t;
 
 void ai_cell_runtime_init(void);
