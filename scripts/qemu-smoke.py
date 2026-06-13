@@ -38,9 +38,14 @@ TARGETS = [
     "user: rejected syscall=1",
     "/init: bad syscall tests passed",
     "/init: hello from ELF",
+    "service-manager: configured /init restart=never log=serial max_restarts=0",
+    "service-manager: log /init manager-ready records=1",
+    "/init: service manager policy ready",
+    "service-manager: restart denied /init policy=never attempts=1",
+    "/init: restart denied by policy",
     "service: /init state=running",
     "/init: service setup complete",
-    "rejected=2",
+    "rejected=3",
     "user: /init exited status=0",
 ]
 

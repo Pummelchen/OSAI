@@ -27,6 +27,38 @@ _start:
   mov x8, #1
   svc #0
 
+  adr x0, cmd_configure
+  mov x1, #63
+  mov x8, #3
+  svc #0
+
+  adr x0, cmd_log_ready
+  mov x1, #31
+  mov x8, #3
+  svc #0
+
+  adr x0, msg_policy_ready
+  mov x1, #36
+  mov x8, #1
+  svc #0
+
+  adr x0, cmd_status
+  mov x1, #20
+  mov x8, #3
+  svc #0
+
+  adr x0, cmd_restart
+  mov x1, #21
+  mov x8, #3
+  svc #0
+  cmn x0, #1
+  b.ne manager_policy_failed
+
+  adr x0, msg_restart_denied
+  mov x1, #32
+  mov x8, #1
+  svc #0
+
   adr x0, cmd_start
   mov x1, #19
   mov x8, #3
@@ -60,13 +92,35 @@ bad_syscall_failed:
   svc #0
   b 1b
 
+manager_policy_failed:
+  adr x0, msg_manager_failed
+  mov x1, #36
+  mov x8, #1
+  svc #0
+  mov x0, #1
+  mov x8, #2
+  svc #0
+  b 1b
+
 .section .rodata, "a"
 msg_bad_syscalls:
   .ascii "/init: bad syscall tests passed\n"
 msg_bad_failed:
   .ascii "/init: bad syscall tests failed\n"
+msg_manager_failed:
+  .ascii "/init: service manager policy failed\n"
 msg_start:
   .ascii "/init: hello from ELF\n"
+msg_policy_ready:
+  .ascii "/init: service manager policy ready\n"
+msg_restart_denied:
+  .ascii "/init: restart denied by policy\n"
+cmd_configure:
+  .ascii "service configure /init restart=never log=serial max_restarts=0"
+cmd_log_ready:
+  .ascii "service log /init manager-ready"
+cmd_restart:
+  .ascii "service restart /init"
 cmd_start:
   .ascii "service start /init"
 cmd_status:

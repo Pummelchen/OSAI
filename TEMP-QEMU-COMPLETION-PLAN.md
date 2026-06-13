@@ -4,7 +4,7 @@ This file is a working plan for moving OSAI from the current QEMU status through
 
 ## Current Baseline
 
-Current baseline is QEMU milestone 18: AArch64 UEFI boot, PMM/VMM, exceptions, SMP, split VirtIO block/net, versioned VirtIO-backed read-only filesystem metadata, parsed config manifest, real EL0 `/init` ELF selected from the manifest, explicit syscall table, process/capability metadata, user pointer validation, bad syscall tests, syscall service control, VMM-backed heap, AI Cell resource MVP, structured boot telemetry, and `make qemu-smoke`.
+Current baseline is QEMU milestone 19: AArch64 UEFI boot, PMM/VMM, exceptions, SMP, split VirtIO block/net, versioned VirtIO-backed read-only filesystem metadata, parsed config manifest, real EL0 `/init` ELF selected from the manifest, explicit syscall table, process/capability metadata, user pointer validation, bad syscall tests, userspace service-manager policy, syscall service control, VMM-backed heap, AI Cell resource MVP, structured boot telemetry, and `make qemu-smoke`.
 
 ## Milestone Plan
 
@@ -45,4 +45,4 @@ Current baseline is QEMU milestone 18: AArch64 UEFI boot, PMM/VMM, exceptions, S
 
 ## Current Work Slice
 
-The next code slice is milestone 19: move service-manager policy out of kernel-hosted test logic and into a userspace service-manager shape with restart, status, and log policy metadata.
+The next code slice is milestone 20: add build/test sandbox metadata, workspace directories, build artifact arena wiring, sandbox manifest validation, and rollback metadata.

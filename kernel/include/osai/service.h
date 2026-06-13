@@ -14,9 +14,13 @@ typedef enum osai_service_state {
 
 typedef struct osai_service {
   const char *name;
+  const char *restart_policy;
+  const char *log_policy;
   osai_service_state_t state;
   int exit_code;
   uint64_t starts;
+  uint64_t restart_attempts;
+  uint64_t log_records;
 } osai_service_t;
 
 void service_supervisor_init(void);
