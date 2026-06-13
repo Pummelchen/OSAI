@@ -3,12 +3,16 @@
 #include <osai/boot_info.h>
 #include <osai/exception.h>
 #include <osai/gic.h>
+#include <osai/initramfs.h>
+#include <osai/kheap.h>
 #include <osai/klog.h>
 #include <osai/model_arena.h>
 #include <osai/pmm.h>
 #include <osai/service.h>
 #include <osai/smp.h>
+#include <osai/telemetry.h>
 #include <osai/timer.h>
+#include <osai/user.h>
 #include <osai/virtio_mmio.h>
 #include <osai/vmm.h>
 
@@ -34,11 +38,13 @@ void kmain(const osai_boot_info_t *boot) {
   smp_self_test();
   virtio_block_self_test();
   virtio_net_self_test();
+  initramfs_self_test();
   service_supervisor_self_test();
   model_arena_self_test();
   ai_cell_self_test();
 
   pmm_init(boot);
+  kheap_self_test();
 
   vmm_init(boot);
   uint64_t translated = 0;
@@ -62,9 +68,18 @@ void kmain(const osai_boot_info_t *boot) {
   klog("VMM translation test passed\n");
   gic_init_qemu_virt();
   gic_self_test();
+  telemetry_emit_boot_summary();
 
 #if defined(OSAI_FAULT_TEST_PAGE)
   exception_trigger_page_fault_for_test();
+#elif defined(OSAI_FAULT_TEST_RO)
+  klog("exceptions: triggering controlled rodata write fault\n");
+  volatile char *ro = (volatile char *)(uintptr_t)g_vmm_rodata_probe;
+  *ro = 'X';
+#elif defined(OSAI_FAULT_TEST_NX)
+  klog("exceptions: triggering controlled NX execute fault\n");
+  void (*bad_exec)(void) = (void (*)(void))(uintptr_t)&g_vmm_data_probe;
+  bad_exec();
 #endif
 
   void *pages[1024];
@@ -77,7 +92,7 @@ void kmain(const osai_boot_info_t *boot) {
   }
 
   klog("PMM 1024 page allocate/free test passed\n");
-  klog("OSAI kernel idle\n");
+  user_init_run();
 
   for (;;) {
     __asm__ volatile("wfe");

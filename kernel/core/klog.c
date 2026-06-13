@@ -31,6 +31,12 @@ void klog_puts(const char *message) {
   }
 }
 
+void klog_write(const char *message, uint64_t length) {
+  for (uint64_t i = 0; i < length; ++i) {
+    klog_char(message[i]);
+  }
+}
+
 static void klog_u64(uint64_t value, unsigned base) {
   char buffer[32];
   unsigned index = 0;

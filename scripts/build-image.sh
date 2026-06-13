@@ -112,9 +112,16 @@ KERNEL_CFLAGS="
   -I$ROOT_DIR/kernel/include
 "
 
-if [ "${OSAI_FAULT_TEST:-}" = "page" ]; then
-  KERNEL_CFLAGS="$KERNEL_CFLAGS -DOSAI_FAULT_TEST_PAGE=1"
-fi
+case "${OSAI_FAULT_TEST:-}" in
+  "") ;;
+  page) KERNEL_CFLAGS="$KERNEL_CFLAGS -DOSAI_FAULT_TEST_PAGE=1" ;;
+  ro) KERNEL_CFLAGS="$KERNEL_CFLAGS -DOSAI_FAULT_TEST_RO=1" ;;
+  nx) KERNEL_CFLAGS="$KERNEL_CFLAGS -DOSAI_FAULT_TEST_NX=1" ;;
+  *)
+    printf '%s\n' "error: unsupported OSAI_FAULT_TEST=${OSAI_FAULT_TEST}" >&2
+    exit 2
+    ;;
+esac
 
 KERNEL_OBJECTS="
   $KERNEL_BUILD_DIR/entry.o
@@ -122,6 +129,7 @@ KERNEL_OBJECTS="
   $KERNEL_BUILD_DIR/vectors.o
   $KERNEL_BUILD_DIR/kmain.o
   $KERNEL_BUILD_DIR/klog.o
+  $KERNEL_BUILD_DIR/telemetry.o
   $KERNEL_BUILD_DIR/panic.o
   $KERNEL_BUILD_DIR/assert.o
   $KERNEL_BUILD_DIR/exception.o
@@ -129,10 +137,15 @@ KERNEL_OBJECTS="
   $KERNEL_BUILD_DIR/gic.o
   $KERNEL_BUILD_DIR/smp.o
   $KERNEL_BUILD_DIR/virtio_mmio.o
+  $KERNEL_BUILD_DIR/initramfs.o
   $KERNEL_BUILD_DIR/service.o
+  $KERNEL_BUILD_DIR/core_lease.o
+  $KERNEL_BUILD_DIR/init.o
+  $KERNEL_BUILD_DIR/user.o
   $KERNEL_BUILD_DIR/model_arena.o
   $KERNEL_BUILD_DIR/ai_cell.o
   $KERNEL_BUILD_DIR/pmm.o
+  $KERNEL_BUILD_DIR/kheap.o
   $KERNEL_BUILD_DIR/mmu.o
 "
 
@@ -141,6 +154,7 @@ KERNEL_OBJECTS="
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/vectors.S" -o "$KERNEL_BUILD_DIR/vectors.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/core/kmain.c" -o "$KERNEL_BUILD_DIR/kmain.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/core/klog.c" -o "$KERNEL_BUILD_DIR/klog.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/core/telemetry.c" -o "$KERNEL_BUILD_DIR/telemetry.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/core/panic.c" -o "$KERNEL_BUILD_DIR/panic.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/core/assert.c" -o "$KERNEL_BUILD_DIR/assert.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/exception.c" -o "$KERNEL_BUILD_DIR/exception.o"
@@ -148,10 +162,15 @@ KERNEL_OBJECTS="
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/gic.c" -o "$KERNEL_BUILD_DIR/gic.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/smp.c" -o "$KERNEL_BUILD_DIR/smp.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/dev/virtio/virtio_mmio.c" -o "$KERNEL_BUILD_DIR/virtio_mmio.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/fs/initramfs.c" -o "$KERNEL_BUILD_DIR/initramfs.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/user/service.c" -o "$KERNEL_BUILD_DIR/service.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/core_lease.c" -o "$KERNEL_BUILD_DIR/core_lease.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/user/init.S" -o "$KERNEL_BUILD_DIR/init.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/user/user.c" -o "$KERNEL_BUILD_DIR/user.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/model_arena.c" -o "$KERNEL_BUILD_DIR/model_arena.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/ai_cell.c" -o "$KERNEL_BUILD_DIR/ai_cell.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/mm/pmm.c" -o "$KERNEL_BUILD_DIR/pmm.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/mm/kheap.c" -o "$KERNEL_BUILD_DIR/kheap.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/mmu.c" -o "$KERNEL_BUILD_DIR/mmu.o"
 
 "$LD_LLD" \

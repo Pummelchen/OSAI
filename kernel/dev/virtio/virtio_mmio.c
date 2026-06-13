@@ -5,6 +5,8 @@
 #define VIRTIO_MMIO_BASE UINT64_C(0x0a000000)
 #define VIRTIO_MMIO_STRIDE UINT64_C(0x200)
 #define VIRTIO_MMIO_SLOTS 32U
+#define VIRTQ_SIZE 8U
+#define VIRTIO_SPIN_LIMIT UINT64_C(10000000)
 
 #define VIRTIO_MMIO_MAGIC 0x000U
 #define VIRTIO_MMIO_VERSION 0x004U
@@ -53,7 +55,7 @@ typedef struct virtq_desc {
 typedef struct virtq_avail {
   uint16_t flags;
   uint16_t idx;
-  uint16_t ring[8];
+  uint16_t ring[VIRTQ_SIZE];
 } virtq_avail_t;
 
 typedef struct virtq_used_elem {
@@ -64,7 +66,7 @@ typedef struct virtq_used_elem {
 typedef struct virtq_used {
   uint16_t flags;
   uint16_t idx;
-  virtq_used_elem_t ring[8];
+  virtq_used_elem_t ring[VIRTQ_SIZE];
 } virtq_used_t;
 
 typedef struct virtio_blk_req {
@@ -73,17 +75,17 @@ typedef struct virtio_blk_req {
   uint64_t sector;
 } virtio_blk_req_t;
 
-static virtq_desc_t g_blk_desc[8] __attribute__((aligned(16)));
+static virtq_desc_t g_blk_desc[VIRTQ_SIZE] __attribute__((aligned(16)));
 static virtq_avail_t g_blk_avail __attribute__((aligned(2)));
 static virtq_used_t g_blk_used __attribute__((aligned(4)));
 static virtio_blk_req_t g_blk_req __attribute__((aligned(16)));
 static uint8_t g_blk_sector[512] __attribute__((aligned(16)));
 static uint8_t g_blk_status __attribute__((aligned(16)));
 
-static virtq_desc_t g_net_rx_desc[8] __attribute__((aligned(16)));
+static virtq_desc_t g_net_rx_desc[VIRTQ_SIZE] __attribute__((aligned(16)));
 static virtq_avail_t g_net_rx_avail __attribute__((aligned(2)));
 static virtq_used_t g_net_rx_used __attribute__((aligned(4)));
-static virtq_desc_t g_net_tx_desc[8] __attribute__((aligned(16)));
+static virtq_desc_t g_net_tx_desc[VIRTQ_SIZE] __attribute__((aligned(16)));
 static virtq_avail_t g_net_tx_avail __attribute__((aligned(2)));
 static virtq_used_t g_net_tx_used __attribute__((aligned(4)));
 static uint8_t g_net_rx_packet[2048] __attribute__((aligned(16)));
@@ -103,31 +105,16 @@ static void mmio_barrier(void) {
   __asm__ volatile("dsb sy" ::: "memory");
 }
 
-static uint64_t find_block_device(void) {
+static uint64_t find_device(uint32_t expected_device_id, const char *log_name) {
   for (uint32_t slot = 0; slot < VIRTIO_MMIO_SLOTS; ++slot) {
     uint64_t base = VIRTIO_MMIO_BASE + (slot * VIRTIO_MMIO_STRIDE);
     uint32_t magic = mmio_read32(base, VIRTIO_MMIO_MAGIC);
     uint32_t version = mmio_read32(base, VIRTIO_MMIO_VERSION);
     uint32_t device_id = mmio_read32(base, VIRTIO_MMIO_DEVICE_ID);
-    if (magic == VIRTIO_MAGIC && version >= 2 && device_id == VIRTIO_DEVICE_BLOCK) {
-      klog("virtio-blk: mmio base=0x%lx version=%u vendor=0x%x\n",
-           base, version, mmio_read32(base, VIRTIO_MMIO_VENDOR_ID));
-      return base;
-    }
-  }
-
-  return 0;
-}
-
-static uint64_t find_net_device(void) {
-  for (uint32_t slot = 0; slot < VIRTIO_MMIO_SLOTS; ++slot) {
-    uint64_t base = VIRTIO_MMIO_BASE + (slot * VIRTIO_MMIO_STRIDE);
-    uint32_t magic = mmio_read32(base, VIRTIO_MMIO_MAGIC);
-    uint32_t version = mmio_read32(base, VIRTIO_MMIO_VERSION);
-    uint32_t device_id = mmio_read32(base, VIRTIO_MMIO_DEVICE_ID);
-    if (magic == VIRTIO_MAGIC && version >= 2 && device_id == VIRTIO_DEVICE_NET) {
-      klog("virtio-net: mmio base=0x%lx version=%u vendor=0x%x\n",
-           base, version, mmio_read32(base, VIRTIO_MMIO_VENDOR_ID));
+    if (magic == VIRTIO_MAGIC && version >= 2 &&
+        device_id == expected_device_id) {
+      klog("%s: mmio base=0x%lx version=%u vendor=0x%x\n",
+           log_name, base, version, mmio_read32(base, VIRTIO_MMIO_VENDOR_ID));
       return base;
     }
   }
@@ -138,6 +125,28 @@ static uint64_t find_net_device(void) {
 static void set_status(uint64_t base, uint32_t status) {
   mmio_write32(base, VIRTIO_MMIO_STATUS, status);
   mmio_barrier();
+}
+
+static void negotiate_no_features(uint64_t base) {
+  set_status(base, 0);
+  set_status(base, VIRTIO_STATUS_ACKNOWLEDGE);
+  set_status(base, VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER);
+
+  mmio_write32(base, VIRTIO_MMIO_DEVICE_FEATURES_SEL, 0);
+  mmio_write32(base, VIRTIO_MMIO_DRIVER_FEATURES_SEL, 0);
+  mmio_write32(base, VIRTIO_MMIO_DRIVER_FEATURES, 0);
+  set_status(base, VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER |
+                       VIRTIO_STATUS_FEATURES_OK);
+  uint32_t status = mmio_read32(base, VIRTIO_MMIO_STATUS);
+  if ((status & VIRTIO_STATUS_FEATURES_OK) == 0) {
+    set_status(base, status | VIRTIO_STATUS_FAILED);
+    kassert(0);
+  }
+}
+
+static void set_driver_ok(uint64_t base) {
+  set_status(base, VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER |
+                       VIRTIO_STATUS_FEATURES_OK | VIRTIO_STATUS_DRIVER_OK);
 }
 
 static void write_addr_pair(uint64_t base, uint32_t low_offset, uint32_t high_offset,
@@ -151,6 +160,13 @@ static void zero_bytes(void *buffer, uint64_t size) {
   for (uint64_t i = 0; i < size; ++i) {
     bytes[i] = 0;
   }
+}
+
+static void clear_queue(virtq_desc_t *desc, virtq_avail_t *avail,
+                        virtq_used_t *used) {
+  zero_bytes(desc, sizeof(virtq_desc_t) * VIRTQ_SIZE);
+  zero_bytes(avail, sizeof(*avail));
+  zero_bytes(used, sizeof(*used));
 }
 
 static void setup_queue(uint64_t base, uint32_t queue_index, uint32_t queue_size,
@@ -167,6 +183,28 @@ static void setup_queue(uint64_t base, uint32_t queue_index, uint32_t queue_size
   write_addr_pair(base, VIRTIO_MMIO_QUEUE_DEVICE_LOW, VIRTIO_MMIO_QUEUE_DEVICE_HIGH,
                   (uint64_t)(uintptr_t)used);
   mmio_write32(base, VIRTIO_MMIO_QUEUE_READY, 1);
+}
+
+static void notify_queue(uint64_t base, uint32_t queue_index) {
+  mmio_barrier();
+  mmio_write32(base, VIRTIO_MMIO_QUEUE_NOTIFY, queue_index);
+}
+
+static int wait_used_idx(volatile uint16_t *used_idx, uint16_t expected) {
+  for (uint64_t spin = 0; spin < VIRTIO_SPIN_LIMIT; ++spin) {
+    if (*used_idx >= expected) {
+      return 1;
+    }
+    __asm__ volatile("yield");
+  }
+  return 0;
+}
+
+static void ack_interrupts(uint64_t base) {
+  uint32_t interrupt_status = mmio_read32(base, VIRTIO_MMIO_INTERRUPT_STATUS);
+  if (interrupt_status != 0) {
+    mmio_write32(base, VIRTIO_MMIO_INTERRUPT_ACK, interrupt_status);
+  }
 }
 
 static void put_be16(uint8_t *dst, uint16_t value) {
@@ -228,54 +266,15 @@ static int is_expected_arp_reply(const uint8_t *packet, uint32_t len) {
 }
 
 void virtio_block_self_test(void) {
-  uint64_t base = find_block_device();
+  uint64_t base = find_device(VIRTIO_DEVICE_BLOCK, "virtio-blk");
   kassert(base != 0);
 
-  set_status(base, 0);
-  set_status(base, VIRTIO_STATUS_ACKNOWLEDGE);
-  set_status(base, VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER);
-
-  mmio_write32(base, VIRTIO_MMIO_DEVICE_FEATURES_SEL, 0);
-  mmio_write32(base, VIRTIO_MMIO_DRIVER_FEATURES_SEL, 0);
-  mmio_write32(base, VIRTIO_MMIO_DRIVER_FEATURES, 0);
-  set_status(base, VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER |
-                       VIRTIO_STATUS_FEATURES_OK);
-  uint32_t status = mmio_read32(base, VIRTIO_MMIO_STATUS);
-  if ((status & VIRTIO_STATUS_FEATURES_OK) == 0) {
-    set_status(base, status | VIRTIO_STATUS_FAILED);
-    kassert(0);
-  }
-
-  mmio_write32(base, VIRTIO_MMIO_QUEUE_SEL, 0);
-  uint32_t queue_max = mmio_read32(base, VIRTIO_MMIO_QUEUE_NUM_MAX);
-  kassert(queue_max >= 3);
-  mmio_write32(base, VIRTIO_MMIO_QUEUE_NUM, 8);
-
-  for (uint32_t i = 0; i < 8; ++i) {
-    g_blk_desc[i].addr = 0;
-    g_blk_desc[i].len = 0;
-    g_blk_desc[i].flags = 0;
-    g_blk_desc[i].next = 0;
-    g_blk_avail.ring[i] = 0;
-    g_blk_used.ring[i].id = 0;
-    g_blk_used.ring[i].len = 0;
-  }
-  g_blk_avail.flags = 0;
-  g_blk_avail.idx = 0;
-  g_blk_used.flags = 0;
-  g_blk_used.idx = 0;
-  for (uint32_t i = 0; i < sizeof(g_blk_sector); ++i) {
-    g_blk_sector[i] = 0;
-  }
+  negotiate_no_features(base);
+  clear_queue(g_blk_desc, &g_blk_avail, &g_blk_used);
+  zero_bytes(g_blk_sector, sizeof(g_blk_sector));
   g_blk_status = 0xffU;
 
-  write_addr_pair(base, VIRTIO_MMIO_QUEUE_DESC_LOW, VIRTIO_MMIO_QUEUE_DESC_HIGH,
-                  (uint64_t)(uintptr_t)g_blk_desc);
-  write_addr_pair(base, VIRTIO_MMIO_QUEUE_DRIVER_LOW, VIRTIO_MMIO_QUEUE_DRIVER_HIGH,
-                  (uint64_t)(uintptr_t)&g_blk_avail);
-  write_addr_pair(base, VIRTIO_MMIO_QUEUE_DEVICE_LOW, VIRTIO_MMIO_QUEUE_DEVICE_HIGH,
-                  (uint64_t)(uintptr_t)&g_blk_used);
-  mmio_write32(base, VIRTIO_MMIO_QUEUE_READY, 1);
+  setup_queue(base, 0, VIRTQ_SIZE, g_blk_desc, &g_blk_avail, &g_blk_used);
 
   g_blk_req.type = VIRTIO_BLK_T_IN;
   g_blk_req.reserved = 0;
@@ -296,21 +295,10 @@ void virtio_block_self_test(void) {
   g_blk_avail.ring[0] = 0;
   mmio_barrier();
   g_blk_avail.idx = 1;
-  mmio_barrier();
-  mmio_write32(base, VIRTIO_MMIO_QUEUE_NOTIFY, 0);
+  notify_queue(base, 0);
 
-  for (uint64_t spin = 0; spin < UINT64_C(10000000); ++spin) {
-    if (g_blk_used.idx == 1) {
-      break;
-    }
-    __asm__ volatile("yield");
-  }
-
-  if (mmio_read32(base, VIRTIO_MMIO_INTERRUPT_STATUS) != 0) {
-    mmio_write32(base, VIRTIO_MMIO_INTERRUPT_ACK,
-                 mmio_read32(base, VIRTIO_MMIO_INTERRUPT_STATUS));
-  }
-
+  kassert(wait_used_idx(&g_blk_used.idx, 1));
+  ack_interrupts(base);
   kassert(g_blk_used.idx == 1);
   kassert(g_blk_status == 0);
   kassert(g_blk_sector[0] == 'O');
@@ -321,38 +309,23 @@ void virtio_block_self_test(void) {
        (const char *)g_blk_sector, (unsigned)g_blk_status);
   klog("virtio-blk: read self-test passed\n");
 
-  set_status(base, VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER |
-                       VIRTIO_STATUS_FEATURES_OK | VIRTIO_STATUS_DRIVER_OK);
+  set_driver_ok(base);
 }
 
 void virtio_net_self_test(void) {
-  uint64_t base = find_net_device();
+  uint64_t base = find_device(VIRTIO_DEVICE_NET, "virtio-net");
   kassert(base != 0);
 
-  set_status(base, 0);
-  set_status(base, VIRTIO_STATUS_ACKNOWLEDGE);
-  set_status(base, VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER);
-  mmio_write32(base, VIRTIO_MMIO_DEVICE_FEATURES_SEL, 0);
-  mmio_write32(base, VIRTIO_MMIO_DRIVER_FEATURES_SEL, 0);
-  mmio_write32(base, VIRTIO_MMIO_DRIVER_FEATURES, 0);
-  set_status(base, VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER |
-                       VIRTIO_STATUS_FEATURES_OK);
-  kassert((mmio_read32(base, VIRTIO_MMIO_STATUS) & VIRTIO_STATUS_FEATURES_OK) != 0);
-
-  zero_bytes(g_net_rx_desc, sizeof(g_net_rx_desc));
-  zero_bytes(&g_net_rx_avail, sizeof(g_net_rx_avail));
-  zero_bytes(&g_net_rx_used, sizeof(g_net_rx_used));
-  zero_bytes(g_net_tx_desc, sizeof(g_net_tx_desc));
-  zero_bytes(&g_net_tx_avail, sizeof(g_net_tx_avail));
-  zero_bytes(&g_net_tx_used, sizeof(g_net_tx_used));
+  negotiate_no_features(base);
+  clear_queue(g_net_rx_desc, &g_net_rx_avail, &g_net_rx_used);
+  clear_queue(g_net_tx_desc, &g_net_tx_avail, &g_net_tx_used);
   zero_bytes(g_net_rx_packet, sizeof(g_net_rx_packet));
   zero_bytes(g_net_tx_packet, sizeof(g_net_tx_packet));
 
-  setup_queue(base, 0, 8, g_net_rx_desc, &g_net_rx_avail, &g_net_rx_used);
-  setup_queue(base, 1, 8, g_net_tx_desc, &g_net_tx_avail, &g_net_tx_used);
+  setup_queue(base, 0, VIRTQ_SIZE, g_net_rx_desc, &g_net_rx_avail, &g_net_rx_used);
+  setup_queue(base, 1, VIRTQ_SIZE, g_net_tx_desc, &g_net_tx_avail, &g_net_tx_used);
 
-  set_status(base, VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER |
-                       VIRTIO_STATUS_FEATURES_OK | VIRTIO_STATUS_DRIVER_OK);
+  set_driver_ok(base);
 
   g_net_rx_desc[0].addr = (uint64_t)(uintptr_t)g_net_rx_packet;
   g_net_rx_desc[0].len = sizeof(g_net_rx_packet);
@@ -360,8 +333,7 @@ void virtio_net_self_test(void) {
   g_net_rx_avail.ring[0] = 0;
   mmio_barrier();
   g_net_rx_avail.idx = 1;
-  mmio_barrier();
-  mmio_write32(base, VIRTIO_MMIO_QUEUE_NOTIFY, 0);
+  notify_queue(base, 0);
 
   uint64_t tx_len = 0;
   build_arp_request(g_net_tx_packet, &tx_len);
@@ -371,20 +343,11 @@ void virtio_net_self_test(void) {
   g_net_tx_avail.ring[0] = 0;
   mmio_barrier();
   g_net_tx_avail.idx = 1;
-  mmio_barrier();
-  mmio_write32(base, VIRTIO_MMIO_QUEUE_NOTIFY, 1);
+  notify_queue(base, 1);
 
-  for (uint64_t spin = 0; spin < UINT64_C(10000000); ++spin) {
-    if (g_net_tx_used.idx == 1 && g_net_rx_used.idx >= 1) {
-      break;
-    }
-    __asm__ volatile("yield");
-  }
-
-  uint32_t interrupt_status = mmio_read32(base, VIRTIO_MMIO_INTERRUPT_STATUS);
-  if (interrupt_status != 0) {
-    mmio_write32(base, VIRTIO_MMIO_INTERRUPT_ACK, interrupt_status);
-  }
+  kassert(wait_used_idx(&g_net_tx_used.idx, 1));
+  kassert(wait_used_idx(&g_net_rx_used.idx, 1));
+  ack_interrupts(base);
 
   kassert(g_net_tx_used.idx == 1);
   kassert(g_net_rx_used.idx >= 1);

@@ -13,6 +13,7 @@
 #define PTE_TABLE UINT64_C(1 << 1)
 #define PTE_ATTR_NORMAL UINT64_C(0 << 2)
 #define PTE_AP_RO UINT64_C(1 << 7)
+#define PTE_AP_EL0 UINT64_C(1 << 6)
 #define PTE_SH_INNER UINT64_C(3 << 8)
 #define PTE_AF UINT64_C(1 << 10)
 #define PTE_PXN UINT64_C(1) << 53
@@ -30,6 +31,12 @@ extern char __data_start[];
 extern char __data_end[];
 extern char __bss_start[];
 extern char __bss_end[];
+extern char __user_text_start[];
+extern char __user_text_end[];
+extern char __user_rodata_start[];
+extern char __user_rodata_end[];
+extern char __user_stack_start[];
+extern char __user_stack_end[];
 
 static uint64_t g_l0_table[512] __attribute__((aligned(PAGE_SIZE)));
 static uint64_t g_l1_table[512] __attribute__((aligned(PAGE_SIZE)));
@@ -78,11 +85,30 @@ static uint64_t normal_rx_attrs(void) {
   return PTE_ATTR_NORMAL | PTE_SH_INNER | PTE_UXN;
 }
 
+static uint64_t user_rx_attrs(void) {
+  return PTE_ATTR_NORMAL | PTE_SH_INNER | PTE_AP_EL0 | PTE_PXN;
+}
+
+static uint64_t user_ro_nx_attrs(void) {
+  return PTE_ATTR_NORMAL | PTE_SH_INNER | PTE_AP_EL0 | PTE_AP_RO |
+         PTE_PXN | PTE_UXN;
+}
+
+static uint64_t user_rw_nx_attrs(void) {
+  return PTE_ATTR_NORMAL | PTE_SH_INNER | PTE_AP_EL0 | PTE_PXN | PTE_UXN;
+}
+
 static int in_range(uint64_t value, uint64_t start, uint64_t end) {
   return value >= start && value < end;
 }
 
+static int overlaps(uint64_t start, uint64_t end, uint64_t used_start,
+                    uint64_t used_end) {
+  return start < used_end && used_start < end;
+}
+
 static uint64_t kernel_page_attrs(uint64_t address) {
+  uint64_t page_end = address + PAGE_SIZE;
   uint64_t text_start = (uint64_t)(uintptr_t)__text_start;
   uint64_t text_end = (uint64_t)(uintptr_t)__text_end;
   uint64_t rodata_start = (uint64_t)(uintptr_t)__rodata_start;
@@ -91,6 +117,22 @@ static uint64_t kernel_page_attrs(uint64_t address) {
   uint64_t data_end = (uint64_t)(uintptr_t)__data_end;
   uint64_t bss_start = (uint64_t)(uintptr_t)__bss_start;
   uint64_t bss_end = (uint64_t)(uintptr_t)__bss_end;
+  uint64_t user_text_start = (uint64_t)(uintptr_t)__user_text_start;
+  uint64_t user_text_end = (uint64_t)(uintptr_t)__user_text_end;
+  uint64_t user_rodata_start = (uint64_t)(uintptr_t)__user_rodata_start;
+  uint64_t user_rodata_end = (uint64_t)(uintptr_t)__user_rodata_end;
+  uint64_t user_stack_start = (uint64_t)(uintptr_t)__user_stack_start;
+  uint64_t user_stack_end = (uint64_t)(uintptr_t)__user_stack_end;
+
+  if (overlaps(address, page_end, user_text_start, user_text_end)) {
+    return user_rx_attrs();
+  }
+  if (overlaps(address, page_end, user_rodata_start, user_rodata_end)) {
+    return user_ro_nx_attrs();
+  }
+  if (overlaps(address, page_end, user_stack_start, user_stack_end)) {
+    return user_rw_nx_attrs();
+  }
 
   if (in_range(address, text_start, text_end)) {
     return normal_rx_attrs();

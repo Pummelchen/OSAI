@@ -6,14 +6,16 @@
 .macro vector_entry kind
   .balign 128
   msr daifset, #0xf
+  mov x4, x0
+  mov x5, x1
+  mov x6, x2
+  mov x7, x8
   mov x0, #\kind
   mrs x1, esr_el1
   mrs x2, elr_el1
   mrs x3, far_el1
   bl aarch64_exception_entry
-1:
-  wfe
-  b 1b
+  eret
 .endm
 
 __exception_vectors:

@@ -11,4 +11,5 @@ dist/
 *.dSYM/
 .DS_Store
 .cache/
+__pycache__/
 compile_commands.json

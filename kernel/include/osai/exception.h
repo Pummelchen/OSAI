@@ -25,7 +25,8 @@ typedef enum osai_exception_kind {
 void exception_init(void);
 void exception_self_test(void);
 void exception_trigger_page_fault_for_test(void);
-void aarch64_exception_entry(uint64_t kind, uint64_t esr, uint64_t elr,
-                             uint64_t far);
+uint64_t aarch64_exception_entry(uint64_t kind, uint64_t esr, uint64_t elr,
+                                 uint64_t far, uint64_t arg0, uint64_t arg1,
+                                 uint64_t arg2, uint64_t syscall);
 
 #endif

@@ -1,5 +1,6 @@
 #include <osai/ai_cell.h>
 #include <osai/assert.h>
+#include <osai/core_lease.h>
 #include <osai/klog.h>
 #include <osai/model_arena.h>
 
@@ -50,6 +51,7 @@ static void copy_manifest(osai_ai_cell_manifest_t *dst,
 }
 
 void ai_cell_runtime_init(void) {
+  core_lease_init();
   for (uint32_t i = 0; i < MAX_AI_CELLS; ++i) {
     g_ai_cells[i].cell_id = i;
     g_ai_cells[i].state = OSAI_AI_CELL_EMPTY;
@@ -84,6 +86,11 @@ osai_status_t ai_cell_prepare(uint32_t cell_id) {
     cell->state = OSAI_AI_CELL_FAILED;
     return OSAI_ERR_INVALID;
   }
+  if (core_lease_acquire(cell_id, cell->manifest.core_mask) != OSAI_OK) {
+    kassert(model_arena_release(cell->manifest.model_arena_id) == OSAI_OK);
+    cell->state = OSAI_AI_CELL_FAILED;
+    return OSAI_ERR_INVALID;
+  }
 
   cell->state = OSAI_AI_CELL_READY;
   klog("ai-cell: %u ready shared_model=%s refs=%u\n",
@@ -109,6 +116,7 @@ osai_status_t ai_cell_stop(uint32_t cell_id) {
   }
 
   kassert(model_arena_release(cell->manifest.model_arena_id) == OSAI_OK);
+  kassert(core_lease_release(cell_id) == OSAI_OK);
   cell->state = OSAI_AI_CELL_STOPPED;
   klog("ai-cell: %u stopped\n", cell_id);
   return OSAI_OK;
@@ -138,6 +146,18 @@ void ai_cell_self_test(void) {
   kassert(ai_cell_create(0, &manifest) == OSAI_OK);
   kassert(ai_cell_prepare(0) == OSAI_OK);
   kassert(ai_cell_start(0) == OSAI_OK);
+
+  osai_ai_cell_manifest_t conflict;
+  conflict.name = "conflict-agent";
+  conflict.core_mask = 0x2;
+  conflict.model_arena_id = 1;
+  conflict.kv_cache_bytes = 64 * 1024;
+  conflict.source_index_bytes = 128 * 1024;
+  conflict.nic_queue_id = 2;
+  conflict.git_workspace_id = 2;
+  kassert(ai_cell_create(1, &conflict) == OSAI_OK);
+  kassert(ai_cell_prepare(1) == OSAI_ERR_INVALID);
+
   kassert(ai_cell_stop(0) == OSAI_OK);
   klog("ai-cell: lifecycle self-test passed\n");
 }

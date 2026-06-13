@@ -8,6 +8,7 @@
 
 #define ESR_EC_UNKNOWN UINT64_C(0x00)
 #define ESR_EC_WFI_WFE UINT64_C(0x01)
+#define ESR_EC_SVC_A64 UINT64_C(0x15)
 #define ESR_EC_BRK_A64 UINT64_C(0x3c)
 #define ESR_EC_INSN_ABORT_LOWER UINT64_C(0x20)
 #define ESR_EC_INSN_ABORT_CURRENT UINT64_C(0x21)
@@ -61,6 +62,8 @@ static const char *exception_class_name(uint64_t ec) {
       return "unknown";
     case ESR_EC_WFI_WFE:
       return "wfi-wfe";
+    case ESR_EC_SVC_A64:
+      return "svc-a64";
     case ESR_EC_BRK_A64:
       return "brk-a64";
     case ESR_EC_INSN_ABORT_LOWER:
@@ -105,10 +108,41 @@ void exception_trigger_page_fault_for_test(void) {
   (void)*unmapped;
 }
 
-void aarch64_exception_entry(uint64_t kind, uint64_t esr, uint64_t elr,
-                             uint64_t far) {
+static uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
+                                 uint64_t arg2) {
+  (void)arg2;
+
+  if (syscall == 1) {
+    klog_write((const char *)(uintptr_t)arg0, arg1);
+    return 0;
+  }
+
+  if (syscall == 2) {
+    klog("user: /init exited status=%u\n", (unsigned)arg0);
+    for (;;) {
+      __asm__ volatile("wfe");
+    }
+  }
+
+  klog("user: bad syscall=%lu arg0=0x%lx arg1=0x%lx\n",
+       syscall, arg0, arg1);
+  return UINT64_C(-1);
+}
+
+uint64_t aarch64_exception_entry(uint64_t kind, uint64_t esr, uint64_t elr,
+                                 uint64_t far, uint64_t arg0, uint64_t arg1,
+                                 uint64_t arg2, uint64_t syscall) {
   uint64_t ec = (esr >> ESR_EC_SHIFT) & ESR_EC_MASK;
   uint64_t iss = esr & ESR_ISS_MASK;
+
+  if (kind == OSAI_EXCEPTION_LOWER_A64_SYNC && ec == ESR_EC_SVC_A64) {
+    uint64_t next_elr = elr + 4;
+    __asm__ volatile("msr elr_el1, %[next_elr]\n"
+                     :
+                     : [next_elr] "r"(next_elr)
+                     : "memory");
+    return syscall_dispatch(syscall, arg0, arg1, arg2);
+  }
 
   klog("\nEXCEPTION: kind=%s class=%s ec=0x%lx iss=0x%lx\n",
        exception_kind_name(kind), exception_class_name(ec), ec, iss);
@@ -120,4 +154,7 @@ void aarch64_exception_entry(uint64_t kind, uint64_t esr, uint64_t elr,
   }
 
   panic("fatal exception reported");
+  for (;;) {
+    __asm__ volatile("wfe");
+  }
 }

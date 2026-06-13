@@ -6,5 +6,6 @@
 void klog_init(const osai_boot_info_t *boot);
 void klog(const char *fmt, ...);
 void klog_puts(const char *message);
+void klog_write(const char *message, uint64_t length);
 
 #endif
