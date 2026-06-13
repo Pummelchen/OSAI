@@ -9,6 +9,7 @@ SCENARIOS = [
     ("qemu-smoke", ["make", "qemu-smoke"], 120),
     ("qemu-benchmark", ["python3", "./scripts/qemu-benchmark.py"], 120),
     ("qemu-preview", ["make", "qemu-preview"], 120),
+    ("qemu-fault-matrix", ["make", "qemu-fault-matrix"], 180),
     ("qemu-dry-run-aarch64", ["./scripts/run-qemu-aarch64.sh", "--dry-run"], 10),
     ("qemu-dry-run-x86_64", ["./scripts/run-qemu-x86_64.sh", "--dry-run"], 10),
 ]

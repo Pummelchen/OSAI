@@ -4,7 +4,7 @@ This file is a working plan for moving OSAI from the current QEMU status through
 
 ## Current Baseline
 
-Current baseline is QEMU milestone 33: AArch64 UEFI boot, PMM/VMM, exceptions, SMP, split VirtIO block/net, versioned VirtIO-backed read-only filesystem metadata, parsed config manifest, real EL0 `/init` ELF selected from the manifest, explicit syscall table, process/capability metadata, user pointer validation, bad syscall tests, userspace service-manager policy, build/test sandbox metadata with rollback state, syscall-based service control, VMM-backed heap, AI Cell runtime integration, source-index service with file/symbol/incremental-update fixtures, Git workspace state machine fixtures, low-latency UDP/TCP parser smoke paths, security policy fixtures, persistence/rollback metadata fixtures, correctness benchmark schema, QEMU preview manifest generation, and hardware readiness gate documentation.
+Current baseline is QEMU milestone 33 as a readiness gate, not as a full OS completion point: AArch64 UEFI boot, PMM/VMM, exceptions, SMP, split VirtIO block/net, versioned VirtIO-backed read-only filesystem metadata, parsed config manifest, real EL0 `/init` ELF selected from the manifest, explicit syscall table, process/capability metadata, user pointer validation, bad syscall tests, userspace service-manager policy, build/test sandbox metadata with rollback state, syscall-based service control, VMM-backed heap, AI Cell runtime integration, source-index service with file/symbol/incremental-update fixtures, Git workspace state machine fixtures, low-latency UDP/TCP parser smoke paths, security policy fixtures, persistence/rollback metadata fixtures, correctness benchmark schema, QEMU preview manifest generation, and hardware readiness gate documentation.
 
 ## Milestone Plan
 
@@ -54,4 +54,4 @@ Milestones 28-33 are now implemented for the QEMU correctness track:
 - Milestone 32: `make qemu-preview` emits a preview manifest and benchmark report under `build/`.
 - Milestone 33: local hardware readiness gate is documented in `HARDWARE-READINESS.md`.
 
-Next engineering slice after this QEMU gate is x86_64/Intel Desktop bring-up planning and implementation.
+Next engineering slice is not Intel Desktop yet. QEMU remains active until the full OS phases in `QEMU-FULL-OS-PLAN.md` are implemented deeply enough to justify hardware bring-up.
