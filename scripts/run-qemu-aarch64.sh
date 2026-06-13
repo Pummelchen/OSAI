@@ -1,0 +1,141 @@
+#!/bin/sh
+set -eu
+
+dry_run=0
+if [ "${1:-}" = "--dry-run" ]; then
+  dry_run=1
+  shift
+fi
+
+if [ "$#" -ne 0 ]; then
+  printf '%s\n' "usage: $0 [--dry-run]" >&2
+  exit 2
+fi
+
+find_tool() {
+  tool_name="$1"
+  shift
+
+  for candidate in "$@"; do
+    if [ -x "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  if command -v "$tool_name" >/dev/null 2>&1; then
+    command -v "$tool_name"
+    return 0
+  fi
+
+  return 1
+}
+
+brew_prefix() {
+  formula="$1"
+  if command -v brew >/dev/null 2>&1; then
+    brew --prefix "$formula" 2>/dev/null || true
+  fi
+}
+
+find_aavmf_firmware() {
+  if [ "${OSAI_AAVMF_CODE:-}" != "" ]; then
+    [ -f "$OSAI_AAVMF_CODE" ] && printf '%s\n' "$OSAI_AAVMF_CODE" && return 0
+    return 1
+  fi
+
+  for candidate in \
+    /opt/homebrew/share/qemu/edk2-aarch64-code.fd \
+    /opt/homebrew/share/qemu/QEMU_EFI.fd \
+    /opt/homebrew/share/edk2/aarch64/QEMU_EFI.fd \
+    /opt/homebrew/share/edk2/aarch64/QEMU_EFI-pflash.raw \
+    /usr/local/share/qemu/edk2-aarch64-code.fd \
+    /usr/local/share/qemu/QEMU_EFI.fd \
+    /usr/local/share/edk2/aarch64/QEMU_EFI.fd \
+    /usr/local/share/edk2/aarch64/QEMU_EFI-pflash.raw
+  do
+    if [ -f "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+print_command() {
+  printf 'QEMU AArch64 command:\n'
+  printf '  '
+  for arg in "$@"; do
+    case "$arg" in
+      *[!A-Za-z0-9_./:=,+-]*|'')
+        printf "'%s' " "$(printf '%s' "$arg" | sed "s/'/'\\\\''/g")"
+        ;;
+      *)
+        printf '%s ' "$arg"
+        ;;
+    esac
+  done
+  printf '\n'
+}
+
+QEMU_PREFIX="$(brew_prefix qemu)"
+QEMU_BIN=""
+if [ "$QEMU_PREFIX" != "" ]; then
+  QEMU_BIN="$QEMU_PREFIX/bin"
+fi
+
+if ! qemu="$(find_tool qemu-system-aarch64 "$QEMU_BIN/qemu-system-aarch64")"; then
+  printf '%s\n' "error: qemu-system-aarch64 not found. Install with: brew install qemu" >&2
+  exit 1
+fi
+
+if ! firmware="$(find_aavmf_firmware)"; then
+  printf '%s\n' "error: AArch64 UEFI firmware not found. Set OSAI_AAVMF_CODE=/path/to/edk2-aarch64-code.fd." >&2
+  exit 1
+fi
+
+accel="${OSAI_QEMU_ACCEL:-}"
+if [ "$accel" = "" ]; then
+  accel_help="$("$qemu" -accel help 2>/dev/null || true)"
+  if printf '%s\n' "$accel_help" | grep -q '^hvf$'; then
+    accel="hvf"
+  else
+    accel="tcg"
+  fi
+fi
+
+case "$accel" in
+  hvf) cpu="${OSAI_QEMU_CPU:-host}" ;;
+  *) cpu="${OSAI_QEMU_CPU:-cortex-a72}" ;;
+esac
+
+machine="${OSAI_QEMU_MACHINE:-virt}"
+memory="${OSAI_QEMU_MEMORY:-2G}"
+smp="${OSAI_QEMU_SMP:-4}"
+image="${OSAI_AARCH64_IMAGE:-build/osai-aarch64.img}"
+
+if [ "$dry_run" -eq 0 ] && [ ! -f "$image" ]; then
+  printf '%s\n' "error: missing AArch64 boot image: $image" >&2
+  printf '%s\n' "       Complete WP-003/WP-004 image creation first, or set OSAI_AARCH64_IMAGE=/path/to/image.img." >&2
+  exit 1
+fi
+
+set -- "$qemu" \
+  -machine "$machine,accel=$accel,gic-version=3" \
+  -cpu "$cpu" \
+  -m "$memory" \
+  -smp "$smp" \
+  -nographic \
+  -serial mon:stdio \
+  -drive "if=pflash,format=raw,readonly=on,file=$firmware" \
+  -drive "if=virtio,format=raw,file=$image" \
+  -netdev user,id=net0,hostfwd=tcp::2222-:22 \
+  -device virtio-net-pci,netdev=net0
+
+if [ "$dry_run" -eq 1 ]; then
+  print_command "$@"
+  exit 0
+fi
+
+exec "$@"
