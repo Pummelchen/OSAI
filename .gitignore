@@ -1,0 +1,14 @@
+build/
+out/
+dist/
+*.img
+*.iso
+*.efi
+*.elf
+*.bin
+*.map
+*.log
+*.dSYM/
+.DS_Store
+.cache/
+compile_commands.json

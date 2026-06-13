@@ -1,47 +1,69 @@
 # OSAI
 
-**OSAI** is a server-only operating system project for **CPU-bound AI models** and **embedded app agents**.
+**OSAI is a server-only operating system for CPU-only embedded AI agents.**
 
-The purpose of OSAI is to let normal applications embed small CPU-only AI agents that understand their own source code, accept human instructions, generate code changes, rebuild, test, sync with Git, and improve the running application with minimal operating-system interference.
+## Purpose
 
-OSAI is not a Linux distribution, a BSD fork, a desktop OS, or a GPU AI runtime. It is a focused OS architecture for server-hosted CPU AI workloads on **ARM SoCs**, **modern Intel Desktop CPUs**, and **modern Intel Xeon CPUs**.
+OSAI is designed for applications that embed small CPU-only AI agents directly into their own runtime and development workflow. The goal is to make those agents fast, predictable, isolated, and close to the source code they improve.
 
-## Core Benefits
+OSAI is not a Linux distribution, a BSD fork, a desktop OS, or a GPU AI runtime. It is a specialized server OS architecture for CPU-bound AI workloads and app-local automation.
 
-Compared with a carefully tuned Linux/BSD baseline, OSAI targets:
+## Why OSAI Exists
 
-| Area | Target improvement |
+Most applications are still operationally dumb: they run business logic, expose APIs, store data, and wait for humans to improve them. OSAI targets a different model where normal applications can become smart applications.
+
+In that model, each application can host an embedded AI agent that:
+
+- understands the application's Git source tree;
+- accepts human requests;
+- generates patches;
+- rebuilds and tests the application;
+- reviews and syncs changes with Git;
+- hot reloads or redeploys the improved service where appropriate.
+
+The operating system is designed around making that loop fast and predictable. OSAI reduces avoidable interference from scheduling, memory duplication, background work, generic network paths, and cross-core movement on hot AI paths.
+
+## Target Benefits
+
+These are design targets, not guaranteed benchmark claims.
+
+| Area | Target |
 |---|---:|
-| TCP/UDP latency | **Up to 10–45% lower latency** |
-| Effective CPU-AI memory bandwidth | **3–18% higher effective bandwidth** |
-| Sustained usable CPU-core performance | **2–12% higher sustained performance** |
-| Scheduler jitter and thread migration | **Near-zero migration and near-zero hot-path jitter** |
+| TCP/UDP latency | Up to 10-45% lower latency |
+| Effective CPU-AI memory bandwidth | 3-18% higher |
+| Sustained usable CPU-core performance | 2-12% higher |
+| Scheduler jitter/migration | Near-zero on hot AI paths |
 
-These are architecture targets, not guaranteed benchmark results. OSAI cannot make DRAM, LPDDR, cache fabric, or CPU cores physically faster than the underlying silicon. The expected gains come from removing avoidable OS overhead: scheduler migration, unnecessary context switches, page faults after warmup, background kernel work, generic network paths, memory duplication, bad NUMA placement, and shared resource contention.
+OSAI cannot exceed physical silicon limits. It cannot make DRAM, LPDDR, cache fabric, or CPU cores faster than the underlying hardware. The expected gains come from removing avoidable OS interference: scheduler migration, context switching, post-warmup page faults, generic socket overhead, memory duplication, poor NUMA placement, and unrelated interrupts.
 
-## Target Use Case
+## Target Platforms
 
-OSAI is designed for the next generation of “smart” applications:
+The implementation order is:
 
-```text
-human request
-  -> app-local CPU AI agent
-  -> source-code understanding
-  -> patch generation
-  -> rebuild / test
-  -> Git sync
-  -> hot reload or redeploy
-  -> running app becomes smarter
-```
+1. QEMU on macOS for early bring-up and correctness.
+2. Intel Desktop CPUs for the first real performance target.
+3. Intel Xeon CPUs for multi-agent, NUMA-aware server deployments.
+4. ARM/NVIDIA N1X/GB10-class systems for CPU-only AI on AArch64 SoCs.
 
-The goal is predictable, low-latency CPU AI execution without relying on CUDA, Metal, or vendor GPU acceleration.
+OSAI has no CUDA, Metal, GPU, or vendor accelerator dependency.
 
 ## Documentation
 
-Detailed design and implementation planning lives under [`docs/`](docs/):
+Detailed design documentation lives in the GitHub Wiki:
 
-- [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) — full 0-to-100% implementation plan for Codex-driven development.
+- [Wiki Home](https://github.com/Pummelchen/OSAI/wiki)
+- [Architecture](https://github.com/Pummelchen/OSAI/wiki/Architecture)
+- [Implementation Plan](https://github.com/Pummelchen/OSAI/wiki/Implementation-Plan)
+- [Platform Ports](https://github.com/Pummelchen/OSAI/wiki/QEMU-on-macOS)
+- [Performance Targets](https://github.com/Pummelchen/OSAI/wiki/Performance-Targets)
+- [Codex Work Packages](https://github.com/Pummelchen/OSAI/wiki/Codex-Work-Packages)
 
-## Project Status
+## Status
 
-OSAI is currently a design-stage project. The next milestone is a QEMU-first bootable prototype on macOS, followed by Intel Desktop, Intel Xeon, and ARM/NVIDIA N1X-class hardware ports.
+OSAI is currently in the design and planning stage.
+
+The first engineering target is a bootable QEMU prototype on macOS. Production-oriented targets follow in this order: Intel Desktop, Intel Xeon, and ARM/NVIDIA N1X-compatible SoCs.
+
+## License
+
+License to be decided.

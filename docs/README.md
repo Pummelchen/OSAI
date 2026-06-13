@@ -1,28 +1,7 @@
-# OSAI Documentation
+# OSAI Repository Documentation
 
-This folder contains design and implementation documentation for OSAI.
+Detailed project documentation lives in the [GitHub Wiki](https://github.com/Pummelchen/OSAI/wiki).
 
-## Documents
+The main repository is reserved for source code, build scripts, tests, and short developer-facing notes that must live beside the implementation. Architecture, platform plans, benchmarking strategy, roadmap details, and Codex work packages belong in the wiki.
 
-- [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) — detailed 0-to-100% implementation plan for building OSAI with Codex, starting in QEMU on macOS and progressing through Intel Desktop, Intel Xeon, and ARM/NVIDIA N1X-class hardware.
-
-## Current Priority
-
-The first engineering milestone is a bootable QEMU prototype on macOS:
-
-```text
-UEFI loader
-kernel.elf handoff
-serial logging
-memory map parsing
-physical memory manager
-virtual memory
-exceptions
-SMP
-minimal user init
-virtio-blk
-virtio-net
-admin over TCP/SSH
-AI Cell lifecycle
-shared model arena MVP
-```
+Original design documents from the pre-wiki repository cleanup are preserved under [`docs/archive/original-docs/`](archive/original-docs/) for traceability.
