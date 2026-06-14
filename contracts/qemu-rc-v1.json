@@ -41,7 +41,18 @@
       "pmm_total_pages": 1,
       "pmm_free_pages": 1,
       "virtio_block_sectors": 1,
-      "ai_cell_transitions": 1,
+      "ai_cell_transitions": 14,
+      "ai_cell_descriptor_accepts": 5,
+      "ai_cell_descriptor_rejects": 4,
+      "ai_cell_resource_admissions": 2,
+      "ai_cell_resource_rejects": 10,
+      "ai_cell_arena_pages_peak": 160,
+      "ai_cell_arena_bytes_peak": 655360,
+      "ai_cell_queue_binds": 3,
+      "ai_cell_queue_releases": 3,
+      "ai_cell_workspace_binds": 2,
+      "ai_cell_workspace_releases": 2,
+      "ai_cell_conflicts": 3,
       "cpu_ai_model_loads": 4,
       "cpu_ai_model_load_failures": 3,
       "cpu_ai_tokenizer_calls": 4,
@@ -109,7 +120,9 @@
       "user_process_failed": 0,
       "persistence_checksum_errors": 0,
       "network_queue_backpressure_drops": 0,
-      "network_flow_core_mismatches": 0
+      "network_flow_core_mismatches": 0,
+      "ai_cell_arena_pages_reserved": 0,
+      "ai_cell_arena_bytes_reserved": 0
     }
   },
   "filesystem_format": {
@@ -160,6 +173,41 @@
     "gpu_required_rejected": true,
     "private_kv_required": true,
     "shared_weights_read_only": true
+  },
+  "ai_cell_descriptor_abi": {
+    "name": "OSAI AI Cell descriptor ABI",
+    "magic": "AIC1",
+    "magic_value": "0x41494331",
+    "version": 1,
+    "descriptor_bytes": 112,
+    "checksum": "fnv1a64 over descriptor bytes with checksum field zeroed",
+    "required_flags": [
+      "cpu_only",
+      "fixed_cores",
+      "shared_model",
+      "private_kv",
+      "nic_queue",
+      "git_workspace"
+    ],
+    "resource_contract": [
+      "exclusive core lease",
+      "shared read-only model arena",
+      "private KV/cache arena",
+      "private source-index arena",
+      "private build-output arena",
+      "private log arena",
+      "exclusive NIC queue binding",
+      "exclusive Git workspace binding"
+    ],
+    "admission_failures": [
+      "bad checksum",
+      "bad version",
+      "missing required flags",
+      "missing model arena",
+      "duplicate core lease",
+      "duplicate NIC queue",
+      "duplicate Git workspace"
+    ]
   },
   "persistence_format": {
     "name": "OSAI QEMU mutable state sector",

@@ -124,6 +124,19 @@ def main() -> int:
         "network_udp_p999",
         "network_tcp_p999",
         "ai_cell_transitions",
+        "ai_cell_descriptor_accepts",
+        "ai_cell_descriptor_rejects",
+        "ai_cell_resource_admissions",
+        "ai_cell_resource_rejects",
+        "ai_cell_arena_pages_reserved",
+        "ai_cell_arena_bytes_reserved",
+        "ai_cell_arena_pages_peak",
+        "ai_cell_arena_bytes_peak",
+        "ai_cell_queue_binds",
+        "ai_cell_queue_releases",
+        "ai_cell_workspace_binds",
+        "ai_cell_workspace_releases",
+        "ai_cell_conflicts",
         "migration_total",
         "context_switch_total",
         "service_child_descriptors",
@@ -152,7 +165,20 @@ def main() -> int:
         "cpu_count_min": telemetry["cpu_count"] >= 1,
         "pmm_has_free_pages": telemetry["pmm_free_pages"] > 0,
         "virtio_block_visible": telemetry["virtio_block_sectors"] > 0,
-        "ai_cell_transitions_present": telemetry["ai_cell_transitions"] >= 1,
+        "ai_cell_contract_enforced": telemetry["ai_cell_transitions"] >= 14
+        and telemetry["ai_cell_descriptor_accepts"] >= 5
+        and telemetry["ai_cell_descriptor_rejects"] >= 4
+        and telemetry["ai_cell_resource_admissions"] >= 2
+        and telemetry["ai_cell_resource_rejects"] >= 10
+        and telemetry["ai_cell_arena_pages_reserved"] == 0
+        and telemetry["ai_cell_arena_bytes_reserved"] == 0
+        and telemetry["ai_cell_arena_pages_peak"] >= 160
+        and telemetry["ai_cell_arena_bytes_peak"] >= 655360
+        and telemetry["ai_cell_queue_binds"] >= 3
+        and telemetry["ai_cell_queue_releases"] >= 3
+        and telemetry["ai_cell_workspace_binds"] >= 2
+        and telemetry["ai_cell_workspace_releases"] >= 2
+        and telemetry["ai_cell_conflicts"] >= 3,
         "cpu_ai_runtime_boundaries": telemetry["cpu_ai_model_loads"] >= 4
         and telemetry["cpu_ai_model_load_failures"] >= 3
         and telemetry["cpu_ai_tokenizer_calls"] >= 4

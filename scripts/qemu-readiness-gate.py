@@ -79,7 +79,18 @@ REQUIRED_TELEMETRY_MINIMUMS = {
     "pmm_total_pages": 1,
     "pmm_free_pages": 1,
     "virtio_block_sectors": 1,
-    "ai_cell_transitions": 1,
+    "ai_cell_transitions": 14,
+    "ai_cell_descriptor_accepts": 5,
+    "ai_cell_descriptor_rejects": 4,
+    "ai_cell_resource_admissions": 2,
+    "ai_cell_resource_rejects": 10,
+    "ai_cell_arena_pages_peak": 160,
+    "ai_cell_arena_bytes_peak": 655360,
+    "ai_cell_queue_binds": 3,
+    "ai_cell_queue_releases": 3,
+    "ai_cell_workspace_binds": 2,
+    "ai_cell_workspace_releases": 2,
+    "ai_cell_conflicts": 3,
     "cpu_ai_model_loads": 4,
     "cpu_ai_model_load_failures": 3,
     "cpu_ai_tokenizer_calls": 4,
@@ -149,6 +160,8 @@ REQUIRED_TELEMETRY_EQUALS = {
     "persistence_checksum_errors": 0,
     "network_queue_backpressure_drops": 0,
     "network_flow_core_mismatches": 0,
+    "ai_cell_arena_pages_reserved": 0,
+    "ai_cell_arena_bytes_reserved": 0,
 }
 
 
@@ -285,6 +298,15 @@ def validate_contract(contract: Dict[str, Any], failures: List[str]) -> Dict[str
     check_equal(model_format.get("path"), "/models/cpu-ai-mvp.osaimodel", "contract.cpu_ai_model_format.path", failures)
     check_bool(model_format.get("cpu_only_required"), True, "contract.cpu_ai_model_format.cpu_only_required", failures)
     check_bool(model_format.get("gpu_required_rejected"), True, "contract.cpu_ai_model_format.gpu_required_rejected", failures)
+
+    ai_cell_descriptor = contract.get("ai_cell_descriptor_abi", {})
+    check_equal(ai_cell_descriptor.get("magic"), "AIC1", "contract.ai_cell_descriptor_abi.magic", failures)
+    check_equal(ai_cell_descriptor.get("version"), 1, "contract.ai_cell_descriptor_abi.version", failures)
+    check_equal(ai_cell_descriptor.get("descriptor_bytes"), 112, "contract.ai_cell_descriptor_abi.descriptor_bytes", failures)
+    required_flags = ai_cell_descriptor.get("required_flags", [])
+    for flag in ["cpu_only", "fixed_cores", "shared_model", "private_kv", "nic_queue", "git_workspace"]:
+        if flag not in required_flags:
+            failures.append(f"contract.ai_cell_descriptor_abi.required_flags missing {flag}")
 
     persistence = contract.get("persistence_format", {})
     check_equal(persistence.get("magic"), "OSAIPST1", "contract.persistence.magic", failures)
