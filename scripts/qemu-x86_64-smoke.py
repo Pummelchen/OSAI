@@ -30,6 +30,16 @@ TARGETS = [
     "x86_64: Intel Desktop milestone 47 timers APIC passed",
     "x86_64: PCI discovery devices=",
     "x86_64: Intel Desktop milestone 48 PCI discovery passed",
+    "x86_64: placement policy logical_cpus=",
+    "x86_64: SMT policy disabled_by_default=1",
+    "x86_64: hot-core telemetry migration_total=0 context_switch_total=0",
+    "x86_64: Intel Desktop milestone 49 placement policy passed",
+    "x86_64: OS contract userspace=1 filesystem=1 networking=1 ai_cell=1 security=1 telemetry=1",
+    "x86_64: full OS contract parity marker ready=1",
+    "x86_64: Intel Desktop milestone 50 OS contract port passed",
+    "x86_64: hardware gate qemu_correctness=1 physical_required=1 baseline_required=1 performance_claims_allowed=0",
+    "x86_64: Intel Desktop hardware gate release candidate passed",
+    "x86_64: Intel Desktop milestone 51 hardware gate passed",
 ]
 
 
@@ -66,7 +76,7 @@ def main() -> int:
                 if all(target in text for target in TARGETS):
                     print(
                         "qemu-x86_64-smoke: x86_64 boot reached all "
-                        "Intel Desktop milestone 43-48 markers"
+                        "Intel Desktop milestone 43-51 markers"
                     )
                     return 0
             elif proc.poll() is not None:

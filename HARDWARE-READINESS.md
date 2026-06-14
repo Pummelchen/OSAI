@@ -113,5 +113,11 @@ Intel Desktop work can begin only after:
 - APIC/timer discovery: milestone 47 gate is `make qemu-x86_64-smoke`.
 - PCI discovery sufficient for NVMe and NIC bring-up planning: milestone 48
   gate is `make qemu-x86_64-smoke`.
-- P-core/E-core placement policy metadata.
-- Initial tuned Linux/BSD baseline plan for later measured comparisons.
+- P-core/E-core placement policy metadata: milestone 49 gate is
+  `make intel-desktop-gate`.
+- x86_64 OS contract parity marker: milestone 50 gate is
+  `make intel-desktop-gate`.
+- Intel Desktop hardware gate report: milestone 51 gate is
+  `make intel-desktop-gate`.
+- Initial tuned Linux/BSD baseline plan for later measured comparisons remains
+  required before hardware performance claims.

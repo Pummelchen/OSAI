@@ -12,6 +12,7 @@ SCENARIOS = [
     ("qemu-preview", ["make", "qemu-preview"], 120),
     ("qemu-fault-matrix", ["make", "qemu-fault-matrix"], 180),
     ("qemu-x86_64-smoke", ["make", "qemu-x86_64-smoke"], 120),
+    ("intel-desktop-gate", ["make", "intel-desktop-gate"], 140),
     ("qemu-cpu-matrix", ["make", "qemu-cpu-matrix"], 900),
     ("qemu-dry-run-aarch64", ["./scripts/run-qemu-aarch64.sh", "--dry-run"], 10),
     ("qemu-dry-run-x86_64", ["./scripts/run-qemu-x86_64.sh", "--dry-run"], 10),
