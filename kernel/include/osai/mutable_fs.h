@@ -34,6 +34,11 @@ osai_status_t mutable_fs_record_update_transaction(uint32_t generation,
                                                    const char *state,
                                                    const char *target,
                                                    const char *rollback_label);
+osai_status_t mutable_fs_record_admin_status(const char *service,
+                                             const char *state,
+                                             uint32_t starts,
+                                             uint32_t restarts,
+                                             uint32_t logs);
 osai_status_t mutable_fs_commit(const char *label);
 osai_status_t mutable_fs_rollback(void);
 

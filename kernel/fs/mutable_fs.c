@@ -1101,6 +1101,45 @@ osai_status_t mutable_fs_record_update_transaction(uint32_t generation,
   return status;
 }
 
+osai_status_t mutable_fs_record_admin_status(const char *service,
+                                             const char *state,
+                                             uint32_t starts,
+                                             uint32_t restarts,
+                                             uint32_t logs) {
+  char record[256];
+  uint64_t record_offset = 0;
+  bytes_zero(record, sizeof(record));
+  if (service == 0 || state == 0 ||
+      append_cstr(record, sizeof(record), &record_offset,
+                  "admin=ssh-only\nservice=") != OSAI_OK ||
+      append_cstr(record, sizeof(record), &record_offset, service) !=
+          OSAI_OK ||
+      append_cstr(record, sizeof(record), &record_offset, "\nstate=") !=
+          OSAI_OK ||
+      append_cstr(record, sizeof(record), &record_offset, state) != OSAI_OK ||
+      append_cstr(record, sizeof(record), &record_offset, "\nstarts=") !=
+          OSAI_OK ||
+      append_u32(record, sizeof(record), &record_offset, starts) != OSAI_OK ||
+      append_cstr(record, sizeof(record), &record_offset, "\nrestarts=") !=
+          OSAI_OK ||
+      append_u32(record, sizeof(record), &record_offset, restarts) !=
+          OSAI_OK ||
+      append_cstr(record, sizeof(record), &record_offset, "\nlogs=") !=
+          OSAI_OK ||
+      append_u32(record, sizeof(record), &record_offset, logs) != OSAI_OK ||
+      append_cstr(record, sizeof(record), &record_offset,
+                  "\nremote_safe=allowlist\n") != OSAI_OK) {
+    ++g_reject_count;
+    return OSAI_ERR_INVALID;
+  }
+  osai_status_t status =
+      write_file("/state/services/admin.state", record, record_offset + 1U);
+  if (status == OSAI_OK) {
+    ++g_state_record_count;
+  }
+  return status;
+}
+
 osai_status_t mutable_fs_commit(const char *label) {
   return commit_snapshot(label);
 }
@@ -1165,6 +1204,8 @@ void mutable_fs_self_test(void) {
           OSAI_OK);
   kassert(mutable_fs_record_workspace_state(0, "boot") == OSAI_OK);
   kassert(mutable_fs_record_update_state("signed-update-required") == OSAI_OK);
+  kassert(mutable_fs_record_admin_status("/svc/source-index", "running", 1, 0,
+                                         0) == OSAI_OK);
   kassert(write_file("/config/osai.conf", k_config_v1,
                      sizeof(k_config_v1)) == OSAI_OK);
 
@@ -1226,9 +1267,9 @@ void mutable_fs_self_test(void) {
   kassert(mutable_fs_mount_count() == 2);
   kassert(mutable_fs_format_count() >= 1);
   kassert(mutable_fs_format_count() <= 2);
-  kassert(mutable_fs_file_count() == 5);
+  kassert(mutable_fs_file_count() == 6);
   kassert(mutable_fs_directory_count() == 7);
-  kassert(mutable_fs_write_count() == 8);
+  kassert(mutable_fs_write_count() == 9);
   kassert(mutable_fs_read_count() == 4);
   kassert(mutable_fs_delete_count() == 1);
   kassert(mutable_fs_commit_count() == 1);
@@ -1236,7 +1277,7 @@ void mutable_fs_self_test(void) {
   kassert(mutable_fs_replay_count() == 1);
   kassert(mutable_fs_journal_write_count() == 1);
   kassert(mutable_fs_multi_sector_file_count() >= 1);
-  kassert(mutable_fs_state_record_count() == 3);
+  kassert(mutable_fs_state_record_count() == 4);
   kassert(mutable_fs_reject_count() == 6);
   kassert(mutable_fs_checksum_error_count() == 0);
   klog("mutable-fs: allocator self-test passed allocations=%lu frees=%lu blocks=%lu\n",

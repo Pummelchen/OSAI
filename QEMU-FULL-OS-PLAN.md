@@ -41,7 +41,7 @@ gates for the update lifecycle telemetry.
 The current implementation still has important MVP/stub areas:
 
 - two foreground EL0 process path (`/init` and `/bin/service-manager`);
-- userspace-driven service policy with QEMU supervisor coverage;
+- userspace-driven service policy with QEMU supervisor and admin coverage;
 - persistence records plus a mutable filesystem layer;
 - QEMU-matured network paths with queue ownership and TCP/UDP lifecycle gates;
 - QEMU CPU-only deterministic model format, with production model runtimes still
@@ -114,6 +114,6 @@ The current implementation still has important MVP/stub areas:
 
 ## Current Slice
 
-Milestones 34 through 40 are complete in QEMU. The next active slice starts at
-milestone 41 under the full-core workdown. The detailed checklist lives in
+Milestones 34 through 41 are complete in QEMU. The next active slice starts at
+milestone 42 under the full-core workdown. The detailed checklist lives in
 `QEMU-FULL-OS-CORE-WORKDOWN.md`.

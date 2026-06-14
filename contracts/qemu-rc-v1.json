@@ -122,8 +122,13 @@
       "service_crashes": 1,
       "service_cleanups": 3,
       "service_log_records": 2,
-      "control_plane_syscalls": 13,
-      "control_plane_denials": 4,
+      "admin_policy_exports": 1,
+      "admin_status_exports": 2,
+      "admin_log_reads": 1,
+      "admin_remote_safe_accepts": 1,
+      "admin_remote_safe_rejects": 1,
+      "control_plane_syscalls": 18,
+      "control_plane_denials": 5,
       "service_descriptor_reads": 1,
       "user_process_transitions": 6,
       "user_process_loaded": 2,
@@ -139,7 +144,8 @@
       "network_queue_backpressure_drops": 0,
       "network_flow_core_mismatches": 0,
       "ai_cell_arena_pages_reserved": 0,
-      "ai_cell_arena_bytes_reserved": 0
+      "ai_cell_arena_bytes_reserved": 0,
+      "admin_command_denials": 0
     }
   },
   "filesystem_format": {
@@ -287,6 +293,30 @@
     "committed_update_rollback_required": true,
     "minimum_transactions": 2,
     "minimum_persisted_records": 8
+  },
+  "admin_control_plane": {
+    "name": "OSAI QEMU admin control plane",
+    "access_policy": "ssh-only",
+    "password_login": false,
+    "admin_capability_required": true,
+    "admin_capability": "OSAI_CAP_ADMIN",
+    "status_export_path": "/state/services/admin.state",
+    "required_commands": [
+      "admin policy",
+      "admin status <service>",
+      "admin export <service>",
+      "admin logs <service>",
+      "admin remote-safe <command>"
+    ],
+    "remote_safe_allowlist": [
+      "status",
+      "logs",
+      "export"
+    ],
+    "unsafe_remote_command_rejected": true,
+    "minimum_policy_exports": 1,
+    "minimum_status_exports": 2,
+    "minimum_log_reads": 1
   },
   "cpu_matrix": {
     "schema": "osai.qemu.cpu_matrix.v1",

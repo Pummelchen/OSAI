@@ -309,3 +309,33 @@ Definition of done:
   generation, state, target, and rollback metadata.
 - `make qemu-smoke`, `python3 ./scripts/qemu-benchmark.py`, and
   `make qemu-readiness-gate` require the update rollback telemetry.
+
+## Phase Q15: Admin Control Plane
+
+Goal: make the QEMU admin surface explicit and testable before the final full
+OS release-candidate gate.
+
+Required work:
+
+- [x] Grant admin capability only to the EL0 service-manager process.
+- [x] Add `admin policy` to report the SSH-only, no-password-login admin
+  policy.
+- [x] Add `admin status <service>` for service inspection.
+- [x] Add `admin export <service>` to persist admin status under
+  `/state/services/admin.state`.
+- [x] Add `admin logs <service>` for log retrieval metadata.
+- [x] Add `admin remote-safe <command>` with an allowlist.
+- [x] Reject unsafe remote admin commands.
+- [x] Emit admin telemetry for policy exports, status exports, log reads,
+  remote-safe accepts/rejects, and command denials.
+- [x] Add smoke, benchmark, readiness, and RC contract gates for the admin
+  control plane.
+
+Definition of done:
+
+- QEMU boot proves `/bin/service-manager` runs admin policy, service status,
+  status export, log retrieval, and remote-safe command checks from EL0.
+- Admin status is serialized to `/state/services/admin.state`.
+- `python3 ./scripts/qemu-benchmark.py` reports
+  `admin_control_plane_active=true`.
+- `make qemu-readiness-gate` requires the admin telemetry and contract section.

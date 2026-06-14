@@ -162,6 +162,12 @@ def main() -> int:
         "service_crashes",
         "service_cleanups",
         "service_log_records",
+        "admin_policy_exports",
+        "admin_status_exports",
+        "admin_log_reads",
+        "admin_remote_safe_accepts",
+        "admin_remote_safe_rejects",
+        "admin_command_denials",
         "control_plane_syscalls",
         "control_plane_denials",
         "service_descriptor_reads",
@@ -286,6 +292,12 @@ def main() -> int:
         "userspace_control_plane_active": telemetry["control_plane_syscalls"] >= 13
         and telemetry["control_plane_denials"] >= 4
         and telemetry["service_descriptor_reads"] >= 1,
+        "admin_control_plane_active": telemetry["admin_policy_exports"] >= 1
+        and telemetry["admin_status_exports"] >= 2
+        and telemetry["admin_log_reads"] >= 1
+        and telemetry["admin_remote_safe_accepts"] >= 1
+        and telemetry["admin_remote_safe_rejects"] >= 1
+        and telemetry["admin_command_denials"] == 0,
         "user_process_lifecycle_complete": telemetry["user_process_loaded"] >= 2
         and telemetry["user_process_running"] >= 2
         and telemetry["user_process_exited"] >= 2

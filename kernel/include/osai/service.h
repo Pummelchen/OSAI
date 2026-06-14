@@ -56,5 +56,11 @@ uint64_t service_restart_count(void);
 uint64_t service_crash_count(void);
 uint64_t service_cleanup_count(void);
 uint64_t service_log_record_count(void);
+uint64_t service_admin_policy_export_count(void);
+uint64_t service_admin_status_export_count(void);
+uint64_t service_admin_log_read_count(void);
+uint64_t service_admin_remote_safe_accept_count(void);
+uint64_t service_admin_remote_safe_reject_count(void);
+uint64_t service_admin_command_denial_count(void);
 
 #endif

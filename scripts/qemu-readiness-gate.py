@@ -159,8 +159,13 @@ REQUIRED_TELEMETRY_MINIMUMS = {
     "service_crashes": 1,
     "service_cleanups": 3,
     "service_log_records": 2,
-    "control_plane_syscalls": 13,
-    "control_plane_denials": 4,
+    "admin_policy_exports": 1,
+    "admin_status_exports": 2,
+    "admin_log_reads": 1,
+    "admin_remote_safe_accepts": 1,
+    "admin_remote_safe_rejects": 1,
+    "control_plane_syscalls": 18,
+    "control_plane_denials": 5,
     "service_descriptor_reads": 1,
     "user_process_transitions": 6,
     "user_process_loaded": 2,
@@ -178,6 +183,7 @@ REQUIRED_TELEMETRY_EQUALS = {
     "network_flow_core_mismatches": 0,
     "ai_cell_arena_pages_reserved": 0,
     "ai_cell_arena_bytes_reserved": 0,
+    "admin_command_denials": 0,
 }
 
 
@@ -358,6 +364,23 @@ def validate_contract(contract: Dict[str, Any], failures: List[str]) -> Dict[str
     check_bool(update_system.get("committed_update_rollback_required"), True, "contract.update_system.committed_update_rollback_required", failures)
     check_equal(update_system.get("minimum_transactions"), 2, "contract.update_system.minimum_transactions", failures)
     check_equal(update_system.get("minimum_persisted_records"), 8, "contract.update_system.minimum_persisted_records", failures)
+
+    admin_control = contract.get("admin_control_plane", {})
+    check_equal(admin_control.get("access_policy"), "ssh-only", "contract.admin_control_plane.access_policy", failures)
+    check_bool(admin_control.get("password_login"), False, "contract.admin_control_plane.password_login", failures)
+    check_bool(admin_control.get("admin_capability_required"), True, "contract.admin_control_plane.admin_capability_required", failures)
+    check_equal(admin_control.get("admin_capability"), "OSAI_CAP_ADMIN", "contract.admin_control_plane.admin_capability", failures)
+    check_equal(admin_control.get("status_export_path"), "/state/services/admin.state", "contract.admin_control_plane.status_export_path", failures)
+    for command in ["admin policy", "admin status <service>", "admin export <service>", "admin logs <service>", "admin remote-safe <command>"]:
+        if command not in admin_control.get("required_commands", []):
+            failures.append(f"contract.admin_control_plane.required_commands missing {command}")
+    for command in ["status", "logs", "export"]:
+        if command not in admin_control.get("remote_safe_allowlist", []):
+            failures.append(f"contract.admin_control_plane.remote_safe_allowlist missing {command}")
+    check_bool(admin_control.get("unsafe_remote_command_rejected"), True, "contract.admin_control_plane.unsafe_remote_command_rejected", failures)
+    check_equal(admin_control.get("minimum_policy_exports"), 1, "contract.admin_control_plane.minimum_policy_exports", failures)
+    check_equal(admin_control.get("minimum_status_exports"), 2, "contract.admin_control_plane.minimum_status_exports", failures)
+    check_equal(admin_control.get("minimum_log_reads"), 1, "contract.admin_control_plane.minimum_log_reads", failures)
 
     out_of_scope = contract.get("out_of_scope_before_intel", [])
     if len(out_of_scope) < 5:

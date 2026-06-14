@@ -30,6 +30,12 @@ static uint64_t g_service_restart_count;
 static uint64_t g_service_crash_count;
 static uint64_t g_service_cleanup_count;
 static uint64_t g_service_log_record_count;
+static uint64_t g_admin_policy_export_count;
+static uint64_t g_admin_status_export_count;
+static uint64_t g_admin_log_read_count;
+static uint64_t g_admin_remote_safe_accept_count;
+static uint64_t g_admin_remote_safe_reject_count;
+static uint64_t g_admin_command_denial_count;
 
 static int str_eq(const char *lhs, const char *rhs) {
   if (lhs == 0 || rhs == 0) {
@@ -92,6 +98,21 @@ static osai_status_t require_service_capability(uint64_t capability) {
     return OSAI_ERR_INVALID;
   }
   return user_process_has_capability(capability);
+}
+
+static osai_status_t require_admin_capability(void) {
+  const osai_user_process_t *process = user_current_process();
+  uint64_t granted = process != 0 ? process->capability_mask : 0;
+  if (process == 0 ||
+      user_process_has_capability(OSAI_CAP_ADMIN) != OSAI_OK) {
+    ++g_admin_command_denial_count;
+    if (process != 0) {
+      (void)security_authorize_capability("admin.control", granted,
+                                          OSAI_CAP_ADMIN);
+    }
+    return OSAI_ERR_INVALID;
+  }
+  return OSAI_OK;
 }
 
 static osai_status_t parse_u32(const char *value, uint32_t *out) {
@@ -373,6 +394,69 @@ static osai_status_t handle_status(const char *service_name) {
       service->restart_policy, service->log_policy,
       (unsigned long)service->max_restarts, (unsigned)service->exit_code);
   return OSAI_OK;
+}
+
+static osai_status_t handle_admin_policy(void) {
+  if (require_admin_capability() != OSAI_OK) {
+    return OSAI_ERR_INVALID;
+  }
+  ++g_admin_policy_export_count;
+  klog("admin: policy ssh_only=1 password_login=0 admin_cap_required=1 remote_safe_allowlist=1 exports=%lu\n",
+       g_admin_policy_export_count);
+  return OSAI_OK;
+}
+
+static osai_status_t handle_admin_status(const char *service_name,
+                                         uint32_t persist) {
+  osai_service_t *service = find_service(service_name);
+  if (require_admin_capability() != OSAI_OK || service == 0) {
+    return OSAI_ERR_INVALID;
+  }
+  klog("admin: status service=%s state=%s starts=%lu restarts=%lu logs=%lu crashes=%lu cleanups=%lu\n",
+       service->name, service_state_name(service->state), service->starts,
+       service->restart_attempts, service->log_records, service->crash_count,
+       service->cleanup_count);
+  if (persist != 0 &&
+      mutable_fs_record_admin_status(service->name,
+                                     service_state_name(service->state),
+                                     (uint32_t)service->starts,
+                                     (uint32_t)service->restart_attempts,
+                                     (uint32_t)service->log_records) !=
+          OSAI_OK) {
+    return OSAI_ERR_INVALID;
+  }
+  ++g_admin_status_export_count;
+  return OSAI_OK;
+}
+
+static osai_status_t handle_admin_logs(const char *service_name) {
+  osai_service_t *service = find_service(service_name);
+  if (require_admin_capability() != OSAI_OK || service == 0) {
+    return OSAI_ERR_INVALID;
+  }
+  ++g_admin_log_read_count;
+  klog("admin: logs service=%s records=%lu log_policy=%s exit_code=%u reads=%lu\n",
+       service->name, service->log_records, service->log_policy,
+       (unsigned)service->exit_code, g_admin_log_read_count);
+  return OSAI_OK;
+}
+
+static osai_status_t handle_admin_remote_safe(const char *command) {
+  if (require_admin_capability() != OSAI_OK || command == 0 ||
+      token_safe(command) == 0) {
+    return OSAI_ERR_INVALID;
+  }
+  if (str_eq(command, "status") || str_eq(command, "logs") ||
+      str_eq(command, "export")) {
+    ++g_admin_remote_safe_accept_count;
+    klog("admin: remote-safe command=%s accepted accepts=%lu\n", command,
+         g_admin_remote_safe_accept_count);
+    return OSAI_OK;
+  }
+  ++g_admin_remote_safe_reject_count;
+  klog("admin: remote-safe command=%s rejected rejects=%lu\n", command,
+       g_admin_remote_safe_reject_count);
+  return OSAI_ERR_INVALID;
 }
 
 static osai_status_t handle_log(const char *service_name, const char *message) {
@@ -692,6 +776,12 @@ void service_supervisor_init(void) {
   g_service_crash_count = 0;
   g_service_cleanup_count = 0;
   g_service_log_record_count = 0;
+  g_admin_policy_export_count = 0;
+  g_admin_status_export_count = 0;
+  g_admin_log_read_count = 0;
+  g_admin_remote_safe_accept_count = 0;
+  g_admin_remote_safe_reject_count = 0;
+  g_admin_command_denial_count = 0;
   service_snapshot_capture(&g_init_service);
   klog("service: supervisor initialized\n");
 }
@@ -760,19 +850,49 @@ osai_status_t osctl_execute(const char *command) {
     tokens[j] = 0;
   }
   uint32_t argc = 0;
-  if (tokenize_command(copy, &argc, tokens) != OSAI_OK || argc < 3U) {
+  if (tokenize_command(copy, &argc, tokens) != OSAI_OK || argc < 2U) {
     klog("service: osctl parse failed argc=%lu command='%s'\n",
          (unsigned long)argc, copy);
     return OSAI_ERR_INVALID;
   }
 
-  if (!token_safe(tokens[0]) || !str_eq(tokens[0], "service")) {
-    klog("service: osctl expected 'service' got token0='%s'\n", tokens[0]);
+  for (uint32_t token_index = 0; token_index < argc; ++token_index) {
+    if (!token_safe(tokens[token_index])) {
+      klog("service: osctl invalid token index=%lu value='%s'\n",
+           (unsigned long)token_index,
+           tokens[token_index] != 0 ? tokens[token_index] : "(null)");
+      return OSAI_ERR_INVALID;
+    }
+  }
+
+  if (str_eq(tokens[0], "admin")) {
+    const char *action = tokens[1];
+    if (str_eq(action, "policy") && argc == 2U) {
+      return handle_admin_policy();
+    }
+    if (str_eq(action, "status") && argc == 3U) {
+      return handle_admin_status(tokens[2], 0);
+    }
+    if (str_eq(action, "export") && argc == 3U) {
+      return handle_admin_status(tokens[2], 1);
+    }
+    if (str_eq(action, "logs") && argc == 3U) {
+      return handle_admin_logs(tokens[2]);
+    }
+    if (str_eq(action, "remote-safe") && argc == 3U) {
+      return handle_admin_remote_safe(tokens[2]);
+    }
+    klog("admin: unsupported command name='%s' argc=%lu\n", action,
+         (unsigned long)argc);
     return OSAI_ERR_INVALID;
   }
-  if (!token_safe(tokens[1]) || !token_safe(tokens[2])) {
-    klog("service: osctl invalid token token1='%s' token2='%s'\n", tokens[1],
-         tokens[2]);
+
+  if (!str_eq(tokens[0], "service")) {
+    klog("service: osctl expected 'service' or 'admin' got token0='%s'\n",
+         tokens[0]);
+    return OSAI_ERR_INVALID;
+  }
+  if (argc < 3U) {
     return OSAI_ERR_INVALID;
   }
 
@@ -851,6 +971,7 @@ void service_supervisor_self_test(void) {
   kassert(osctl_execute("service rollback /init") == OSAI_ERR_INVALID);
   kassert(osctl_execute("service destroy /init") == OSAI_ERR_INVALID);
   kassert(osctl_execute("service update /init test") == OSAI_ERR_INVALID);
+  kassert(osctl_execute("admin policy") == OSAI_ERR_INVALID);
   kassert(service_tree_edge_count() == 1);
   kassert(service_restart_count() == 1);
   kassert(service_crash_count() == 1);
@@ -885,4 +1006,28 @@ uint64_t service_cleanup_count(void) {
 
 uint64_t service_log_record_count(void) {
   return g_service_log_record_count;
+}
+
+uint64_t service_admin_policy_export_count(void) {
+  return g_admin_policy_export_count;
+}
+
+uint64_t service_admin_status_export_count(void) {
+  return g_admin_status_export_count;
+}
+
+uint64_t service_admin_log_read_count(void) {
+  return g_admin_log_read_count;
+}
+
+uint64_t service_admin_remote_safe_accept_count(void) {
+  return g_admin_remote_safe_accept_count;
+}
+
+uint64_t service_admin_remote_safe_reject_count(void) {
+  return g_admin_remote_safe_reject_count;
+}
+
+uint64_t service_admin_command_denial_count(void) {
+  return g_admin_command_denial_count;
 }
