@@ -64,16 +64,17 @@ Before moving to Intel Desktop bring-up, these contracts must remain stable:
 - Hot AI core telemetry reports zero migration and zero involuntary context
   switches in the QEMU gate.
 - CPU matrix tiers validate the default ARM64 host/HVF smoke path, ARM64 TCG
-  boot probes for `cortex-a53`, `cortex-a72`, `neoverse-n1`, `neoverse-n2`,
-  `neoverse-v1`, and `max`, plus x86_64 Intel/AMD command profiles.
+  boot probes for `cortex-a53`, `cortex-a72`, `cortex-a76`, `cortex-a710`,
+  `neoverse-n1`, `neoverse-n2`, `neoverse-v1`, and `max`, plus x86_64
+  Intel, Xeon, Atom server-edge, and AMD smoke-boot profiles.
 
 ## Out of Scope Before Intel
 
 The QEMU release-candidate gate intentionally does not claim:
 
 - performance wins against Linux or BSD;
-- complete x86_64 full OS contract parity beyond the milestone 43-48
-  bring-up path;
+- measured x86_64 hardware performance evidence beyond the milestone 43-51
+  QEMU correctness gate;
 - Intel APIC interrupt routing, HPET, TSC-deadline timers, PCIe, NVMe, and
   NIC hardware drivers;
 - production update signing and key management;

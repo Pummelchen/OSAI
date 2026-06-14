@@ -136,15 +136,19 @@ def run_arm_boot_tier(tier: Dict[str, Any], supported: Set[str],
         }
 
     if tier["validation"] == "qemu-smoke-default":
+        env = base_env.copy()
+        env["OSAI_QEMU_ACCEL"] = accelerator
+        env["OSAI_QEMU_CPU"] = cpu
+        proc = run(["python3", "./scripts/qemu-smoke.py"], env, 140)
         return {
             "name": name,
             "architecture": "aarch64",
             "cpu": cpu,
             "accelerator": accelerator,
-            "validation": "covered-by-qemu-matrix-default-smoke",
+            "validation": tier["validation"],
             "supported": True,
-            "exit_code": 0,
-            "status": "pass",
+            "exit_code": proc.returncode,
+            "status": "pass" if proc.returncode == 0 else "fail",
         }
 
     env = base_env.copy()
@@ -172,13 +176,30 @@ def run_x86_tier(tier: Dict[str, Any], supported: Set[str],
     cpu = tier["cpu"]
     env = base_env.copy()
     env["OSAI_QEMU_X86_CPU"] = cpu
-    proc = run(["./scripts/run-qemu-x86_64.sh", "--dry-run"], env, 20)
+    validation = tier["validation"]
     supported_by_qemu = cpu == "max" or cpu in supported
+    if not supported_by_qemu:
+        return {
+            "name": tier["name"],
+            "architecture": "x86_64",
+            "cpu": cpu,
+            "validation": validation,
+            "supported": False,
+            "exit_code": 1,
+            "status": "fail",
+            "error": "cpu model not listed by qemu-system-x86_64 -cpu help",
+        }
+
+    if validation == "qemu-smoke":
+        env.setdefault("OSAI_QEMU_SMOKE_TIMEOUT", "90")
+        proc = run(["python3", "./scripts/qemu-x86_64-smoke.py"], env, 140)
+    else:
+        proc = run(["./scripts/run-qemu-x86_64.sh", "--dry-run"], env, 20)
     return {
         "name": tier["name"],
         "architecture": "x86_64",
         "cpu": cpu,
-        "validation": tier["validation"],
+        "validation": validation,
         "supported": supported_by_qemu,
         "exit_code": proc.returncode,
         "status": "pass" if supported_by_qemu and proc.returncode == 0 else "fail",
@@ -211,6 +232,11 @@ def main() -> int:
             if result["status"] != "pass":
                 failures.append(f"arm64 tier failed: {tier['name']}")
     if qemu_x86_64:
+        if any(tier.get("validation") == "qemu-smoke"
+               for tier in contract["cpu_matrix"]["x86_64_command_tiers"]):
+            image_proc = run(["make", "image-x86_64"], base_env, 120)
+            if image_proc.returncode != 0:
+                failures.append("x86_64 image build failed for CPU matrix")
         for tier in contract["cpu_matrix"]["x86_64_command_tiers"]:
             result = run_x86_tier(tier, x86_supported, base_env)
             tiers.append(result)

@@ -43,7 +43,7 @@ qemu-preview: image
 qemu-matrix:
 	python3 ./scripts/qemu-matrix.py
 
-qemu-cpu-matrix: image
+qemu-cpu-matrix: image image-x86_64
 	python3 ./scripts/qemu-cpu-matrix.py
 
 qemu-benchmark:
