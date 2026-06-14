@@ -11,15 +11,18 @@ drivers, telemetry, `/init`, security fixtures, persistence metadata, AI Cell
 runtime fixtures, and correctness benchmark/preview gates.
 The QEMU release-candidate contract is frozen in
 `contracts/qemu-rc-v1.json`.
+The first full-OS filesystem slice adds a VirtIO-backed mutable filesystem
+region with checksum-protected metadata, read-write mount policy,
+create/update/read/delete operations, and commit/rollback self-tests.
 
 The current implementation still has important MVP/stub areas:
 
 - single foreground EL0 `/init` path;
 - kernel-hosted service policy;
-- metadata-only persistence;
+- persistence records plus an early mutable filesystem layer;
 - correctness-only network paths;
 - deterministic CPU-AI runtime stub;
-- no real filesystem mutation or disk-backed rollback;
+- no production filesystem allocator or directory tree yet;
 - no real multi-process scheduling.
 
 ## Full QEMU OS Phases
@@ -72,8 +75,19 @@ The current implementation still has important MVP/stub areas:
 - Document what remains out of scope before Intel Desktop bring-up.
 - Only then start Intel Desktop code.
 
+### Phase Q8: Full Filesystem
+
+- Add a separate mutable filesystem region on the VirtIO block image.
+- Keep the read-only boot filesystem and mutable state area explicitly
+  separated.
+- Validate metadata checksums, mount policy, file mutation, delete behavior,
+  and commit/rollback boundaries.
+- Extend QEMU telemetry and correctness gates for mutable filesystem counters.
+- Continue toward a production filesystem allocator, directory model, and
+  larger persistent state area.
+
 ## Current Slice
 
-The active engineering slice is the QEMU release-candidate gate under the
-full-core workdown. The detailed checklist lives in
+The active engineering slice is full filesystem work under the full-core
+workdown. The detailed checklist lives in
 `QEMU-FULL-OS-CORE-WORKDOWN.md`.

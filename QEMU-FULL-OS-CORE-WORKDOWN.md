@@ -163,3 +163,30 @@ Definition of done:
   contracts are stable enough to start Intel Desktop work.
 - The frozen contract lives at `contracts/qemu-rc-v1.json`.
 - The readiness gate writes and validates `build/qemu-cpu-matrix-report.json`.
+
+## Phase Q8: Full Filesystem
+
+Goal: move beyond the read-only boot filesystem and single-sector persistence
+records toward a real mutable filesystem area.
+
+Required work:
+
+- [x] Reserve a separate VirtIO-backed mutable filesystem sector range.
+- [x] Add checksum-protected filesystem metadata.
+- [x] Add explicit read-write mount policy.
+- [x] Add create/update/read/delete file operations.
+- [x] Add commit and rollback boundaries for mutable files.
+- [x] Add QEMU smoke and benchmark gates for mutable filesystem telemetry.
+- [ ] Add a real block allocator instead of fixed one-sector file slots.
+- [ ] Add directory records and path traversal beyond fixed prefixes.
+- [ ] Add larger files spanning multiple sectors.
+- [ ] Add crash-consistency transaction replay.
+- [ ] Connect service, workspace, and update state to the mutable filesystem.
+
+Definition of done:
+
+- QEMU proves mutable filesystem mount, mutation, checksum validation,
+  delete behavior, reboot load, and rollback behavior without weakening the
+  read-only boot filesystem boundary.
+- A later production-ready filesystem must replace the fixed-slot test layout
+  with allocation, directories, multi-sector files, and transaction replay.

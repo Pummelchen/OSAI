@@ -55,6 +55,17 @@ def main() -> int:
         "persistence_disk_loads",
         "persistence_boot_loads",
         "persistence_checksum_errors",
+        "mutable_fs_mounts",
+        "mutable_fs_formats",
+        "mutable_fs_boot_loads",
+        "mutable_fs_files",
+        "mutable_fs_writes",
+        "mutable_fs_reads",
+        "mutable_fs_deletes",
+        "mutable_fs_commits",
+        "mutable_fs_rollbacks",
+        "mutable_fs_rejects",
+        "mutable_fs_checksum_errors",
         "security_denied_ops",
         "security_capability_denials",
         "security_fs_denials",
@@ -131,6 +142,15 @@ def main() -> int:
         "disk_persistence_reloaded": telemetry["persistence_disk_writes"] >= 1
         and telemetry["persistence_disk_loads"] >= 1
         and telemetry["persistence_checksum_errors"] == 0,
+        "mutable_filesystem_active": telemetry["mutable_fs_mounts"] >= 1
+        and telemetry["mutable_fs_files"] >= 2
+        and telemetry["mutable_fs_writes"] >= 4
+        and telemetry["mutable_fs_reads"] >= 3
+        and telemetry["mutable_fs_deletes"] >= 1
+        and telemetry["mutable_fs_commits"] >= 1
+        and telemetry["mutable_fs_rollbacks"] >= 1
+        and telemetry["mutable_fs_rejects"] >= 4
+        and telemetry["mutable_fs_checksum_errors"] == 0,
         "no_hot_path_migration": telemetry["migration_total"] == 0,
         "no_hot_path_context_switches": telemetry["context_switch_total"] == 0,
         "udp_path_exercised": telemetry["network_udp_tx"] >= 1

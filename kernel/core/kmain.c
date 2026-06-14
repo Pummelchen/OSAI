@@ -11,6 +11,7 @@
 #include <osai/git_workspace.h>
 #include <osai/klog.h>
 #include <osai/model_arena.h>
+#include <osai/mutable_fs.h>
 #include <osai/pmm.h>
 #include <osai/persistence.h>
 #include <osai/sandbox.h>
@@ -101,6 +102,7 @@ void kmain(const osai_boot_info_t *boot) {
 
   virtio_block_self_test();
   persistence_self_test();
+  mutable_fs_self_test();
   virtio_net_self_test();
   network_stack_self_test();
   initramfs_self_test();
