@@ -37,6 +37,12 @@ The update-and-rollback slice adds an update transaction runtime, persisted
 mutable filesystem update records, persistence rollback points, failed staged
 update recovery through boot fallback, committed update rollback, and readiness
 gates for the update lifecycle telemetry.
+The final Milestone 42 QEMU full OS release candidate slice adds
+`make qemu-full-os-rc`,
+which runs the full readiness gate, validates the frozen contract against source
+ABI definitions, checks all generated QEMU reports, and writes
+`build/qemu-full-os-rc-report.json` with `qemu_full_os_complete=true` only when
+milestone 42 is complete.
 
 The current implementation still has important MVP/stub areas:
 
@@ -112,8 +118,21 @@ The current implementation still has important MVP/stub areas:
   POSIX-like surface, larger persistent state area, and hardware-specific
   storage tuning.
 
+### Phase Q9: Full OS Release Candidate Gate
+
+- Run `make qemu-full-os-rc`.
+- Re-run the complete QEMU readiness matrix from the final gate.
+- Validate `contracts/qemu-rc-v1.json` against the source syscall and
+  capability ABI.
+- Validate benchmark, preview, readiness, and CPU matrix artifacts.
+- Emit `build/qemu-full-os-rc-report.json` with schema
+  `osai.qemu.full_os_release_candidate.v1`.
+- Treat `qemu_full_os_complete=true` as the local gate that allows Intel
+  Desktop planning to move into implementation.
+
 ## Current Slice
 
-Milestones 34 through 41 are complete in QEMU. The next active slice starts at
-milestone 42 under the full-core workdown. The detailed checklist lives in
-`QEMU-FULL-OS-CORE-WORKDOWN.md`.
+Milestones 34 through 42 are complete in QEMU when `make qemu-full-os-rc`
+passes. The detailed checklist lives in `QEMU-FULL-OS-CORE-WORKDOWN.md`.
+The next implementation phase after a passing full-OS RC report is Intel
+Desktop bring-up.

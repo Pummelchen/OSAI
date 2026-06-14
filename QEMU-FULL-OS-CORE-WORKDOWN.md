@@ -339,3 +339,29 @@ Definition of done:
 - `python3 ./scripts/qemu-benchmark.py` reports
   `admin_control_plane_active=true`.
 - `make qemu-readiness-gate` requires the admin telemetry and contract section.
+
+## Phase Q16: Full OS Release Candidate
+
+Goal: close the QEMU full-OS track with one final release-candidate gate that
+can safely unlock Intel Desktop bring-up.
+
+Required work:
+
+- [x] Add `make qemu-full-os-rc` as the final QEMU full OS gate.
+- [x] Run the complete `make qemu-readiness-gate` matrix from the final gate.
+- [x] Validate the frozen QEMU contract at `contracts/qemu-rc-v1.json`.
+- [x] Verify the source syscall/capability ABI matches the frozen contract.
+- [x] Validate benchmark, preview, readiness, and CPU matrix artifacts.
+- [x] Require all correctness benchmark gates to pass.
+- [x] Preserve `performance_claims_allowed=false`.
+- [x] Validate release documentation names the final RC gate and report.
+- [x] Emit `build/qemu-full-os-rc-report.json` with
+  `qemu_full_os_complete=true` only when every RC check passes.
+
+Definition of done:
+
+- `make qemu-full-os-rc` exits 0 and writes
+  `build/qemu-full-os-rc-report.json`.
+- The report schema is `osai.qemu.full_os_release_candidate.v1`.
+- The report marks milestone 42 complete with `qemu_full_os_complete=true`.
+- Intel Desktop bring-up remains blocked unless this final report passes.

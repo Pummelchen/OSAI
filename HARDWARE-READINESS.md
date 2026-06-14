@@ -3,7 +3,7 @@
 OSAI is not ready for Intel Desktop hardware until the QEMU contract is frozen
 and the local QEMU matrix is green.
 
-## Current Gate
+## Current Gates
 
 The milestone 33 QEMU hardware-readiness gate is:
 
@@ -24,6 +24,20 @@ The frozen release-candidate contract schema is
 
 The benchmark harness is a correctness benchmark only. It does not authorize
 performance claims against Linux, BSD, or hardware targets.
+
+The milestone 42 QEMU full OS release-candidate gate is:
+
+- `make qemu-full-os-rc`
+
+That command runs `make qemu-readiness-gate`, validates the generated reports,
+checks the source syscall/capability ABI against `contracts/qemu-rc-v1.json`,
+and writes:
+
+- `build/qemu-full-os-rc-report.json`
+
+The full OS RC report schema is
+`osai.qemu.full_os_release_candidate.v1`. Intel Desktop implementation starts
+only after that report has `status=pass` and `qemu_full_os_complete=true`.
 
 ## Frozen QEMU Contracts
 
@@ -71,6 +85,11 @@ The QEMU release-candidate gate intentionally does not claim:
 
 Intel Desktop work can begin only after:
 
+- `make qemu-full-os-rc` passes locally.
+- The QEMU full OS RC report exists at
+  `build/qemu-full-os-rc-report.json`.
+- The full OS RC report status is `pass`.
+- The full OS RC report has `qemu_full_os_complete=true`.
 - `make qemu-readiness-gate` passes locally.
 - The QEMU preview manifest exists at `build/qemu-preview-manifest.json`.
 - The QEMU benchmark report exists at `build/qemu-benchmark-report.json`.
