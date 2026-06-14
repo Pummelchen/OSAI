@@ -73,6 +73,16 @@ def main() -> int:
         "mutable_fs_state_records",
         "mutable_fs_rejects",
         "mutable_fs_checksum_errors",
+        "update_transactions",
+        "update_staged",
+        "update_committed",
+        "update_failures",
+        "update_recoveries",
+        "update_rollbacks",
+        "update_boot_fallbacks",
+        "update_records_persisted",
+        "update_rollback_points",
+        "update_rejects",
         "security_denied_ops",
         "security_capability_denials",
         "security_fs_denials",
@@ -216,6 +226,16 @@ def main() -> int:
         and telemetry["security_key_rejects"] >= 1
         and telemetry["security_sandbox_escape_rejects"] >= 2,
         "persistence_rollbacks_present": telemetry["persistence_rollbacks"] >= 5,
+        "update_rollback_system": telemetry["update_transactions"] >= 2
+        and telemetry["update_staged"] >= 2
+        and telemetry["update_committed"] >= 1
+        and telemetry["update_failures"] >= 1
+        and telemetry["update_recoveries"] >= 1
+        and telemetry["update_rollbacks"] >= 1
+        and telemetry["update_boot_fallbacks"] >= 1
+        and telemetry["update_records_persisted"] >= 8
+        and telemetry["update_rollback_points"] >= 2
+        and telemetry["update_rejects"] >= 2,
         "disk_persistence_reloaded": telemetry["persistence_disk_writes"] >= 1
         and telemetry["persistence_disk_loads"] >= 1
         and telemetry["persistence_checksum_errors"] == 0,

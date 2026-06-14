@@ -1065,6 +1065,50 @@ osai_status_t mutable_fs_record_update_state(const char *policy) {
   return status;
 }
 
+osai_status_t mutable_fs_record_update_transaction(uint32_t generation,
+                                                   const char *state,
+                                                   const char *target,
+                                                   const char *rollback_label) {
+  char record[256];
+  uint64_t record_offset = 0;
+  bytes_zero(record, sizeof(record));
+  if (state == 0 || target == 0 || rollback_label == 0 ||
+      append_cstr(record, sizeof(record), &record_offset,
+                  "policy=signed-update-required\n") != OSAI_OK ||
+      append_cstr(record, sizeof(record), &record_offset,
+                  "transaction_generation=") != OSAI_OK ||
+      append_u32(record, sizeof(record), &record_offset, generation) !=
+          OSAI_OK ||
+      append_cstr(record, sizeof(record), &record_offset, "\nstate=") !=
+          OSAI_OK ||
+      append_cstr(record, sizeof(record), &record_offset, state) != OSAI_OK ||
+      append_cstr(record, sizeof(record), &record_offset, "\ntarget=") !=
+          OSAI_OK ||
+      append_cstr(record, sizeof(record), &record_offset, target) != OSAI_OK ||
+      append_cstr(record, sizeof(record), &record_offset, "\nrollback=") !=
+          OSAI_OK ||
+      append_cstr(record, sizeof(record), &record_offset, rollback_label) !=
+          OSAI_OK ||
+      append_char(record, sizeof(record), &record_offset, '\n') != OSAI_OK) {
+    ++g_reject_count;
+    return OSAI_ERR_INVALID;
+  }
+  osai_status_t status = write_file("/state/updates/update.state",
+                                    record, record_offset + 1U);
+  if (status == OSAI_OK) {
+    ++g_state_record_count;
+  }
+  return status;
+}
+
+osai_status_t mutable_fs_commit(const char *label) {
+  return commit_snapshot(label);
+}
+
+osai_status_t mutable_fs_rollback(void) {
+  return rollback_snapshot();
+}
+
 uint64_t mutable_fs_mount_count(void) { return g_mount_count; }
 uint64_t mutable_fs_format_count(void) { return g_format_count; }
 uint64_t mutable_fs_boot_load_count(void) { return g_boot_load_count; }

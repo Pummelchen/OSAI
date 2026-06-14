@@ -23,6 +23,7 @@
 #include <osai/syscall.h>
 #include <osai/telemetry.h>
 #include <osai/timer.h>
+#include <osai/update.h>
 #include <osai/user.h>
 #include <osai/virtio_blk.h>
 #include <osai/virtio_net.h>
@@ -103,6 +104,7 @@ void kmain(const osai_boot_info_t *boot) {
   virtio_block_self_test();
   persistence_self_test();
   mutable_fs_self_test();
+  update_self_test();
   virtio_net_self_test();
   network_stack_self_test();
   initramfs_self_test();

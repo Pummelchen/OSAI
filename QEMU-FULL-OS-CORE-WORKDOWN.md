@@ -279,3 +279,33 @@ Definition of done:
   signed update authorization paths are all exercised and counted.
 - `make qemu-smoke`, `python3 ./scripts/qemu-benchmark.py`, and
   `make qemu-readiness-gate` require the security-hardening telemetry.
+
+## Phase Q14: Update and Rollback System
+
+Goal: turn signed-update acceptance into an explicit transaction lifecycle with
+rollback points, boot fallback, failed-update recovery, and persisted update
+state records.
+
+Required work:
+
+- [x] Add a kernel update transaction runtime.
+- [x] Persist update transaction records into the mutable filesystem.
+- [x] Create persistence rollback points for update transactions.
+- [x] Stage signed update transactions after authorization.
+- [x] Commit staged update transactions.
+- [x] Mark failed staged transactions and recover them through boot fallback.
+- [x] Roll back committed update transactions through the same rollback path.
+- [x] Emit telemetry for transactions, stages, commits, failures, recoveries,
+  rollbacks, boot fallback, persisted records, rollback points, and rejects.
+- [x] Add smoke, benchmark, readiness, and RC contract gates for the update
+  rollback system.
+
+Definition of done:
+
+- QEMU boot proves two signed update transactions: one staged update fails and
+  is recovered through boot fallback, and one staged update commits and is then
+  rolled back through an authorized rollback point.
+- Update records are serialized under `/state/updates/update.state` with
+  generation, state, target, and rollback metadata.
+- `make qemu-smoke`, `python3 ./scripts/qemu-benchmark.py`, and
+  `make qemu-readiness-gate` require the update rollback telemetry.

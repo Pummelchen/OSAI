@@ -116,15 +116,25 @@ REQUIRED_TELEMETRY_MINIMUMS = {
     "security_credential_rejects": 3,
     "security_signature_rejects": 3,
     "security_admin_denials": 2,
-    "security_update_authorizations": 1,
+    "security_update_authorizations": 3,
     "security_update_replay_rejects": 1,
-    "security_key_accepts": 1,
+    "security_key_accepts": 3,
     "security_key_rejects": 1,
     "security_sandbox_escape_rejects": 2,
-    "persistence_snapshots": 5,
-    "persistence_rollbacks": 5,
+    "persistence_snapshots": 7,
+    "persistence_rollbacks": 7,
     "persistence_disk_writes": 1,
     "persistence_disk_loads": 1,
+    "update_transactions": 2,
+    "update_staged": 2,
+    "update_committed": 1,
+    "update_failures": 1,
+    "update_recoveries": 1,
+    "update_rollbacks": 1,
+    "update_boot_fallbacks": 1,
+    "update_records_persisted": 8,
+    "update_rollback_points": 2,
+    "update_rejects": 2,
     "network_udp_tx": 3,
     "network_udp_rx": 3,
     "network_udp_flows": 1,
@@ -336,6 +346,18 @@ def validate_contract(contract: Dict[str, Any], failures: List[str]) -> Dict[str
     check_bool(security_policy.get("rollback_authorization_required"), True, "contract.security_policy.rollback_authorization_required", failures)
     check_bool(security_policy.get("sandbox_path_escape_rejected"), True, "contract.security_policy.sandbox_path_escape_rejected", failures)
     check_bool(security_policy.get("credential_material_rejected"), True, "contract.security_policy.credential_material_rejected", failures)
+
+    update_system = contract.get("update_system", {})
+    check_equal(update_system.get("transaction_record_path"), "/state/updates/update.state", "contract.update_system.transaction_record_path", failures)
+    for field in ["policy", "transaction_generation", "state", "target", "rollback"]:
+        if field not in update_system.get("record_fields", []):
+            failures.append(f"contract.update_system.record_fields missing {field}")
+    check_equal(update_system.get("rollback_point_kind"), "update", "contract.update_system.rollback_point_kind", failures)
+    check_bool(update_system.get("boot_fallback_required"), True, "contract.update_system.boot_fallback_required", failures)
+    check_bool(update_system.get("failed_update_recovery_required"), True, "contract.update_system.failed_update_recovery_required", failures)
+    check_bool(update_system.get("committed_update_rollback_required"), True, "contract.update_system.committed_update_rollback_required", failures)
+    check_equal(update_system.get("minimum_transactions"), 2, "contract.update_system.minimum_transactions", failures)
+    check_equal(update_system.get("minimum_persisted_records"), 8, "contract.update_system.minimum_persisted_records", failures)
 
     out_of_scope = contract.get("out_of_scope_before_intel", [])
     if len(out_of_scope) < 5:

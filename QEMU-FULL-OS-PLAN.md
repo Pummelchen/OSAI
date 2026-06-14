@@ -33,6 +33,10 @@ The security-hardening slice adds an explicit admin capability, stricter
 signed-update format with development public-key id, monotonic update generation
 and replay rejection, sandbox path escape rejection, and QEMU gates for the
 new policy counters.
+The update-and-rollback slice adds an update transaction runtime, persisted
+mutable filesystem update records, persistence rollback points, failed staged
+update recovery through boot fallback, committed update rollback, and readiness
+gates for the update lifecycle telemetry.
 
 The current implementation still has important MVP/stub areas:
 
@@ -110,6 +114,6 @@ The current implementation still has important MVP/stub areas:
 
 ## Current Slice
 
-Milestones 34 through 39 are complete in QEMU. The next active slice starts at
-milestone 40 under the full-core workdown. The detailed checklist lives in
+Milestones 34 through 40 are complete in QEMU. The next active slice starts at
+milestone 41 under the full-core workdown. The detailed checklist lives in
 `QEMU-FULL-OS-CORE-WORKDOWN.md`.

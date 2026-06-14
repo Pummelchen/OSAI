@@ -30,5 +30,11 @@ osai_status_t mutable_fs_record_service_state(const char *name,
 osai_status_t mutable_fs_record_workspace_state(uint32_t workspace_id,
                                                 const char *revision);
 osai_status_t mutable_fs_record_update_state(const char *policy);
+osai_status_t mutable_fs_record_update_transaction(uint32_t generation,
+                                                   const char *state,
+                                                   const char *target,
+                                                   const char *rollback_label);
+osai_status_t mutable_fs_commit(const char *label);
+osai_status_t mutable_fs_rollback(void);
 
 #endif
