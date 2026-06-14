@@ -235,6 +235,70 @@ _start:
   mov x8, #1
   svc #0
 
+  adr x0, fs_path
+  adr x1, fs_path_end
+  sub x1, x1, x0
+  mov x2, #7
+  mov x8, #11
+  svc #0
+  cmn x0, #1
+  b.eq manager_failed
+  mov x19, x0
+
+  mov x0, x19
+  adr x1, fs_payload
+  adr x2, fs_payload_end
+  sub x2, x2, x1
+  mov x8, #13
+  svc #0
+  cmn x0, #1
+  b.eq manager_failed
+
+  mov x0, x19
+  mov x8, #14
+  svc #0
+  cmn x0, #1
+  b.eq manager_failed
+
+  adr x0, fs_path
+  adr x1, fs_path_end
+  sub x1, x1, x0
+  mov x2, #1
+  mov x8, #11
+  svc #0
+  cmn x0, #1
+  b.eq manager_failed
+  mov x19, x0
+
+  mov x0, x19
+  adr x1, fs_buffer
+  mov x2, #64
+  mov x8, #12
+  svc #0
+  cmn x0, #1
+  b.eq manager_failed
+
+  mov x0, x19
+  mov x8, #14
+  svc #0
+  cmn x0, #1
+  b.eq manager_failed
+
+  adr x0, fs_path
+  adr x1, fs_path_end
+  sub x1, x1, x0
+  adr x2, fs_stat
+  mov x8, #15
+  svc #0
+  cmn x0, #1
+  b.eq manager_failed
+
+  adr x0, msg_fs_ready
+  adr x1, msg_fs_ready_end
+  sub x1, x1, x0
+  mov x8, #1
+  svc #0
+
   adr x0, msg_done
   mov x1, #41
   mov x8, #1
@@ -276,6 +340,9 @@ msg_admin_safe:
 msg_osctl_ready:
   .ascii "/service-manager: osctl command surface passed\n"
 msg_osctl_ready_end:
+msg_fs_ready:
+  .ascii "/service-manager: mutable fs syscalls passed\n"
+msg_fs_ready_end:
 msg_done:
   .ascii "/service-manager: control plane complete\n"
 msg_failed:
@@ -327,6 +394,12 @@ cmd_osctl_update_end:
 cmd_osctl_rollback:
   .ascii "osctl rollback"
 cmd_osctl_rollback_end:
+fs_path:
+  .ascii "/logs/el0-fs.log"
+fs_path_end:
+fs_payload:
+  .ascii "el0-fs=syscall-ok\n"
+fs_payload_end:
 service_child:
   .ascii "/svc/source-index"
 service_init:
@@ -338,3 +411,7 @@ update_signature:
 .balign 16
 descriptor_buffer:
   .skip 256
+fs_buffer:
+  .skip 128
+fs_stat:
+  .skip 32

@@ -71,6 +71,11 @@ def main() -> int:
         "mutable_fs_frees",
         "mutable_fs_multi_sector_files",
         "mutable_fs_state_records",
+        "mutable_fs_renames",
+        "mutable_fs_lists",
+        "mutable_fs_stats",
+        "mutable_fs_opens",
+        "mutable_fs_closes",
         "mutable_fs_rejects",
         "mutable_fs_checksum_errors",
         "update_transactions",
@@ -246,10 +251,10 @@ def main() -> int:
         and telemetry["persistence_disk_loads"] >= 1
         and telemetry["persistence_checksum_errors"] == 0,
         "mutable_filesystem_active": telemetry["mutable_fs_mounts"] >= 2
-        and telemetry["mutable_fs_files"] >= 5
-        and telemetry["mutable_fs_directories"] >= 7
-        and telemetry["mutable_fs_writes"] >= 8
-        and telemetry["mutable_fs_reads"] >= 4
+        and telemetry["mutable_fs_files"] >= 8
+        and telemetry["mutable_fs_directories"] >= 11
+        and telemetry["mutable_fs_writes"] >= 26
+        and telemetry["mutable_fs_reads"] >= 8
         and telemetry["mutable_fs_deletes"] >= 1
         and telemetry["mutable_fs_commits"] >= 1
         and telemetry["mutable_fs_rollbacks"] >= 1
@@ -259,7 +264,12 @@ def main() -> int:
         and telemetry["mutable_fs_frees"] >= 1
         and telemetry["mutable_fs_multi_sector_files"] >= 1
         and telemetry["mutable_fs_state_records"] >= 4
-        and telemetry["mutable_fs_rejects"] >= 6
+        and telemetry["mutable_fs_renames"] >= 1
+        and telemetry["mutable_fs_lists"] >= 1
+        and telemetry["mutable_fs_stats"] >= 4
+        and telemetry["mutable_fs_opens"] >= 5
+        and telemetry["mutable_fs_closes"] >= 5
+        and telemetry["mutable_fs_rejects"] >= 8
         and telemetry["mutable_fs_checksum_errors"] == 0,
         "no_hot_path_migration": telemetry["migration_total"] == 0,
         "no_hot_path_context_switches": telemetry["context_switch_total"] == 0,
@@ -289,7 +299,7 @@ def main() -> int:
         and telemetry["service_crashes"] >= 1
         and telemetry["service_cleanups"] >= 3
         and telemetry["service_log_records"] >= 2,
-        "userspace_control_plane_active": telemetry["control_plane_syscalls"] >= 13
+        "userspace_control_plane_active": telemetry["control_plane_syscalls"] >= 34
         and telemetry["control_plane_denials"] >= 4
         and telemetry["service_descriptor_reads"] >= 1,
         "admin_control_plane_active": telemetry["admin_policy_exports"] >= 1

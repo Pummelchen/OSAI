@@ -22,7 +22,12 @@
       {"number": 7, "name": "service_stop", "capability": "OSAI_CAP_SERVICE_CONTROL"},
       {"number": 8, "name": "service_restart", "capability": "OSAI_CAP_SERVICE_CONTROL"},
       {"number": 9, "name": "service_rollback", "capability": "OSAI_CAP_SERVICE_ROLLBACK"},
-      {"number": 10, "name": "service_update", "capability": "OSAI_CAP_UPDATE"}
+      {"number": 10, "name": "service_update", "capability": "OSAI_CAP_UPDATE"},
+      {"number": 11, "name": "fs_open", "capability": "OSAI_CAP_FS_READ"},
+      {"number": 12, "name": "fs_read", "capability": "OSAI_CAP_FS_READ"},
+      {"number": 13, "name": "fs_write", "capability": "OSAI_CAP_FS_WRITE"},
+      {"number": 14, "name": "fs_close", "capability": "OSAI_CAP_FS_READ"},
+      {"number": 15, "name": "fs_stat", "capability": "OSAI_CAP_FS_READ"}
     ],
     "capabilities": [
       {"bit": 1, "name": "OSAI_CAP_LOG"},
@@ -32,7 +37,8 @@
       {"bit": 16, "name": "OSAI_CAP_UPDATE"},
       {"bit": 32, "name": "OSAI_CAP_FS_READ"},
       {"bit": 64, "name": "OSAI_CAP_SERVICE_CONTROL"},
-      {"bit": 128, "name": "OSAI_CAP_ADMIN"}
+      {"bit": 128, "name": "OSAI_CAP_ADMIN"},
+      {"bit": 256, "name": "OSAI_CAP_FS_WRITE"}
     ]
   },
   "telemetry_schema": {
@@ -127,7 +133,7 @@
       "admin_log_reads": 1,
       "admin_remote_safe_accepts": 1,
       "admin_remote_safe_rejects": 1,
-      "control_plane_syscalls": 27,
+      "control_plane_syscalls": 34,
       "control_plane_denials": 5,
       "service_descriptor_reads": 1,
       "user_process_transitions": 18,
@@ -136,7 +142,17 @@
       "user_process_running": 5,
       "user_process_exited": 5,
       "user_process_reclaims": 5,
-      "user_process_scheduled": 5
+      "user_process_scheduled": 5,
+      "mutable_fs_files": 8,
+      "mutable_fs_directories": 11,
+      "mutable_fs_writes": 26,
+      "mutable_fs_reads": 8,
+      "mutable_fs_renames": 1,
+      "mutable_fs_lists": 1,
+      "mutable_fs_stats": 4,
+      "mutable_fs_opens": 5,
+      "mutable_fs_closes": 5,
+      "mutable_fs_rejects": 8
     },
     "equals": {
       "migration_total": 0,

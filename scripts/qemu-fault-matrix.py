@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import select
+import signal
 import subprocess
 import sys
 import time
@@ -59,6 +60,7 @@ def run_fault_boot(name: str, targets) -> int:
         text=True,
         bufsize=1,
         env=env,
+        start_new_session=True,
     )
 
     seen = []
@@ -82,11 +84,11 @@ def run_fault_boot(name: str, targets) -> int:
                 break
     finally:
         if proc.poll() is None:
-            proc.terminate()
+            os.killpg(proc.pid, signal.SIGTERM)
             try:
                 proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
-                proc.kill()
+                os.killpg(proc.pid, signal.SIGKILL)
                 proc.wait(timeout=3)
 
     text = "".join(seen)

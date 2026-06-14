@@ -48,12 +48,12 @@ def main() -> int:
         failures.append(str(exc))
 
     control_plane = telemetry.get("control_plane_syscalls") if telemetry else None
-    if not isinstance(control_plane, int) or control_plane < 27:
+    if not isinstance(control_plane, int) or control_plane < 34:
         failures.append(
-            f"control_plane_syscalls expected >= 27, got {control_plane!r}")
+            f"control_plane_syscalls expected >= 34, got {control_plane!r}")
 
     checks.append(result("control_plane_telemetry",
-                         isinstance(control_plane, int) and control_plane >= 27,
+                         isinstance(control_plane, int) and control_plane >= 34,
                          control_plane_syscalls=control_plane))
 
     report = {

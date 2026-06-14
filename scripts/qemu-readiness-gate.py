@@ -164,7 +164,7 @@ REQUIRED_TELEMETRY_MINIMUMS = {
     "admin_log_reads": 1,
     "admin_remote_safe_accepts": 1,
     "admin_remote_safe_rejects": 1,
-    "control_plane_syscalls": 27,
+    "control_plane_syscalls": 34,
     "control_plane_denials": 5,
     "service_descriptor_reads": 1,
     "user_process_transitions": 18,
@@ -174,6 +174,16 @@ REQUIRED_TELEMETRY_MINIMUMS = {
     "user_process_exited": 5,
     "user_process_reclaims": 5,
     "user_process_scheduled": 5,
+    "mutable_fs_files": 8,
+    "mutable_fs_directories": 11,
+    "mutable_fs_writes": 26,
+    "mutable_fs_reads": 8,
+    "mutable_fs_renames": 1,
+    "mutable_fs_lists": 1,
+    "mutable_fs_stats": 4,
+    "mutable_fs_opens": 5,
+    "mutable_fs_closes": 5,
+    "mutable_fs_rejects": 8,
 }
 
 REQUIRED_TELEMETRY_EQUALS = {
@@ -290,11 +300,11 @@ def validate_contract(contract: Dict[str, Any], failures: List[str]) -> Dict[str
     syscalls = syscall_abi.get("syscalls", [])
     capabilities = syscall_abi.get("capabilities", [])
     check_equal(syscall_abi.get("version"), 1, "contract.syscall_abi.version", failures)
-    if len(syscalls) != 10:
-        failures.append(f"contract.syscall_abi.syscalls expected 10 entries, got {len(syscalls)}")
-    if len(capabilities) != 8:
-        failures.append(f"contract.syscall_abi.capabilities expected 8 entries, got {len(capabilities)}")
-    expected_syscall_numbers = list(range(1, 11))
+    if len(syscalls) != 15:
+        failures.append(f"contract.syscall_abi.syscalls expected 15 entries, got {len(syscalls)}")
+    if len(capabilities) != 9:
+        failures.append(f"contract.syscall_abi.capabilities expected 9 entries, got {len(capabilities)}")
+    expected_syscall_numbers = list(range(1, 16))
     actual_syscall_numbers = [entry.get("number") for entry in syscalls]
     if actual_syscall_numbers != expected_syscall_numbers:
         failures.append(f"contract.syscall_abi numbers expected {expected_syscall_numbers}, got {actual_syscall_numbers}")

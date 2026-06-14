@@ -25,7 +25,7 @@ SMOKE_FAILURE_MARKERS = {
     "corrupt_state_rejection": [
         "\"persistence_checksum_errors\":0",
         "\"mutable_fs_checksum_errors\":0",
-        "\"mutable_fs_rejects\":6",
+        "\"mutable_fs_rejects\":8",
     ],
     "failed_update_and_rollback": [
         "update: self-test passed transactions=2 staged=2 committed=1 failed=1 recovered=1 rollbacks=1",

@@ -162,7 +162,7 @@ void kmain(const osai_boot_info_t *boot) {
   kassert(user_load_process(manager_file, 2,
                             OSAI_CAP_LOG | OSAI_CAP_EXIT | OSAI_CAP_OSCTL |
                                 OSAI_CAP_FS_READ | OSAI_CAP_SERVICE_CONTROL |
-                                OSAI_CAP_ADMIN,
+                                OSAI_CAP_ADMIN | OSAI_CAP_FS_WRITE,
                             &manager_process) == OSAI_OK);
   kassert(service_start(init_config->service_manager_path) == OSAI_OK);
   int manager_exit_code = user_process_run(&manager_process);

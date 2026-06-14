@@ -57,22 +57,21 @@ Detailed design documentation lives in the GitHub Wiki:
 - [Platform Ports](https://github.com/Pummelchen/OSAI/wiki/QEMU-on-macOS)
 - [Performance Targets](https://github.com/Pummelchen/OSAI/wiki/Performance-Targets)
 - [Codex Work Packages](https://github.com/Pummelchen/OSAI/wiki/Codex-Work-Packages)
-- [Local Hardware Readiness Gate](HARDWARE-READINESS.md)
+- [Project Tracker](https://github.com/Pummelchen/OSAI/wiki/Project-Tracker)
+- [QEMU 100 Completion Plan](https://github.com/Pummelchen/OSAI/wiki/QEMU-100-Completion-Plan)
 
-Current local QEMU-only hardening work after the first Intel Desktop QEMU path
-is checked with:
+Current local QEMU correctness completion is checked with:
 
 ```sh
-make qemu-post51-gate
+make qemu-100-gate
+make qemu-readiness-gate
 ```
 
 ## Status
 
-OSAI is currently in early design and bring-up.
+OSAI is in design and QEMU bring-up. The macOS/QEMU correctness target now has a bootable AArch64 UEFI path, EL0 userspace, service management, mutable filesystem APIs, VirtIO block/network drivers, AI Cell resource checks, CPU-only runtime fixtures, update/rollback checks, telemetry, and aggregate QEMU gates.
 
-The repository now contains the first AArch64 QEMU-on-macOS boot path: a UEFI loader, ELF64 kernel handoff, serial kernel logging, exception diagnostics, generic timer discovery, GIC discovery, SMP/per-core state discovery, split VirtIO transport/block/network drivers, a VirtIO-backed versioned read-only filesystem, manifest-backed `/init` selection, a real EL0 `/init` ELF loaded from that filesystem, an explicit syscall table, process/capability metadata, user pointer validation, bad syscall tests, userspace service-manager policy, build/test sandbox metadata with rollback state, syscall-based service control, a VMM-backed kernel heap, VMM map/unmap and guarded user stack checks, a generic PMM/VMM-backed arena manager, AI Cell lifecycle/resource enforcement, explicit hot-core lease metadata, zero migration/context-switch telemetry for leased AI cores, shared read-only model arenas, private KV/cache and source-index arenas, PMM/VMM self-tests, and JSON-like boot telemetry.
-
-The first engineering target remains a useful bootable QEMU prototype on macOS. Production-oriented targets follow in this order: Intel Desktop, Intel Xeon, and ARM/NVIDIA N1X-compatible SoCs.
+This QEMU status does not mean physical hardware support is complete and does not authorize performance claims. Production-oriented targets still follow in this order: Intel Desktop, Intel Xeon, and ARM/NVIDIA N1X-compatible SoCs.
 
 ## License
 

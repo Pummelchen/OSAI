@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import select
+import signal
 import subprocess
 import sys
 import time
@@ -22,16 +23,17 @@ TARGETS = [
     "persistence: disk write sector=1536 version=1 records=5",
     "persistence: disk loaded sector=1536 version=1 records=5",
     "persistence: disk reload/rollback self-test passed snapshots=5 rollbacks=5 rejects=2 disk_writes=1 disk_loads=1 checksum_errors=0",
-    "mutable-fs: mounted start=1600 metadata=8 journal=2 data=1610 sectors=96 nodes=18 policy=rw",
+    "mutable-fs: mounted start=1600 metadata=16 journal=2 data=1618 sectors=96 nodes=32 policy=rw",
     "mutable-fs: write path=/state/services/source-index.state",
     "mutable-fs: snapshot committed",
     "mutable-fs: snapshot rollback",
     "mutable-fs: allocator self-test passed",
-    "mutable-fs: directory tree self-test passed directories=7",
-    "mutable-fs: multi-sector file self-test passed files=6 multi_sector=1",
+    "mutable-fs: directory tree self-test passed directories=11",
+    "mutable-fs: multi-sector file self-test passed files=7 multi_sector=1",
     "mutable-fs: journal replay self-test passed replays=1 journal_writes=1",
+    "mutable-fs: public API self-test passed list=1 stat=3 rename=1 open=3 close=3",
     "mutable-fs: subsystem records self-test passed records=4",
-    "mutable-fs: self-test passed files=6 directories=7 writes=9 reads=4 deletes=1 commits=1 rollbacks=1 replays=1 rejects=6 checksum_errors=0",
+    "mutable-fs: self-test passed files=7 directories=11 writes=12 reads=6 deletes=1 commits=1 rollbacks=1 replays=1 rejects=8 checksum_errors=0",
     "update: self-test passed transactions=2 staged=2 committed=1 failed=1 recovered=1 rollbacks=1 boot_fallbacks=1 records=8 rollback_points=2 rejects=2",
     "core-lease: isolation self-test passed",
     "virtio-net: malformed packet/drop self-test passed",
@@ -47,7 +49,7 @@ TARGETS = [
     "initramfs: child service=/svc/source-index parent=/init restart=never",
     "initramfs: mounted rofs version=2 files=6",
     "initramfs: rofs metadata/config self-test passed",
-    "syscall: table self-test passed entries=10",
+    "syscall: table self-test passed entries=15",
     "user: process table initialized slots=8",
     "user: process lifecycle invalid/failed transition self-test passed",
     "scheduler: lifecycle self-test passed",
@@ -90,10 +92,10 @@ TARGETS = [
     "\"persistence_disk_loads\":1",
     "\"persistence_checksum_errors\":0",
     "\"mutable_fs_mounts\":2",
-    "\"mutable_fs_files\":6",
-    "\"mutable_fs_directories\":7",
-    "\"mutable_fs_writes\":21",
-    "\"mutable_fs_reads\":4",
+    "\"mutable_fs_files\":8",
+    "\"mutable_fs_directories\":11",
+    "\"mutable_fs_writes\":26",
+    "\"mutable_fs_reads\":8",
     "\"mutable_fs_deletes\":1",
     "\"mutable_fs_commits\":4",
     "\"mutable_fs_rollbacks\":3",
@@ -101,7 +103,12 @@ TARGETS = [
     "\"mutable_fs_journal_writes\":1",
     "\"mutable_fs_multi_sector_files\":1",
     "\"mutable_fs_state_records\":16",
-    "\"mutable_fs_rejects\":6",
+    "\"mutable_fs_renames\":1",
+    "\"mutable_fs_lists\":1",
+    "\"mutable_fs_stats\":4",
+    "\"mutable_fs_opens\":5",
+    "\"mutable_fs_closes\":5",
+    "\"mutable_fs_rejects\":8",
     "\"mutable_fs_checksum_errors\":0",
     "\"update_transactions\":2",
     "\"update_staged\":2",
@@ -243,6 +250,7 @@ TARGETS = [
     "osctl: update transactions=",
     "osctl: rollback persistence=",
     "/service-manager: osctl command surface passed",
+    "/service-manager: mutable fs syscalls passed",
     "/service-manager: control plane complete",
     "user: /bin/service-manager exited status=0",
     "kernel: /bin/service-manager returned to kernel exit_code=0",
@@ -278,10 +286,16 @@ TARGETS = [
     "\"user_process_scheduled\":5",
     "\"user_process_active\":0",
     "\"service_child_descriptors\":1",
-    "\"control_plane_syscalls\"",
+    "\"control_plane_syscalls\":34",
     "\"control_plane_denials\"",
     "\"service_descriptor_reads\":1",
 ]
+
+
+def telemetry_line_complete(text):
+    marker = "telemetry: {"
+    start = text.rfind(marker)
+    return start >= 0 and "\n" in text[start:]
 
 
 def main() -> int:
@@ -294,6 +308,7 @@ def main() -> int:
         text=True,
         bufsize=1,
         env=env,
+        start_new_session=True,
     )
     seen = []
     deadline = time.time() + int(os.environ.get("OSAI_QEMU_SMOKE_TIMEOUT", "60"))
@@ -309,18 +324,19 @@ def main() -> int:
                 sys.stdout.flush()
                 seen.append(chunk)
                 text = "".join(seen)
-                if all(target in text for target in TARGETS):
+                if (all(target in text for target in TARGETS) and
+                        telemetry_line_complete(text)):
                     print("\nQEMU smoke boot reached all full userspace/resource markers")
                     return 0
             elif proc.poll() is not None:
                 break
     finally:
         if proc.poll() is None:
-            proc.terminate()
+            os.killpg(proc.pid, signal.SIGTERM)
             try:
                 proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
-                proc.kill()
+                os.killpg(proc.pid, signal.SIGKILL)
                 proc.wait(timeout=3)
 
     text = "".join(seen)
