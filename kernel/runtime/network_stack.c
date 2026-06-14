@@ -13,7 +13,11 @@
 #define NETWORK_TCP_CONNECTIONS 16U
 #define NETWORK_UDP_FLOWS 16U
 #define NETWORK_PACKET_DESCRIPTORS 16U
+#define NETWORK_QUEUE_RING_SIZE 8U
+#define NETWORK_UDP_IDLE_TIMEOUT_NS UINT64_C(2000000)
+#define NETWORK_TCP_RETRANSMIT_NS UINT64_C(500000)
 #define NETWORK_TCP_SYN_TIMEOUT_NS UINT64_C(1000000)
+#define NETWORK_TCP_MAX_RETRANSMITS 2U
 
 #define NETWORK_TCP_FLAG_FIN 0x01U
 #define NETWORK_TCP_FLAG_SYN 0x02U
@@ -26,6 +30,14 @@ typedef struct network_queue_binding {
   uint32_t core_mask;
   uint32_t in_use;
 } network_queue_binding_t;
+
+typedef struct network_queue_ring {
+  uint32_t queue_id;
+  uint32_t rx_depth;
+  uint32_t tx_depth;
+  uint64_t completed;
+  uint64_t drops;
+} network_queue_ring_t;
 
 typedef enum network_packet_state {
   NETWORK_PACKET_FREE = 0,
@@ -58,6 +70,7 @@ typedef struct network_udp_flow {
   uint32_t remote_address;
   uint64_t packets_rx;
   uint64_t packets_tx;
+  uint64_t last_seen_ns;
 } network_udp_flow_t;
 
 typedef struct network_tcp_flow {
@@ -72,6 +85,9 @@ typedef struct network_tcp_flow {
   uint32_t remote_seq;
   uint32_t local_seq;
   uint64_t last_seen_ns;
+  uint32_t retransmits;
+  uint64_t packets_rx;
+  uint64_t packets_tx;
 } network_tcp_flow_t;
 
 typedef struct network_ip4_header {
@@ -107,6 +123,7 @@ typedef struct network_tcp_header {
 } network_tcp_header_t;
 
 static network_queue_binding_t g_queue_bindings[OSAI_NETWORK_MAX_QUEUE_BINDINGS];
+static network_queue_ring_t g_queue_rings[OSAI_NETWORK_MAX_QUEUE_BINDINGS];
 static uint64_t g_next_flow_id = 1U;
 static network_packet_desc_t g_packet_descs[NETWORK_PACKET_DESCRIPTORS];
 static network_udp_flow_t g_udp_flows[NETWORK_UDP_FLOWS];
@@ -116,14 +133,24 @@ static uint64_t g_udp_tx_count;
 static uint64_t g_udp_rx_count;
 static uint64_t g_udp_malformed_count;
 static uint64_t g_udp_dropped_count;
+static uint64_t g_udp_flow_hit_count;
+static uint64_t g_udp_expired_count;
 static uint64_t g_tcp_handshake_count;
 static uint64_t g_tcp_reset_count;
 static uint64_t g_tcp_timeout_count;
+static uint64_t g_tcp_retransmit_count;
+static uint64_t g_tcp_established_count;
+static uint64_t g_tcp_closed_count;
 static uint64_t g_queue_binding_count;
 static uint64_t g_rx_packet_count;
 static uint64_t g_tx_packet_count;
 static uint64_t g_packet_drop_count;
 static uint64_t g_packet_lifecycle_count;
+static uint64_t g_queue_rx_enqueue_count;
+static uint64_t g_queue_tx_enqueue_count;
+static uint64_t g_queue_completion_count;
+static uint64_t g_queue_backpressure_drop_count;
+static uint64_t g_flow_core_mismatch_count;
 
 static uint64_t g_udp_latency_samples[NETWORK_MAX_SAMPLES];
 static uint64_t g_tcp_latency_samples[NETWORK_MAX_SAMPLES];
@@ -205,13 +232,105 @@ static network_queue_binding_t *find_binding(uint32_t queue_id) {
   return 0;
 }
 
-static network_queue_binding_t *first_binding(void) {
+static network_queue_ring_t *find_queue_ring(uint32_t queue_id) {
   for (uint32_t i = 0; i < OSAI_NETWORK_MAX_QUEUE_BINDINGS; ++i) {
-    if (g_queue_bindings[i].in_use != 0) {
-      return &g_queue_bindings[i];
+    if (g_queue_rings[i].queue_id == queue_id) {
+      return &g_queue_rings[i];
     }
   }
   return 0;
+}
+
+static uint32_t active_binding_count(void) {
+  uint32_t active = 0;
+  for (uint32_t i = 0; i < OSAI_NETWORK_MAX_QUEUE_BINDINGS; ++i) {
+    if (g_queue_bindings[i].in_use != 0) {
+      ++active;
+    }
+  }
+  return active;
+}
+
+static network_queue_binding_t *binding_by_active_index(uint32_t index) {
+  for (uint32_t i = 0; i < OSAI_NETWORK_MAX_QUEUE_BINDINGS; ++i) {
+    if (g_queue_bindings[i].in_use != 0) {
+      if (index == 0U) {
+        return &g_queue_bindings[i];
+      }
+      --index;
+    }
+  }
+  return 0;
+}
+
+static network_queue_binding_t *select_binding_for_flow(uint16_t local_port,
+                                                        uint16_t remote_port,
+                                                        uint32_t local_address,
+                                                        uint32_t remote_address) {
+  uint32_t active = active_binding_count();
+  if (active == 0U) {
+    return 0;
+  }
+  uint32_t hash = (uint32_t)local_port ^ ((uint32_t)remote_port << 3U) ^
+                  local_address ^ (remote_address >> 8U);
+  return binding_by_active_index(hash % active);
+}
+
+static void queue_ring_reset(uint32_t queue_id) {
+  network_queue_ring_t *ring = find_queue_ring(queue_id);
+  if (ring == 0) {
+    return;
+  }
+  ring->rx_depth = 0;
+  ring->tx_depth = 0;
+  ring->completed = 0;
+  ring->drops = 0;
+}
+
+static int queue_ring_rx_enqueue(uint32_t queue_id) {
+  network_queue_ring_t *ring = find_queue_ring(queue_id);
+  if (ring == 0 || ring->rx_depth >= NETWORK_QUEUE_RING_SIZE) {
+    ++g_queue_backpressure_drop_count;
+    if (ring != 0) {
+      ++ring->drops;
+    }
+    return 0;
+  }
+  ++ring->rx_depth;
+  ++g_queue_rx_enqueue_count;
+  return 1;
+}
+
+static void queue_ring_rx_complete(uint32_t queue_id) {
+  network_queue_ring_t *ring = find_queue_ring(queue_id);
+  if (ring != 0 && ring->rx_depth > 0U) {
+    --ring->rx_depth;
+  }
+}
+
+static int queue_ring_tx_enqueue(uint32_t queue_id) {
+  network_queue_ring_t *ring = find_queue_ring(queue_id);
+  if (ring == 0 || ring->tx_depth >= NETWORK_QUEUE_RING_SIZE) {
+    ++g_queue_backpressure_drop_count;
+    if (ring != 0) {
+      ++ring->drops;
+    }
+    return 0;
+  }
+  ++ring->tx_depth;
+  ++g_queue_tx_enqueue_count;
+  return 1;
+}
+
+static void queue_ring_tx_complete(uint32_t queue_id) {
+  network_queue_ring_t *ring = find_queue_ring(queue_id);
+  if (ring != 0) {
+    if (ring->tx_depth > 0U) {
+      --ring->tx_depth;
+    }
+    ++ring->completed;
+    ++g_queue_completion_count;
+  }
 }
 
 static network_packet_desc_t *alloc_packet_desc(uint32_t queue_id,
@@ -219,6 +338,10 @@ static network_packet_desc_t *alloc_packet_desc(uint32_t queue_id,
                                                 uint64_t now_ns) {
   network_queue_binding_t *binding = find_binding(queue_id);
   if (binding == 0 || length == 0 || length > NETWORK_BUFFER_SIZE) {
+    ++g_packet_drop_count;
+    return 0;
+  }
+  if (queue_ring_rx_enqueue(queue_id) == 0) {
     ++g_packet_drop_count;
     return 0;
   }
@@ -242,12 +365,20 @@ static network_packet_desc_t *alloc_packet_desc(uint32_t queue_id,
     }
   }
 
+  queue_ring_rx_complete(queue_id);
   ++g_packet_drop_count;
   return 0;
 }
 
+static void packet_mark_dropped(network_packet_desc_t *packet);
+
 static void packet_mark_tx(network_packet_desc_t *packet) {
   if (packet != 0 && packet->state == NETWORK_PACKET_RX_OWNED) {
+    if (queue_ring_tx_enqueue(packet->queue_id) == 0) {
+      packet_mark_dropped(packet);
+      return;
+    }
+    queue_ring_rx_complete(packet->queue_id);
     packet->state = NETWORK_PACKET_TX_QUEUED;
     ++g_tx_packet_count;
     ++g_packet_lifecycle_count;
@@ -256,6 +387,7 @@ static void packet_mark_tx(network_packet_desc_t *packet) {
 
 static void packet_mark_complete(network_packet_desc_t *packet) {
   if (packet != 0 && packet->state == NETWORK_PACKET_TX_QUEUED) {
+    queue_ring_tx_complete(packet->queue_id);
     packet->state = NETWORK_PACKET_COMPLETE;
     ++g_packet_lifecycle_count;
   }
@@ -263,6 +395,11 @@ static void packet_mark_complete(network_packet_desc_t *packet) {
 
 static void packet_mark_dropped(network_packet_desc_t *packet) {
   if (packet != 0 && packet->state != NETWORK_PACKET_DROPPED) {
+    if (packet->state == NETWORK_PACKET_RX_OWNED) {
+      queue_ring_rx_complete(packet->queue_id);
+    } else if (packet->state == NETWORK_PACKET_TX_QUEUED) {
+      queue_ring_tx_complete(packet->queue_id);
+    }
     packet->state = NETWORK_PACKET_DROPPED;
     ++g_packet_drop_count;
     ++g_packet_lifecycle_count;
@@ -420,10 +557,13 @@ static network_udp_flow_t *alloc_udp_flow(uint32_t queue_id, uint32_t cell_id,
                                           uint16_t local_port,
                                           uint16_t remote_port,
                                           uint32_t local_address,
-                                          uint32_t remote_address) {
+                                          uint32_t remote_address,
+                                          uint64_t now_ns) {
   network_udp_flow_t *flow = find_udp_flow(local_port, remote_port,
                                            local_address, remote_address);
   if (flow != 0) {
+    ++g_udp_flow_hit_count;
+    flow->last_seen_ns = now_ns;
     return flow;
   }
   for (uint32_t i = 0; i < NETWORK_UDP_FLOWS; ++i) {
@@ -442,6 +582,7 @@ static network_udp_flow_t *alloc_udp_flow(uint32_t queue_id, uint32_t cell_id,
       g_udp_flows[i].remote_address = remote_address;
       g_udp_flows[i].packets_rx = 0;
       g_udp_flows[i].packets_tx = 0;
+      g_udp_flows[i].last_seen_ns = now_ns;
       klog("network: udp flow id=%u queue=%u cell=%u local=%u remote=%u\n",
            g_udp_flows[i].flow_id, queue_id, cell_id, local_port, remote_port);
       return &g_udp_flows[i];
@@ -454,6 +595,9 @@ static network_tcp_flow_t *alloc_tcp_flow(void) {
   for (uint32_t i = 0; i < NETWORK_TCP_CONNECTIONS; ++i) {
     if (g_tcp_flows[i].state == OSAI_NETWORK_FLOW_FREE) {
       g_tcp_flows[i].state = OSAI_NETWORK_FLOW_SYN_RECV;
+      g_tcp_flows[i].retransmits = 0;
+      g_tcp_flows[i].packets_rx = 0;
+      g_tcp_flows[i].packets_tx = 0;
       return &g_tcp_flows[i];
     }
   }
@@ -466,6 +610,11 @@ void network_stack_init(void) {
     g_queue_bindings[i].queue_id = OSAI_NETWORK_QUEUE_ID_INVALID;
     g_queue_bindings[i].core_mask = 0;
     g_queue_bindings[i].in_use = 0;
+    g_queue_rings[i].queue_id = i;
+    g_queue_rings[i].rx_depth = 0;
+    g_queue_rings[i].tx_depth = 0;
+    g_queue_rings[i].completed = 0;
+    g_queue_rings[i].drops = 0;
   }
 
   for (uint32_t i = 0; i < NETWORK_TCP_CONNECTIONS; ++i) {
@@ -480,6 +629,9 @@ void network_stack_init(void) {
     g_tcp_flows[i].remote_seq = 0;
     g_tcp_flows[i].local_seq = 0;
     g_tcp_flows[i].last_seen_ns = 0;
+    g_tcp_flows[i].retransmits = 0;
+    g_tcp_flows[i].packets_rx = 0;
+    g_tcp_flows[i].packets_tx = 0;
   }
 
   for (uint32_t i = 0; i < NETWORK_UDP_FLOWS; ++i) {
@@ -493,6 +645,7 @@ void network_stack_init(void) {
     g_udp_flows[i].remote_address = 0;
     g_udp_flows[i].packets_rx = 0;
     g_udp_flows[i].packets_tx = 0;
+    g_udp_flows[i].last_seen_ns = 0;
   }
 
   for (uint32_t i = 0; i < NETWORK_PACKET_DESCRIPTORS; ++i) {
@@ -512,9 +665,14 @@ void network_stack_init(void) {
   g_udp_rx_count = 0;
   g_udp_malformed_count = 0;
   g_udp_dropped_count = 0;
+  g_udp_flow_hit_count = 0;
+  g_udp_expired_count = 0;
   g_tcp_handshake_count = 0;
   g_tcp_reset_count = 0;
   g_tcp_timeout_count = 0;
+  g_tcp_retransmit_count = 0;
+  g_tcp_established_count = 0;
+  g_tcp_closed_count = 0;
   g_udp_latency_count = 0;
   g_tcp_latency_count = 0;
   g_queue_binding_count = 0;
@@ -522,6 +680,11 @@ void network_stack_init(void) {
   g_tx_packet_count = 0;
   g_packet_drop_count = 0;
   g_packet_lifecycle_count = 0;
+  g_queue_rx_enqueue_count = 0;
+  g_queue_tx_enqueue_count = 0;
+  g_queue_completion_count = 0;
+  g_queue_backpressure_drop_count = 0;
+  g_flow_core_mismatch_count = 0;
 
   for (uint32_t i = 0; i < NETWORK_MAX_SAMPLES; ++i) {
     g_udp_latency_samples[i] = 0;
@@ -551,6 +714,7 @@ osai_status_t network_stack_bind_queue(uint32_t cell_id, uint32_t queue_id,
       g_queue_bindings[i].cell_id = cell_id;
       g_queue_bindings[i].queue_id = queue_id;
       g_queue_bindings[i].core_mask = core_mask;
+      queue_ring_reset(queue_id);
       ++g_queue_binding_count;
       klog("network: bound queue=%u cell=%u core_mask=0x%x\n", queue_id,
            cell_id, core_mask);
@@ -570,6 +734,7 @@ osai_status_t network_stack_release_queue(uint32_t queue_id, uint32_t cell_id) {
       g_queue_bindings[i].cell_id = 0;
       g_queue_bindings[i].queue_id = OSAI_NETWORK_QUEUE_ID_INVALID;
       g_queue_bindings[i].core_mask = 0;
+      queue_ring_reset(queue_id);
       g_queue_binding_count =
           (g_queue_binding_count == 0U) ? 0U : (g_queue_binding_count - 1U);
       klog("network: released queue=%u cell=%u\n", queue_id, cell_id);
@@ -581,12 +746,6 @@ osai_status_t network_stack_release_queue(uint32_t queue_id, uint32_t cell_id) {
 
 osai_status_t network_stack_process_udp_frame(const uint8_t *frame,
                                             uint64_t frame_len) {
-  network_queue_binding_t *binding = first_binding();
-  if (binding == 0) {
-    ++g_udp_dropped_count;
-    ++g_packet_drop_count;
-    return OSAI_ERR_NOT_FOUND;
-  }
   if (frame == 0 || frame_len < 34U) {
     ++g_udp_dropped_count;
     ++g_udp_malformed_count;
@@ -595,13 +754,6 @@ osai_status_t network_stack_process_udp_frame(const uint8_t *frame,
   }
 
   uint64_t start = timer_now_ns();
-  network_packet_desc_t *packet =
-      alloc_packet_desc(binding->queue_id, frame_len, start);
-  if (packet == 0) {
-    ++g_udp_dropped_count;
-    return OSAI_ERR_NO_MEMORY;
-  }
-
   uint16_t src_port = 0;
   uint16_t dst_port = 0;
   uint16_t payload_len = 0;
@@ -612,14 +764,33 @@ osai_status_t network_stack_process_udp_frame(const uint8_t *frame,
                 &src_address, &dst_address) == 0) {
     ++g_udp_dropped_count;
     ++g_udp_malformed_count;
-    packet_mark_dropped(packet);
+    ++g_packet_drop_count;
     return OSAI_ERR_INVALID;
   }
 
   if (src_port == 0 || dst_port == 0 || payload_len == 0) {
     ++g_udp_dropped_count;
-    packet_mark_dropped(packet);
+    ++g_packet_drop_count;
     return OSAI_ERR_INVALID;
+  }
+
+  network_udp_flow_t *existing =
+      find_udp_flow(dst_port, src_port, dst_address, src_address);
+  network_queue_binding_t *binding =
+      existing != 0 ? find_binding(existing->queue_id)
+                    : select_binding_for_flow(dst_port, src_port, dst_address,
+                                              src_address);
+  if (binding == 0) {
+    ++g_udp_dropped_count;
+    ++g_packet_drop_count;
+    return OSAI_ERR_NOT_FOUND;
+  }
+
+  network_packet_desc_t *packet =
+      alloc_packet_desc(binding->queue_id, frame_len, start);
+  if (packet == 0) {
+    ++g_udp_dropped_count;
+    return OSAI_ERR_NO_MEMORY;
   }
 
   packet->src_port = src_port;
@@ -628,11 +799,16 @@ osai_status_t network_stack_process_udp_frame(const uint8_t *frame,
   packet->dst_address = dst_address;
   network_udp_flow_t *flow =
       alloc_udp_flow(binding->queue_id, binding->cell_id, dst_port, src_port,
-                     dst_address, src_address);
+                     dst_address, src_address, start);
   if (flow == 0) {
     ++g_udp_dropped_count;
     packet_mark_dropped(packet);
     return OSAI_ERR_NO_MEMORY;
+  }
+  if (flow->queue_id != binding->queue_id || flow->cell_id != binding->cell_id) {
+    ++g_flow_core_mismatch_count;
+    packet_mark_dropped(packet);
+    return OSAI_ERR_BUSY;
   }
   ++flow->packets_rx;
   ++g_udp_rx_count;
@@ -646,12 +822,6 @@ osai_status_t network_stack_process_udp_frame(const uint8_t *frame,
 
 osai_status_t network_stack_process_tcp_frame(const uint8_t *frame,
                                             uint64_t frame_len) {
-  network_queue_binding_t *binding = first_binding();
-  if (binding == 0) {
-    ++g_tcp_reset_count;
-    ++g_packet_drop_count;
-    return OSAI_ERR_NOT_FOUND;
-  }
   if (frame == 0 || frame_len < 54U) {
     ++g_tcp_reset_count;
     ++g_packet_drop_count;
@@ -659,12 +829,6 @@ osai_status_t network_stack_process_tcp_frame(const uint8_t *frame,
   }
 
   uint64_t start = timer_now_ns();
-  network_packet_desc_t *packet =
-      alloc_packet_desc(binding->queue_id, frame_len, start);
-  if (packet == 0) {
-    ++g_tcp_reset_count;
-    return OSAI_ERR_NO_MEMORY;
-  }
   uint16_t src_port = 0;
   uint16_t dst_port = 0;
   uint32_t seq = 0;
@@ -674,7 +838,7 @@ osai_status_t network_stack_process_tcp_frame(const uint8_t *frame,
   if (parse_tcp(frame, frame_len, &src_port, &dst_port, &seq, &ack, &flags) ==
       0) {
     ++g_tcp_reset_count;
-    packet_mark_dropped(packet);
+    ++g_packet_drop_count;
     return OSAI_ERR_INVALID;
   }
 
@@ -682,16 +846,35 @@ osai_status_t network_stack_process_tcp_frame(const uint8_t *frame,
       (const network_ip4_header_t *)(frame + 14U);
   uint32_t remote_address = ip4_addr_host_order(ip->source);
   uint32_t local_address = ip4_addr_host_order(ip->destination);
+
+  network_tcp_flow_t *flow = find_flow_by_ports(dst_port, src_port, remote_address);
+  network_queue_binding_t *binding =
+      flow != 0 ? find_binding(flow->queue_id)
+                : select_binding_for_flow(dst_port, src_port, local_address,
+                                          remote_address);
+  if (binding == 0) {
+    ++g_tcp_reset_count;
+    ++g_packet_drop_count;
+    return OSAI_ERR_NOT_FOUND;
+  }
+
+  network_packet_desc_t *packet =
+      alloc_packet_desc(binding->queue_id, frame_len, start);
+  if (packet == 0) {
+    ++g_tcp_reset_count;
+    return OSAI_ERR_NO_MEMORY;
+  }
+
   packet->src_port = src_port;
   packet->dst_port = dst_port;
   packet->src_address = remote_address;
   packet->dst_address = local_address;
 
-  network_tcp_flow_t *flow = find_flow_by_ports(src_port, dst_port, remote_address);
   if ((flags & NETWORK_TCP_FLAG_RST) != 0U) {
     if (flow != 0) {
       flow->state = OSAI_NETWORK_FLOW_CLOSED;
       ++g_tcp_reset_count;
+      ++g_tcp_closed_count;
     }
     packet_mark_dropped(packet);
     return OSAI_ERR_INVALID;
@@ -719,6 +902,9 @@ osai_status_t network_stack_process_tcp_frame(const uint8_t *frame,
     flow->local_seq = 0;
     flow->last_seen_ns = start;
     flow->state = OSAI_NETWORK_FLOW_SYN_RECV;
+    flow->retransmits = 0;
+    flow->packets_rx = 1;
+    flow->packets_tx = 1;
     ++g_tcp_handshake_count;
     packet_mark_tx(packet);
     packet_mark_complete(packet);
@@ -732,7 +918,10 @@ osai_status_t network_stack_process_tcp_frame(const uint8_t *frame,
     flow->state = OSAI_NETWORK_FLOW_ESTABLISHED;
     flow->local_seq = ack;
     flow->last_seen_ns = start;
+    ++flow->packets_rx;
+    ++flow->packets_tx;
     ++g_tcp_handshake_count;
+    ++g_tcp_established_count;
     packet_mark_tx(packet);
     packet_mark_complete(packet);
     record_latency(g_tcp_latency_samples, &g_tcp_latency_count,
@@ -744,6 +933,8 @@ osai_status_t network_stack_process_tcp_frame(const uint8_t *frame,
     (void)ack;
     (void)seq;
     flow->last_seen_ns = start;
+    ++flow->packets_rx;
+    ++flow->packets_tx;
     ++g_tcp_handshake_count;
     packet_mark_tx(packet);
     packet_mark_complete(packet);
@@ -757,6 +948,44 @@ osai_status_t network_stack_process_tcp_frame(const uint8_t *frame,
   return OSAI_ERR_INVALID;
 }
 
+uint64_t network_stack_expire_udp_flows(uint64_t now_ns) {
+  uint64_t expired = 0;
+  for (uint32_t i = 0; i < NETWORK_UDP_FLOWS; ++i) {
+    if (g_udp_flows[i].active != 0 &&
+        now_ns > g_udp_flows[i].last_seen_ns &&
+        now_ns - g_udp_flows[i].last_seen_ns >= NETWORK_UDP_IDLE_TIMEOUT_NS) {
+      g_udp_flows[i].active = 0;
+      ++g_udp_expired_count;
+      ++expired;
+      klog("network: udp flow id=%u expired queue=%u cell=%u rx=%lu tx=%lu\n",
+           g_udp_flows[i].flow_id, g_udp_flows[i].queue_id,
+           g_udp_flows[i].cell_id, g_udp_flows[i].packets_rx,
+           g_udp_flows[i].packets_tx);
+    }
+  }
+  return expired;
+}
+
+uint64_t network_stack_retransmit_tcp_flows(uint64_t now_ns) {
+  uint64_t retransmitted = 0;
+  for (uint32_t i = 0; i < NETWORK_TCP_CONNECTIONS; ++i) {
+    if (g_tcp_flows[i].state == OSAI_NETWORK_FLOW_SYN_RECV &&
+        now_ns > g_tcp_flows[i].last_seen_ns &&
+        now_ns - g_tcp_flows[i].last_seen_ns >= NETWORK_TCP_RETRANSMIT_NS &&
+        g_tcp_flows[i].retransmits < NETWORK_TCP_MAX_RETRANSMITS) {
+      ++g_tcp_flows[i].retransmits;
+      ++g_tcp_flows[i].packets_tx;
+      g_tcp_flows[i].last_seen_ns = now_ns;
+      ++g_tcp_retransmit_count;
+      ++retransmitted;
+      klog("network: tcp flow id=%u retransmit=%u queue=%u cell=%u\n",
+           g_tcp_flows[i].flow_id, g_tcp_flows[i].retransmits,
+           g_tcp_flows[i].queue_id, g_tcp_flows[i].cell_id);
+    }
+  }
+  return retransmitted;
+}
+
 uint64_t network_stack_expire_tcp_flows(uint64_t now_ns) {
   uint64_t expired = 0;
   for (uint32_t i = 0; i < NETWORK_TCP_CONNECTIONS; ++i) {
@@ -765,6 +994,7 @@ uint64_t network_stack_expire_tcp_flows(uint64_t now_ns) {
         now_ns - g_tcp_flows[i].last_seen_ns >= NETWORK_TCP_SYN_TIMEOUT_NS) {
       g_tcp_flows[i].state = OSAI_NETWORK_FLOW_CLOSED;
       ++g_tcp_timeout_count;
+      ++g_tcp_closed_count;
       ++g_packet_drop_count;
       ++expired;
       klog("network: tcp flow id=%u timeout queue=%u cell=%u\n",
@@ -801,6 +1031,14 @@ uint64_t network_stack_udp_flow_count(void) {
   return active;
 }
 
+uint64_t network_stack_udp_flow_hit_count(void) {
+  return g_udp_flow_hit_count;
+}
+
+uint64_t network_stack_udp_expired_count(void) {
+  return g_udp_expired_count;
+}
+
 uint64_t network_stack_tcp_connections(void) {
   uint64_t active = 0;
   for (uint32_t i = 0; i < NETWORK_TCP_CONNECTIONS; ++i) {
@@ -823,6 +1061,18 @@ uint64_t network_stack_tcp_timeout_count(void) {
   return g_tcp_timeout_count;
 }
 
+uint64_t network_stack_tcp_retransmit_count(void) {
+  return g_tcp_retransmit_count;
+}
+
+uint64_t network_stack_tcp_established_count(void) {
+  return g_tcp_established_count;
+}
+
+uint64_t network_stack_tcp_closed_count(void) {
+  return g_tcp_closed_count;
+}
+
 uint64_t network_stack_queue_bindings(void) {
   return g_queue_binding_count;
 }
@@ -841,6 +1091,26 @@ uint64_t network_stack_packet_drop_count(void) {
 
 uint64_t network_stack_packet_lifecycle_count(void) {
   return g_packet_lifecycle_count;
+}
+
+uint64_t network_stack_queue_rx_enqueue_count(void) {
+  return g_queue_rx_enqueue_count;
+}
+
+uint64_t network_stack_queue_tx_enqueue_count(void) {
+  return g_queue_tx_enqueue_count;
+}
+
+uint64_t network_stack_queue_completion_count(void) {
+  return g_queue_completion_count;
+}
+
+uint64_t network_stack_queue_backpressure_drop_count(void) {
+  return g_queue_backpressure_drop_count;
+}
+
+uint64_t network_stack_flow_core_mismatch_count(void) {
+  return g_flow_core_mismatch_count;
 }
 
 uint64_t network_stack_udp_latency_p50_ns(void) {
@@ -949,7 +1219,17 @@ void network_stack_self_test(void) {
   frame_udp[45U] = 4;
 
   kassert(network_stack_process_udp_frame(frame_udp, 46U) == OSAI_OK);
-  kassert(g_udp_rx_count == 1U);
+  kassert(network_stack_process_udp_frame(frame_udp, 46U) == OSAI_OK);
+  kassert(g_udp_rx_count == 2U);
+  kassert(network_stack_udp_flow_hit_count() == 1U);
+  kassert(network_stack_udp_flow_count() == 1U);
+  kassert(network_stack_expire_udp_flows(timer_now_ns() +
+                                         NETWORK_UDP_IDLE_TIMEOUT_NS + 1U) ==
+          1U);
+  kassert(network_stack_udp_expired_count() == 1U);
+  kassert(network_stack_udp_flow_count() == 0U);
+  kassert(network_stack_process_udp_frame(frame_udp, 46U) == OSAI_OK);
+  kassert(g_udp_rx_count == 3U);
   kassert(network_stack_udp_flow_count() == 1U);
   frame_udp_bad[13] = 0x06;
   kassert(network_stack_process_udp_frame(frame_udp_bad, 4U) == OSAI_ERR_INVALID);
@@ -1002,10 +1282,10 @@ void network_stack_self_test(void) {
   }
   frame_tcp_syn_ack[14] = frame_tcp_syn[14];
   frame_tcp_syn_ack[23] = NETWORK_IP_PROTO_TCP;
-  frame_tcp_syn_ack[34] = 0x00;
-  frame_tcp_syn_ack[35] = 0x50;
-  frame_tcp_syn_ack[36] = 0x1f;
-  frame_tcp_syn_ack[37] = 0x90;
+  frame_tcp_syn_ack[34] = 0x1f;
+  frame_tcp_syn_ack[35] = 0x90;
+  frame_tcp_syn_ack[36] = 0x00;
+  frame_tcp_syn_ack[37] = 0x50;
   frame_tcp_syn_ack[38] = 0;
   frame_tcp_syn_ack[39] = 0;
   frame_tcp_syn_ack[40] = 0;
@@ -1019,29 +1299,41 @@ void network_stack_self_test(void) {
 
   kassert(network_stack_process_tcp_frame(frame_tcp_syn_ack, 58U) == OSAI_OK);
   kassert(network_stack_tcp_connections() == 1U);
+  kassert(network_stack_tcp_established_count() == 1U);
 
   for (uint32_t i = 0; i < 58U; ++i) {
     frame_tcp_timeout[i] = frame_tcp_syn[i];
   }
   frame_tcp_timeout[35] = 0x91;
   kassert(network_stack_process_tcp_frame(frame_tcp_timeout, 58U) == OSAI_OK);
+  kassert(network_stack_retransmit_tcp_flows(timer_now_ns() +
+                                             NETWORK_TCP_RETRANSMIT_NS + 1U) ==
+          1U);
+  kassert(network_stack_tcp_retransmit_count() == 1U);
   kassert(network_stack_expire_tcp_flows(timer_now_ns() +
-                                         NETWORK_TCP_SYN_TIMEOUT_NS + 1U) ==
+                                         NETWORK_TCP_RETRANSMIT_NS +
+                                         NETWORK_TCP_SYN_TIMEOUT_NS + 2U) ==
           1U);
   kassert(network_stack_tcp_timeout_count() == 1U);
+  kassert(network_stack_tcp_closed_count() == 1U);
   kassert(network_stack_tcp_connections() == 1U);
 
   kassert(network_stack_release_queue(1, 0) == OSAI_OK);
   kassert(network_stack_release_queue(2, 1) == OSAI_OK);
   kassert(network_stack_queue_bindings() == 0U);
 
-  kassert(network_stack_udp_tx_count() == 1U);
-  kassert(network_stack_udp_rx_count() == 1U);
+  kassert(network_stack_udp_tx_count() == 3U);
+  kassert(network_stack_udp_rx_count() == 3U);
   kassert(network_stack_tcp_reset_count() == 0U);
-  kassert(network_stack_rx_packet_count() == 4U);
-  kassert(network_stack_tx_packet_count() == 4U);
+  kassert(network_stack_rx_packet_count() == 6U);
+  kassert(network_stack_tx_packet_count() == 6U);
   kassert(network_stack_packet_drop_count() == 2U);
-  kassert(network_stack_packet_lifecycle_count() == 12U);
+  kassert(network_stack_packet_lifecycle_count() == 18U);
+  kassert(network_stack_queue_rx_enqueue_count() == 6U);
+  kassert(network_stack_queue_tx_enqueue_count() == 6U);
+  kassert(network_stack_queue_completion_count() == 6U);
+  kassert(network_stack_queue_backpressure_drop_count() == 0U);
+  kassert(network_stack_flow_core_mismatch_count() == 0U);
 
   uint64_t udp50;
   uint64_t udp95;
@@ -1056,10 +1348,19 @@ void network_stack_self_test(void) {
 
   klog(
       "network: queue-backed udp/tcp self-test passed rx=%lu tx=%lu drops=%lu "
-      "lifecycle=%lu udp_flows=%lu tcp_timeouts=%lu udp_p50=%lu p95=%lu "
+      "lifecycle=%lu udp_flows=%lu udp_hits=%lu udp_expired=%lu "
+      "tcp_timeouts=%lu tcp_retransmits=%lu queue_rx=%lu queue_tx=%lu "
+      "queue_done=%lu backpressure=%lu flow_mismatch=%lu udp_p50=%lu p95=%lu "
       "p99=%lu p999=%lu tcp_p50=%lu p95=%lu p99=%lu p999=%lu\n",
       network_stack_rx_packet_count(), network_stack_tx_packet_count(),
       network_stack_packet_drop_count(), network_stack_packet_lifecycle_count(),
-      network_stack_udp_flow_count(), network_stack_tcp_timeout_count(),
+      network_stack_udp_flow_count(), network_stack_udp_flow_hit_count(),
+      network_stack_udp_expired_count(), network_stack_tcp_timeout_count(),
+      network_stack_tcp_retransmit_count(),
+      network_stack_queue_rx_enqueue_count(),
+      network_stack_queue_tx_enqueue_count(),
+      network_stack_queue_completion_count(),
+      network_stack_queue_backpressure_drop_count(),
+      network_stack_flow_core_mismatch_count(),
       udp50, udp95, udp99, udp999, tcp50, tcp95, tcp99, tcp999);
 }

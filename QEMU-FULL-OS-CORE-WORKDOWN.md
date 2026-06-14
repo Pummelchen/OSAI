@@ -223,3 +223,29 @@ Definition of done:
   `user_process_reclaims`.
 - `make qemu-readiness-gate` requires the service-supervisor counters and still
   requires zero user process failures.
+
+## Phase Q10: Network Stack Maturity
+
+Goal: turn the QEMU network path from a queue-backed smoke fixture into a
+stricter TCP/UDP lifecycle contract.
+
+Required work:
+
+- [x] Route packets through deterministic flow-to-queue selection.
+- [x] Keep established UDP flows pinned to their owning queue and cell.
+- [x] Add explicit RX/TX/completion accounting for queue rings.
+- [x] Add UDP flow hit tracking.
+- [x] Add UDP idle expiry.
+- [x] Add TCP established/closed counters.
+- [x] Add TCP retransmit-before-timeout policy for SYN-received flows.
+- [x] Keep TCP timeout behavior after retransmit.
+- [x] Add telemetry for queue backpressure drops and flow/core mismatches.
+- [x] Expand smoke, benchmark, readiness, and RC contract gates.
+
+Definition of done:
+
+- QEMU boot proves UDP flow reuse, UDP expiry, TCP establishment, TCP
+  retransmit, TCP timeout, queue RX/TX/completion accounting, zero queue
+  backpressure drops, and zero flow/core mismatches.
+- `make qemu-smoke`, `python3 ./scripts/qemu-benchmark.py`, and
+  `make qemu-readiness-gate` require the mature networking telemetry.

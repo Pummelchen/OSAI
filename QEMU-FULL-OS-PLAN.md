@@ -18,13 +18,16 @@ operations, and commit/rollback self-tests.
 The process-supervisor slice adds a parent-child service tree, child restart
 policy enforcement, supervised crash handling, service cleanup, service log
 accounting, and process address-space reclaim telemetry.
+The network-maturity slice adds deterministic flow-to-queue routing, queue ring
+accounting, UDP flow hit/expiry handling, TCP retransmit-before-timeout policy,
+and telemetry gates for queue backpressure and flow/core mismatches.
 
 The current implementation still has important MVP/stub areas:
 
 - two foreground EL0 process path (`/init` and `/bin/service-manager`);
 - userspace-driven service policy with QEMU supervisor coverage;
 - persistence records plus a mutable filesystem layer;
-- correctness-only network paths;
+- QEMU-matured network paths with queue ownership and TCP/UDP lifecycle gates;
 - deterministic CPU-AI runtime stub;
 - no POSIX filesystem surface yet;
 - no real multi-process scheduling.
@@ -94,6 +97,6 @@ The current implementation still has important MVP/stub areas:
 
 ## Current Slice
 
-Milestones 34 and 35 are complete in QEMU. The next active slice starts at
-milestone 36 under the full-core workdown. The detailed checklist lives in
+Milestones 34 through 36 are complete in QEMU. The next active slice starts at
+milestone 37 under the full-core workdown. The detailed checklist lives in
 `QEMU-FULL-OS-CORE-WORKDOWN.md`.

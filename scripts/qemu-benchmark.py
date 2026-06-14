@@ -96,13 +96,23 @@ def main() -> int:
         "network_udp_malformed",
         "network_udp_dropped",
         "network_udp_flows",
+        "network_udp_flow_hits",
+        "network_udp_expired",
         "network_tcp_connections",
         "network_tcp_timeouts",
+        "network_tcp_retransmits",
+        "network_tcp_established",
+        "network_tcp_closed",
         "network_rx_packets",
         "network_tx_packets",
         "network_packet_drops",
         "network_packet_lifecycle",
         "network_queue_bindings",
+        "network_queue_rx_enqueues",
+        "network_queue_tx_enqueues",
+        "network_queue_completions",
+        "network_queue_backpressure_drops",
+        "network_flow_core_mismatches",
         "network_udp_p999",
         "network_tcp_p999",
         "ai_cell_transitions",
@@ -173,15 +183,25 @@ def main() -> int:
         and telemetry["mutable_fs_checksum_errors"] == 0,
         "no_hot_path_migration": telemetry["migration_total"] == 0,
         "no_hot_path_context_switches": telemetry["context_switch_total"] == 0,
-        "udp_path_exercised": telemetry["network_udp_tx"] >= 1
-        and telemetry["network_udp_rx"] >= 1
-        and telemetry["network_udp_flows"] >= 1,
+        "udp_path_exercised": telemetry["network_udp_tx"] >= 3
+        and telemetry["network_udp_rx"] >= 3
+        and telemetry["network_udp_flows"] >= 1
+        and telemetry["network_udp_flow_hits"] >= 1
+        and telemetry["network_udp_expired"] >= 1,
         "tcp_path_exercised": telemetry["network_tcp_connections"] >= 1
-        and telemetry["network_tcp_timeouts"] >= 1,
-        "queue_backed_packet_flow": telemetry["network_rx_packets"] >= 4
-        and telemetry["network_tx_packets"] >= 4
+        and telemetry["network_tcp_timeouts"] >= 1
+        and telemetry["network_tcp_retransmits"] >= 1
+        and telemetry["network_tcp_established"] >= 1
+        and telemetry["network_tcp_closed"] >= 1,
+        "queue_backed_packet_flow": telemetry["network_rx_packets"] >= 6
+        and telemetry["network_tx_packets"] >= 6
         and telemetry["network_packet_drops"] >= 2
-        and telemetry["network_packet_lifecycle"] >= 12,
+        and telemetry["network_packet_lifecycle"] >= 18
+        and telemetry["network_queue_rx_enqueues"] >= 6
+        and telemetry["network_queue_tx_enqueues"] >= 6
+        and telemetry["network_queue_completions"] >= 6
+        and telemetry["network_queue_backpressure_drops"] == 0
+        and telemetry["network_flow_core_mismatches"] == 0,
         "child_service_supervised": telemetry["service_child_descriptors"] >= 1
         and telemetry["service_tree_edges"] >= 1
         and telemetry["service_transitions"] >= 12
