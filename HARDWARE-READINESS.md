@@ -103,7 +103,7 @@ Intel Desktop work can begin only after:
 
 ## First Intel Desktop Deliverables
 
-- UEFI x86_64 boot path.
+- UEFI x86_64 boot path: milestone 43 gate is `make qemu-x86_64-smoke`.
 - Serial console and early exception reporting.
 - PMM/VMM initialization from the x86_64 firmware memory map.
 - APIC/timer discovery.

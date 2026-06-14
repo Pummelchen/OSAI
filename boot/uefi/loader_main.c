@@ -5,10 +5,23 @@
 #define PT_LOAD 1
 #define ELFCLASS64 2
 #define ELFDATA2LSB 1
+#define EM_X86_64 62
 #define EM_AARCH64 183
 #define ET_EXEC 2
 #define KERNEL_MAX_SIZE (16ULL * 1024ULL * 1024ULL)
+
+#if defined(OSAI_UEFI_TARGET_X86_64)
+#define OSAI_LOADER_TARGET_MESSAGE u"OSAI loader target: x86_64 UEFI\r\n"
+#define OSAI_LOADER_INVALID_MESSAGE u"OSAI loader error: invalid x86_64 ELF64 kernel\r\n"
+#define OSAI_LOADER_EXPECTED_MACHINE EM_X86_64
+#define OSAI_LOADER_UART_BASE UINT64_C(0x000003f8)
+#else
+#define OSAI_LOADER_TARGET_MESSAGE u"OSAI loader target: AArch64 UEFI\r\n"
+#define OSAI_LOADER_INVALID_MESSAGE u"OSAI loader error: invalid AArch64 ELF64 kernel\r\n"
+#define OSAI_LOADER_EXPECTED_MACHINE EM_AARCH64
 #define QEMU_VIRT_PL011_UART0_BASE UINT64_C(0x09000000)
+#define OSAI_LOADER_UART_BASE QEMU_VIRT_PL011_UART0_BASE
+#endif
 
 typedef struct elf64_ehdr {
   unsigned char e_ident[EI_NIDENT];
@@ -159,7 +172,8 @@ static int validate_elf(const void *kernel_buffer, uint64_t kernel_size,
   if (ehdr->e_ident[4] != ELFCLASS64 || ehdr->e_ident[5] != ELFDATA2LSB) {
     return 0;
   }
-  if (ehdr->e_type != ET_EXEC || ehdr->e_machine != EM_AARCH64) {
+  if (ehdr->e_type != ET_EXEC ||
+      ehdr->e_machine != OSAI_LOADER_EXPECTED_MACHINE) {
     return 0;
   }
   if (ehdr->e_phoff == 0 || ehdr->e_phnum == 0 ||
@@ -259,7 +273,7 @@ static efi_status_t get_memory_map(efi_system_table_t *system_table,
 efi_status_t EFIAPI efi_main(efi_handle_t image_handle,
                              efi_system_table_t *system_table) {
   loader_puts(system_table, u"OSAI loader starting\r\n");
-  loader_puts(system_table, u"OSAI loader target: AArch64 UEFI\r\n");
+  loader_puts(system_table, OSAI_LOADER_TARGET_MESSAGE);
 
   efi_file_protocol_t *root = 0;
   efi_status_t status = open_root(image_handle, system_table, &root);
@@ -279,7 +293,7 @@ efi_status_t EFIAPI efi_main(efi_handle_t image_handle,
 
   const elf64_ehdr_t *ehdr = 0;
   if (!validate_elf(kernel_buffer, kernel_size, &ehdr)) {
-    loader_puts(system_table, u"OSAI loader error: invalid AArch64 ELF64 kernel\r\n");
+    loader_puts(system_table, OSAI_LOADER_INVALID_MESSAGE);
     return EFI_LOAD_ERROR;
   }
   loader_puts(system_table, u"OSAI loader validated ELF64 kernel\r\n");
@@ -293,6 +307,8 @@ efi_status_t EFIAPI efi_main(efi_handle_t image_handle,
     return status;
   }
   loader_puts(system_table, u"OSAI loader copied kernel segments\r\n");
+
+  loader_puts(system_table, u"OSAI loader exiting boot services\r\n");
 
   void *memory_map = 0;
   uint64_t memory_map_size = 0;
@@ -315,9 +331,8 @@ efi_status_t EFIAPI efi_main(efi_handle_t image_handle,
   g_boot_info.memory_descriptor_version = descriptor_version;
   g_boot_info.kernel_phys_base = kernel_base;
   g_boot_info.kernel_phys_end = kernel_end;
-  g_boot_info.uart_base = QEMU_VIRT_PL011_UART0_BASE;
+  g_boot_info.uart_base = OSAI_LOADER_UART_BASE;
 
-  loader_puts(system_table, u"OSAI loader exiting boot services\r\n");
   status = system_table->boot_services->exit_boot_services(image_handle, map_key);
   if (is_error(status)) {
     loader_puts(system_table, u"OSAI loader error: ExitBootServices failed\r\n");

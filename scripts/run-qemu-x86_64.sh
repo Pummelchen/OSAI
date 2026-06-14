@@ -102,7 +102,7 @@ image="${OSAI_X86_64_IMAGE:-build/osai-x86_64.img}"
 
 if [ "$dry_run" -eq 0 ] && [ ! -f "$image" ]; then
   printf '%s\n' "error: missing x86_64 boot image: $image" >&2
-  printf '%s\n' "       Complete WP-003/WP-004 image creation first, or set OSAI_X86_64_IMAGE=/path/to/image.img." >&2
+  printf '%s\n' "       Run make image-x86_64 first, or set OSAI_X86_64_IMAGE=/path/to/image.img." >&2
   exit 1
 fi
 
