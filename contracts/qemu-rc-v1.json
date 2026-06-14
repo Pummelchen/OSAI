@@ -49,6 +49,14 @@
       "cpu_ai_kv_writes": 16,
       "cpu_ai_shared_weight_binds": 4,
       "cpu_ai_gpu_rejects": 1,
+      "cpu_ai_model_file_loads": 1,
+      "cpu_ai_model_file_rejects": 3,
+      "cpu_ai_model_bytes_loaded": 1,
+      "cpu_ai_manifest_validations": 9,
+      "cpu_ai_tokenizer_binds": 4,
+      "cpu_ai_kernel_dispatches": 4,
+      "cpu_ai_admission_rejects": 5,
+      "cpu_ai_checksum_failures": 1,
       "security_denied_ops": 16,
       "security_capability_denials": 3,
       "security_fs_denials": 1,
@@ -110,9 +118,9 @@
     "version": 2,
     "header_sector": 1,
     "sector_size": 512,
-    "header_bytes": 512,
+    "header_bytes": 1024,
     "block_size": 512,
-    "max_files": 4,
+    "max_files": 5,
     "path_max": 64,
     "data_offset": 4096,
     "flags": ["read_only"],
@@ -122,7 +130,8 @@
       "/init",
       "/bin/service-manager",
       "/etc/osai-init.conf",
-      "/etc/services/source-index.svc"
+      "/etc/services/source-index.svc",
+      "/models/cpu-ai-mvp.osaimodel"
     ],
     "manifest_path": "/etc/osai-init.conf",
     "manifest_keys": [
@@ -134,6 +143,23 @@
       "child_parent",
       "child_restart"
     ]
+  },
+  "cpu_ai_model_format": {
+    "name": "OSAI QEMU CPU-AI model image",
+    "magic": "OSAI_MODEL_MIAI",
+    "magic_value": "0x4941494d",
+    "version": 1,
+    "header_bytes": 80,
+    "path": "/models/cpu-ai-mvp.osaimodel",
+    "quantization": 8,
+    "tokenizer": "byte table",
+    "tokenizer_bytes": 256,
+    "runtime": "deterministic CPU dispatch",
+    "checksum": "fnv1a64 over weight bytes followed by tokenizer bytes",
+    "cpu_only_required": true,
+    "gpu_required_rejected": true,
+    "private_kv_required": true,
+    "shared_weights_read_only": true
   },
   "persistence_format": {
     "name": "OSAI QEMU mutable state sector",
@@ -201,7 +227,7 @@
     "Intel APIC, HPET, TSC-deadline, PCIe, NVMe, and NIC hardware drivers",
     "production update signing and key management",
     "production filesystem with mutable POSIX-like semantics",
-    "real model file formats and production tokenizer/model runtimes",
+    "production tokenizer/model runtimes beyond the QEMU CPU-only deterministic model format",
     "network throughput benchmarking",
     "multi-user security policy and remote administration hardening"
   ]

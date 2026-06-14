@@ -7,10 +7,11 @@
 #define INITFS_SECTOR UINT64_C(1)
 #define INITFS_MAGIC "OSAIROFS2"
 #define INITFS_MAGIC_LEN 9U
-#define INITFS_MAX_FILES 4U
+#define INITFS_MAX_FILES 5U
 #define INITFS_PATH_MAX 64U
 #define INITFS_MODE_MAX 32U
 #define SECTOR_SIZE UINT64_C(512)
+#define INITFS_HEADER_BYTES 1024U
 #define INITFS_DATA_OFFSET UINT64_C(4096)
 #define INITFS_VERSION 2U
 #define INITFS_FLAG_READ_ONLY 1U
@@ -279,7 +280,8 @@ static osai_status_t read_file_bytes(uint64_t offset, uint64_t size,
 
 static osai_status_t validate_header(const initfs_disk_header_t *header) {
   if (!magic_ok(header->magic) || header->version != INITFS_VERSION ||
-      header->header_bytes != SECTOR_SIZE || header->block_size != SECTOR_SIZE ||
+      header->header_bytes != INITFS_HEADER_BYTES ||
+      header->block_size != SECTOR_SIZE ||
       header->entry_count == 0 || header->entry_count > INITFS_MAX_FILES ||
       header->manifest_index >= header->entry_count ||
       (header->flags & INITFS_FLAG_READ_ONLY) == 0 ||
@@ -315,15 +317,19 @@ static osai_status_t validate_entry(const initfs_disk_header_t *header,
 }
 
 osai_status_t initramfs_init(void) {
-  uint8_t sector[SECTOR_SIZE];
-  if (virtio_block_read_sector(INITFS_SECTOR, sector, sizeof(sector)) !=
-      OSAI_OK) {
-    klog("initramfs: failed to read header sector=%lu\n", INITFS_SECTOR);
-    return OSAI_ERR_IO;
+  uint8_t header_bytes[INITFS_HEADER_BYTES];
+  for (uint64_t i = 0; i < INITFS_HEADER_BYTES / SECTOR_SIZE; ++i) {
+    if (virtio_block_read_sector(INITFS_SECTOR + i,
+                                 header_bytes + (i * SECTOR_SIZE),
+                                 SECTOR_SIZE) != OSAI_OK) {
+      klog("initramfs: failed to read header sector=%lu\n",
+           INITFS_SECTOR + i);
+      return OSAI_ERR_IO;
+    }
   }
 
   const initfs_disk_header_t *header =
-      (const initfs_disk_header_t *)(const void *)sector;
+      (const initfs_disk_header_t *)(const void *)header_bytes;
   if (validate_header(header) != OSAI_OK) {
     klog("initramfs: bad rofs header magic='%c%c%c%c' version=%u entries=%u header_bytes=%u block=%u\n",
          header->magic[0], header->magic[1], header->magic[2],
@@ -440,6 +446,13 @@ void initramfs_self_test(void) {
   kassert(initramfs_lookup("/etc/services/source-index.svc", &config) ==
           OSAI_OK);
   kassert(config != 0);
+  kassert(config->manifest == 0);
+  kassert(config->executable == 0);
+  kassert(initramfs_lookup("/models/cpu-ai-mvp.osaimodel", &config) ==
+          OSAI_OK);
+  kassert(config != 0);
+  kassert(config->base != 0);
+  kassert(config->size > 256U);
   kassert(config->manifest == 0);
   kassert(config->executable == 0);
   kassert(initramfs_lookup("/missing", &init) == OSAI_ERR_NOT_FOUND);

@@ -87,6 +87,14 @@ REQUIRED_TELEMETRY_MINIMUMS = {
     "cpu_ai_kv_writes": 16,
     "cpu_ai_shared_weight_binds": 4,
     "cpu_ai_gpu_rejects": 1,
+    "cpu_ai_model_file_loads": 1,
+    "cpu_ai_model_file_rejects": 3,
+    "cpu_ai_model_bytes_loaded": 1,
+    "cpu_ai_manifest_validations": 9,
+    "cpu_ai_tokenizer_binds": 4,
+    "cpu_ai_kernel_dispatches": 4,
+    "cpu_ai_admission_rejects": 5,
+    "cpu_ai_checksum_failures": 1,
     "security_denied_ops": 16,
     "security_capability_denials": 3,
     "security_fs_denials": 1,
@@ -262,11 +270,21 @@ def validate_contract(contract: Dict[str, Any], failures: List[str]) -> Dict[str
     filesystem = contract.get("filesystem_format", {})
     check_equal(filesystem.get("magic"), "OSAIROFS2", "contract.filesystem.magic", failures)
     check_equal(filesystem.get("version"), 2, "contract.filesystem.version", failures)
+    check_equal(filesystem.get("header_bytes"), 1024, "contract.filesystem.header_bytes", failures)
     check_equal(filesystem.get("manifest_path"), "/etc/osai-init.conf", "contract.filesystem.manifest_path", failures)
     required_paths = filesystem.get("required_paths", [])
-    for path in ["/init", "/bin/service-manager", "/etc/osai-init.conf", "/etc/services/source-index.svc"]:
+    for path in ["/init", "/bin/service-manager", "/etc/osai-init.conf", "/etc/services/source-index.svc", "/models/cpu-ai-mvp.osaimodel"]:
         if path not in required_paths:
             failures.append(f"contract.filesystem.required_paths missing {path}")
+    check_equal(filesystem.get("max_files"), 5, "contract.filesystem.max_files", failures)
+
+    model_format = contract.get("cpu_ai_model_format", {})
+    check_equal(model_format.get("magic"), "OSAI_MODEL_MIAI", "contract.cpu_ai_model_format.magic", failures)
+    check_equal(model_format.get("version"), 1, "contract.cpu_ai_model_format.version", failures)
+    check_equal(model_format.get("header_bytes"), 80, "contract.cpu_ai_model_format.header_bytes", failures)
+    check_equal(model_format.get("path"), "/models/cpu-ai-mvp.osaimodel", "contract.cpu_ai_model_format.path", failures)
+    check_bool(model_format.get("cpu_only_required"), True, "contract.cpu_ai_model_format.cpu_only_required", failures)
+    check_bool(model_format.get("gpu_required_rejected"), True, "contract.cpu_ai_model_format.gpu_required_rejected", failures)
 
     persistence = contract.get("persistence_format", {})
     check_equal(persistence.get("magic"), "OSAIPST1", "contract.persistence.magic", failures)

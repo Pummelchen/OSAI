@@ -7,6 +7,9 @@
 #define OSAI_CPU_AI_RUNTIME_MAX_CELLS 4U
 
 void cpu_ai_runtime_init(void);
+osai_status_t cpu_ai_runtime_load_model_file(uint32_t model_arena_id,
+                                             const char *name,
+                                             const char *path);
 osai_status_t cpu_ai_runtime_bind_model(uint32_t cell_id, uint32_t model_arena_id);
 osai_status_t cpu_ai_runtime_bind_model_with_kv(uint32_t cell_id,
                                                 uint32_t model_arena_id,
@@ -25,6 +28,14 @@ uint64_t cpu_ai_runtime_runtime_call_count(void);
 uint64_t cpu_ai_runtime_kv_write_count(void);
 uint64_t cpu_ai_runtime_shared_weight_bind_count(void);
 uint64_t cpu_ai_runtime_gpu_reject_count(void);
+uint64_t cpu_ai_runtime_model_file_load_count(void);
+uint64_t cpu_ai_runtime_model_file_reject_count(void);
+uint64_t cpu_ai_runtime_model_bytes_loaded(void);
+uint64_t cpu_ai_runtime_manifest_validation_count(void);
+uint64_t cpu_ai_runtime_tokenizer_bind_count(void);
+uint64_t cpu_ai_runtime_kernel_dispatch_count(void);
+uint64_t cpu_ai_runtime_admission_reject_count(void);
+uint64_t cpu_ai_runtime_checksum_failure_count(void);
 void cpu_ai_runtime_self_test(void);
 
 #endif

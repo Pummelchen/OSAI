@@ -62,7 +62,8 @@ The QEMU release-candidate gate intentionally does not claim:
 - Intel APIC, HPET, TSC-deadline, PCIe, NVMe, and NIC hardware drivers;
 - production update signing and key management;
 - a production mutable filesystem;
-- real model file formats or production CPU-AI model runtimes;
+- production tokenizer/model runtimes beyond the QEMU CPU-only deterministic
+  model format;
 - network throughput benchmarking;
 - multi-user security policy and remote administration hardening.
 

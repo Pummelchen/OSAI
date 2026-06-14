@@ -21,6 +21,10 @@ accounting, and process address-space reclaim telemetry.
 The network-maturity slice adds deterministic flow-to-queue routing, queue ring
 accounting, UDP flow hit/expiry handling, TCP retransmit-before-timeout policy,
 and telemetry gates for queue backpressure and flow/core mismatches.
+The CPU-only model-runtime slice adds a VirtIO ROFS-backed model file,
+manifest/checksum validation, tokenizer-table binding, CPU dispatch telemetry,
+and admission checks for malformed, GPU-required, and undersized private
+KV/cache configurations.
 
 The current implementation still has important MVP/stub areas:
 
@@ -28,7 +32,8 @@ The current implementation still has important MVP/stub areas:
 - userspace-driven service policy with QEMU supervisor coverage;
 - persistence records plus a mutable filesystem layer;
 - QEMU-matured network paths with queue ownership and TCP/UDP lifecycle gates;
-- deterministic CPU-AI runtime stub;
+- QEMU CPU-only deterministic model format, with production model runtimes still
+  out of scope;
 - no POSIX filesystem surface yet;
 - no real multi-process scheduling.
 
@@ -97,6 +102,6 @@ The current implementation still has important MVP/stub areas:
 
 ## Current Slice
 
-Milestones 34 through 36 are complete in QEMU. The next active slice starts at
-milestone 37 under the full-core workdown. The detailed checklist lives in
+Milestones 34 through 37 are complete in QEMU. The next active slice starts at
+milestone 38 under the full-core workdown. The detailed checklist lives in
 `QEMU-FULL-OS-CORE-WORKDOWN.md`.

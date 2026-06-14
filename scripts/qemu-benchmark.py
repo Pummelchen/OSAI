@@ -91,6 +91,14 @@ def main() -> int:
         "cpu_ai_kv_writes",
         "cpu_ai_shared_weight_binds",
         "cpu_ai_gpu_rejects",
+        "cpu_ai_model_file_loads",
+        "cpu_ai_model_file_rejects",
+        "cpu_ai_model_bytes_loaded",
+        "cpu_ai_manifest_validations",
+        "cpu_ai_tokenizer_binds",
+        "cpu_ai_kernel_dispatches",
+        "cpu_ai_admission_rejects",
+        "cpu_ai_checksum_failures",
         "network_udp_tx",
         "network_udp_rx",
         "network_udp_malformed",
@@ -151,7 +159,15 @@ def main() -> int:
         and telemetry["cpu_ai_runtime_calls"] >= 4
         and telemetry["cpu_ai_kv_writes"] >= 16
         and telemetry["cpu_ai_shared_weight_binds"] >= 4
-        and telemetry["cpu_ai_gpu_rejects"] >= 1,
+        and telemetry["cpu_ai_gpu_rejects"] >= 1
+        and telemetry["cpu_ai_model_file_loads"] >= 1
+        and telemetry["cpu_ai_model_file_rejects"] >= 3
+        and telemetry["cpu_ai_model_bytes_loaded"] >= 1
+        and telemetry["cpu_ai_manifest_validations"] >= 9
+        and telemetry["cpu_ai_tokenizer_binds"] >= 4
+        and telemetry["cpu_ai_kernel_dispatches"] >= 4
+        and telemetry["cpu_ai_admission_rejects"] >= 5
+        and telemetry["cpu_ai_checksum_failures"] >= 1,
         "security_enforcement_recorded": telemetry["security_denied_ops"] >= 16
         and telemetry["security_capability_denials"] >= 3
         and telemetry["security_fs_denials"] >= 1
