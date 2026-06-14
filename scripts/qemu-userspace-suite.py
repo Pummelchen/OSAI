@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+from qemu_gate_lib import BUILD, check_markers, now, result, run, status_from_failures, write_report
+
+
+SCHEMA = "osai.qemu.userspace_expansion.v1"
+REPORT = BUILD / "qemu-milestone-56-userspace-suite.json"
+
+COMMAND_MARKERS = {
+    "osctl_status": ["osctl: /svc/source-index state=running"],
+    "osctl_services": [
+        "service: /init state=running",
+        "service-supervisor: tree parent=/init child=/svc/source-index children=1 edges=1",
+    ],
+    "osctl_cells": [
+        "ai-cell: lifecycle self-test passed",
+        "ai-cell: multi-cell shared model/private kv self-test passed",
+    ],
+    "osctl_telemetry": [
+        "\"control_plane_syscalls\"",
+        "\"user_process_loaded\":2",
+        "\"ai_cell_transitions\":14",
+    ],
+    "osctl_rollback": [
+        "mutable-fs: snapshot rollback",
+        "\"persistence_rollbacks\":7",
+        "\"update_rollbacks\":1",
+    ],
+    "service_manager_commands": [
+        "/service-manager: child service supervised",
+        "/service-manager: admin status exported",
+        "/service-manager: remote-safe checks passed",
+        "/service-manager: control plane complete",
+    ],
+}
+
+
+def main() -> int:
+    proc = run(["python3", "./scripts/qemu-smoke.py"], timeout=140)
+    failures = []
+    checks = []
+    if proc.returncode != 0:
+        failures.append(f"qemu-smoke exited {proc.returncode}")
+
+    for command, markers in COMMAND_MARKERS.items():
+        missing = check_markers(proc.stdout, markers)
+        checks.append(result(command, not missing, missing_markers=missing))
+        failures.extend(f"{command} missing marker: {marker}" for marker in missing)
+
+    report = {
+        "schema": SCHEMA,
+        "status": status_from_failures(failures),
+        "milestone": 56,
+        "created_at_unix": now(),
+        "description": "Userspace control-plane expansion gate for osctl-style service, cell, telemetry, rollback, and admin operations.",
+        "smoke_exit_code": proc.returncode,
+        "checks": checks,
+        "failures": failures,
+    }
+    write_report(REPORT, report)
+    print(proc.stdout)
+    return 0 if not failures else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -59,6 +59,13 @@ Detailed design documentation lives in the GitHub Wiki:
 - [Codex Work Packages](https://github.com/Pummelchen/OSAI/wiki/Codex-Work-Packages)
 - [Local Hardware Readiness Gate](HARDWARE-READINESS.md)
 
+Current local QEMU-only hardening work after the first Intel Desktop QEMU path
+is checked with:
+
+```sh
+make qemu-post51-gate
+```
+
 ## Status
 
 OSAI is currently in early design and bring-up.

@@ -130,9 +130,38 @@ The current implementation still has important MVP/stub areas:
 - Treat `qemu_full_os_complete=true` as the local gate that allows Intel
   Desktop planning to move into implementation.
 
+### Phase Q10: Post-51 QEMU Hardening
+
+- Run a dedicated QEMU regression suite for process lifecycle, filesystem
+  rollback, AI Cell conflicts, network state, security denials, and telemetry.
+- Run controlled fault injection beyond the normal smoke path.
+- Validate ABI and format contracts directly against source and generator code.
+- Run repeated QEMU boots to catch nondeterministic boot-state drift.
+- Gate userspace control-plane behavior, network-stack behavior, and CPU-only
+  AI runtime simulator behavior as separate reports.
+- Validate developer UX targets and documentation markers.
+- Keep this phase on macOS/QEMU until physical hardware is available.
+
 ## Current Slice
 
 Milestones 34 through 42 are complete in QEMU when `make qemu-full-os-rc`
+passes. Milestones 52 through 59 are complete when `make qemu-post51-gate`
 passes. The detailed checklist lives in `QEMU-FULL-OS-CORE-WORKDOWN.md`.
-The next implementation phase after a passing full-OS RC report is Intel
-Desktop bring-up.
+Physical Intel Desktop, Xeon, AMD, and ARM/NVIDIA hardware work remains a later
+phase.
+
+## Milestones 52-59
+
+| Milestone | Gate | Report |
+|---:|---|---|
+| Milestone 52 | `make qemu-regression-suite` | `build/qemu-milestone-52-regression-suite.json` |
+| 53 | `make qemu-fault-injection` | `build/qemu-milestone-53-fault-injection.json` |
+| 54 | `make qemu-abi-contract` | `build/qemu-milestone-54-abi-contract.json` |
+| 55 | `make qemu-boot-loop` | `build/qemu-milestone-55-boot-loop.json` |
+| 56 | `make qemu-userspace-suite` | `build/qemu-milestone-56-userspace-suite.json` |
+| 57 | `make qemu-network-suite` | `build/qemu-milestone-57-network-suite.json` |
+| 58 | `make qemu-cpu-ai-suite` | `build/qemu-milestone-58-cpu-ai-suite.json` |
+| Milestone 59 | `make qemu-developer-ux` | `build/qemu-milestone-59-developer-ux.json` |
+
+The aggregate post-51 gate is `make qemu-post51-gate`, which writes
+`build/qemu-post51-gate-report.json`.

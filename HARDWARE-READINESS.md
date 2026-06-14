@@ -39,6 +39,16 @@ The full OS RC report schema is
 `osai.qemu.full_os_release_candidate.v1`. Intel Desktop implementation starts
 only after that report has `status=pass` and `qemu_full_os_complete=true`.
 
+The post-51 QEMU-only hardening gate is:
+
+- `make qemu-post51-gate`
+
+That command runs milestones 52-59 for regression coverage, fault injection,
+ABI contract checks, deterministic boot loops, userspace control-plane checks,
+network stack checks, CPU-only AI runtime simulator checks, and developer UX
+checks. It writes `build/qemu-post51-gate-report.json` and remains QEMU
+correctness evidence only.
+
 ## Frozen QEMU Contracts
 
 Before moving to Intel Desktop bring-up, these contracts must remain stable:
