@@ -9,15 +9,188 @@
 #define UART_MODEM_CONTROL 4U
 #define UART_LINE_STATUS 5U
 #define UART_TRANSMIT_EMPTY 0x20U
+#define PAGE_SIZE UINT64_C(4096)
+#define LARGE_PAGE_SIZE UINT64_C(0x200000)
+#define EARLY_IDENTITY_LIMIT UINT64_C(0x100000000)
+#define X86_EFLAGS_ID UINT64_C(1 << 21)
+#define MSR_IA32_APIC_BASE UINT32_C(0x1b)
+#define MSR_IA32_EFER UINT32_C(0xc0000080)
+#define EFER_NXE UINT64_C(1 << 11)
+#define PTE_PRESENT UINT64_C(1)
+#define PTE_WRITABLE UINT64_C(1 << 1)
+#define PTE_LARGE UINT64_C(1 << 7)
+#define PTE_GLOBAL UINT64_C(1 << 8)
+#define PTE_NX UINT64_C(1) << 63
+#define IDT_PRESENT UINT8_C(0x80)
+#define IDT_INTERRUPT_GATE UINT8_C(0x0e)
+#define PCI_CONFIG_ADDRESS UINT16_C(0x0cf8)
+#define PCI_CONFIG_DATA UINT16_C(0x0cfc)
+
+typedef struct x86_64_idt_entry {
+  uint16_t offset_low;
+  uint16_t selector;
+  uint8_t ist;
+  uint8_t type_attr;
+  uint16_t offset_mid;
+  uint32_t offset_high;
+  uint32_t zero;
+} __attribute__((packed)) x86_64_idt_entry_t;
+
+typedef struct x86_64_idtr {
+  uint16_t limit;
+  uint64_t base;
+} __attribute__((packed)) x86_64_idtr_t;
+
+typedef struct x86_64_exception_frame {
+  uint64_t r11;
+  uint64_t r10;
+  uint64_t r9;
+  uint64_t r8;
+  uint64_t rbp;
+  uint64_t rdi;
+  uint64_t rsi;
+  uint64_t rdx;
+  uint64_t rcx;
+  uint64_t rbx;
+  uint64_t rax;
+  uint64_t vector;
+  uint64_t error_code;
+  uint64_t rip;
+  uint64_t cs;
+  uint64_t rflags;
+} x86_64_exception_frame_t;
+
+typedef struct x86_64_pmm_state {
+  uint64_t descriptors;
+  uint64_t conventional_regions;
+  uint64_t total_pages;
+  uint64_t usable_pages;
+  uint64_t reserved_pages;
+  uint64_t largest_usable_base;
+  uint64_t largest_usable_pages;
+} x86_64_pmm_state_t;
+
+typedef struct x86_64_pci_state {
+  uint32_t devices;
+  uint32_t functions;
+  uint32_t bridges;
+  uint32_t virtio_devices;
+  uint32_t network_devices;
+  uint32_t nvme_devices;
+} x86_64_pci_state_t;
+
+extern void x86_64_isr_0(void);
+extern void x86_64_isr_1(void);
+extern void x86_64_isr_2(void);
+extern void x86_64_isr_3(void);
+extern void x86_64_isr_4(void);
+extern void x86_64_isr_5(void);
+extern void x86_64_isr_6(void);
+extern void x86_64_isr_7(void);
+extern void x86_64_isr_8(void);
+extern void x86_64_isr_9(void);
+extern void x86_64_isr_10(void);
+extern void x86_64_isr_11(void);
+extern void x86_64_isr_12(void);
+extern void x86_64_isr_13(void);
+extern void x86_64_isr_14(void);
+extern void x86_64_isr_15(void);
+extern void x86_64_isr_16(void);
+extern void x86_64_isr_17(void);
+extern void x86_64_isr_18(void);
+extern void x86_64_isr_19(void);
+extern void x86_64_isr_20(void);
+extern void x86_64_isr_21(void);
+extern void x86_64_isr_22(void);
+extern void x86_64_isr_23(void);
+extern void x86_64_isr_24(void);
+extern void x86_64_isr_25(void);
+extern void x86_64_isr_26(void);
+extern void x86_64_isr_27(void);
+extern void x86_64_isr_28(void);
+extern void x86_64_isr_29(void);
+extern void x86_64_isr_30(void);
+extern void x86_64_isr_31(void);
+
+static x86_64_idt_entry_t g_idt[256] __attribute__((aligned(16)));
+static uint64_t g_pml4[512] __attribute__((aligned(PAGE_SIZE)));
+static uint64_t g_pdpt[512] __attribute__((aligned(PAGE_SIZE)));
+static uint64_t g_pd[4][512] __attribute__((aligned(PAGE_SIZE)));
+static x86_64_pmm_state_t g_pmm;
+static x86_64_pci_state_t g_pci;
+static uint32_t g_exception_vectors_installed;
+static uint32_t g_page_tables_loaded;
+
+void *memset(void *dst, int value, uint64_t size) {
+  uint8_t *bytes = (uint8_t *)dst;
+  for (uint64_t i = 0; i < size; ++i) {
+    bytes[i] = (uint8_t)value;
+  }
+  return dst;
+}
+
+void *memcpy(void *dst, const void *src, uint64_t size) {
+  uint8_t *out = (uint8_t *)dst;
+  const uint8_t *in = (const uint8_t *)src;
+  for (uint64_t i = 0; i < size; ++i) {
+    out[i] = in[i];
+  }
+  return dst;
+}
 
 static inline void outb(uint16_t port, uint8_t value) {
   __asm__ volatile("outb %0, %1" : : "a"(value), "Nd"(port) : "memory");
+}
+
+static inline void outl(uint16_t port, uint32_t value) {
+  __asm__ volatile("outl %0, %1" : : "a"(value), "Nd"(port) : "memory");
 }
 
 static inline uint8_t inb(uint16_t port) {
   uint8_t value = 0;
   __asm__ volatile("inb %1, %0" : "=a"(value) : "Nd"(port) : "memory");
   return value;
+}
+
+static inline uint32_t inl(uint16_t port) {
+  uint32_t value = 0;
+  __asm__ volatile("inl %1, %0" : "=a"(value) : "Nd"(port) : "memory");
+  return value;
+}
+
+static inline uint64_t read_cr2(void) {
+  uint64_t value = 0;
+  __asm__ volatile("mov %%cr2, %0" : "=r"(value));
+  return value;
+}
+
+static inline uint64_t read_cr3(void) {
+  uint64_t value = 0;
+  __asm__ volatile("mov %%cr3, %0" : "=r"(value));
+  return value;
+}
+
+static inline void write_cr3(uint64_t value) {
+  __asm__ volatile("mov %0, %%cr3" : : "r"(value) : "memory");
+}
+
+static inline uint64_t rdmsr(uint32_t msr) {
+  uint32_t low = 0;
+  uint32_t high = 0;
+  __asm__ volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(msr));
+  return ((uint64_t)high << 32) | low;
+}
+
+static inline void wrmsr(uint32_t msr, uint64_t value) {
+  __asm__ volatile("wrmsr" : : "c"(msr), "a"((uint32_t)value),
+                   "d"((uint32_t)(value >> 32)) : "memory");
+}
+
+static inline void cpuid(uint32_t leaf, uint32_t subleaf, uint32_t *eax,
+                         uint32_t *ebx, uint32_t *ecx, uint32_t *edx) {
+  __asm__ volatile("cpuid"
+                   : "=a"(*eax), "=b"(*ebx), "=c"(*ecx), "=d"(*edx)
+                   : "a"(leaf), "c"(subleaf));
 }
 
 static void serial_init(uint16_t base) {
@@ -56,11 +229,286 @@ static void serial_hex64(uint16_t base, uint64_t value) {
   }
 }
 
+static void serial_dec(uint16_t base, uint64_t value) {
+  char buffer[21];
+  uint32_t index = 0;
+  if (value == 0) {
+    serial_putc(base, '0');
+    return;
+  }
+  while (value != 0 && index < sizeof(buffer)) {
+    buffer[index++] = (char)('0' + (value % 10));
+    value /= 10;
+  }
+  while (index != 0) {
+    serial_putc(base, buffer[--index]);
+  }
+}
+
 static uint64_t memory_descriptor_count(const osai_boot_info_t *boot) {
   if (boot == 0 || boot->memory_descriptor_size == 0) {
     return 0;
   }
   return boot->memory_map_size / boot->memory_descriptor_size;
+}
+
+static uint64_t align_up(uint64_t value, uint64_t align) {
+  return (value + align - 1U) & ~(align - 1U);
+}
+
+static uint64_t align_down(uint64_t value, uint64_t align) {
+  return value & ~(align - 1U);
+}
+
+static void panic_halt(uint16_t serial_base, const char *message) {
+  serial_puts(serial_base, "x86_64: panic: ");
+  serial_puts(serial_base, message);
+  serial_puts(serial_base, "\n");
+  for (;;) {
+    __asm__ volatile("hlt");
+  }
+}
+
+static void idt_set_gate(uint8_t vector, void (*handler)(void)) {
+  uint64_t address = (uint64_t)(uintptr_t)handler;
+  g_idt[vector].offset_low = (uint16_t)(address & UINT64_C(0xffff));
+  g_idt[vector].selector = 0x08;
+  g_idt[vector].ist = 0;
+  g_idt[vector].type_attr = IDT_PRESENT | IDT_INTERRUPT_GATE;
+  g_idt[vector].offset_mid = (uint16_t)((address >> 16) & UINT64_C(0xffff));
+  g_idt[vector].offset_high = (uint32_t)(address >> 32);
+  g_idt[vector].zero = 0;
+}
+
+static void install_idt(uint16_t serial_base) {
+  void (*handlers[32])(void) = {
+      x86_64_isr_0,  x86_64_isr_1,  x86_64_isr_2,  x86_64_isr_3,
+      x86_64_isr_4,  x86_64_isr_5,  x86_64_isr_6,  x86_64_isr_7,
+      x86_64_isr_8,  x86_64_isr_9,  x86_64_isr_10, x86_64_isr_11,
+      x86_64_isr_12, x86_64_isr_13, x86_64_isr_14, x86_64_isr_15,
+      x86_64_isr_16, x86_64_isr_17, x86_64_isr_18, x86_64_isr_19,
+      x86_64_isr_20, x86_64_isr_21, x86_64_isr_22, x86_64_isr_23,
+      x86_64_isr_24, x86_64_isr_25, x86_64_isr_26, x86_64_isr_27,
+      x86_64_isr_28, x86_64_isr_29, x86_64_isr_30, x86_64_isr_31};
+
+  for (uint32_t i = 0; i < 256; ++i) {
+    g_idt[i] = (x86_64_idt_entry_t){0};
+  }
+  for (uint8_t i = 0; i < 32; ++i) {
+    idt_set_gate(i, handlers[i]);
+  }
+
+  x86_64_idtr_t idtr = {
+      .limit = (uint16_t)(sizeof(g_idt) - 1U),
+      .base = (uint64_t)(uintptr_t)g_idt,
+  };
+  __asm__ volatile("lidt %0" : : "m"(idtr) : "memory");
+  g_exception_vectors_installed = 32;
+  serial_puts(serial_base, "x86_64: IDT installed vectors=");
+  serial_dec(serial_base, g_exception_vectors_installed);
+  serial_puts(serial_base, "\n");
+  serial_puts(serial_base, "x86_64: early exception path online\n");
+}
+
+static void parse_memory_map(uint16_t serial_base, const osai_boot_info_t *boot) {
+  g_pmm = (x86_64_pmm_state_t){0};
+  uint64_t offset = 0;
+  while (offset + sizeof(osai_memory_descriptor_t) <= boot->memory_map_size) {
+    const osai_memory_descriptor_t *desc =
+        (const osai_memory_descriptor_t *)(uintptr_t)(boot->memory_map + offset);
+    uint64_t pages = desc->number_of_pages;
+    g_pmm.descriptors++;
+    g_pmm.total_pages += pages;
+    if (desc->type == OSAI_MEMORY_TYPE_CONVENTIONAL) {
+      uint64_t region_start = align_up(desc->physical_start, PAGE_SIZE);
+      uint64_t region_end = align_down(desc->physical_start + pages * PAGE_SIZE,
+                                       PAGE_SIZE);
+      uint64_t usable_pages = 0;
+      if (region_end > region_start) {
+        usable_pages = (region_end - region_start) / PAGE_SIZE;
+      }
+      g_pmm.conventional_regions++;
+      g_pmm.usable_pages += usable_pages;
+      if (usable_pages > g_pmm.largest_usable_pages) {
+        g_pmm.largest_usable_pages = usable_pages;
+        g_pmm.largest_usable_base = region_start;
+      }
+    } else {
+      g_pmm.reserved_pages += pages;
+    }
+    offset += boot->memory_descriptor_size;
+  }
+
+  if (g_pmm.descriptors == 0 || g_pmm.usable_pages == 0) {
+    panic_halt(serial_base, "memory map parse failed");
+  }
+
+  serial_puts(serial_base, "x86_64: PMM parsed descriptors=");
+  serial_dec(serial_base, g_pmm.descriptors);
+  serial_puts(serial_base, " usable_pages=");
+  serial_dec(serial_base, g_pmm.usable_pages);
+  serial_puts(serial_base, " largest_base=");
+  serial_hex64(serial_base, g_pmm.largest_usable_base);
+  serial_puts(serial_base, "\n");
+}
+
+static void install_page_tables(uint16_t serial_base) {
+  for (uint32_t i = 0; i < 512; ++i) {
+    g_pml4[i] = 0;
+    g_pdpt[i] = 0;
+  }
+  for (uint32_t table = 0; table < 4; ++table) {
+    for (uint32_t index = 0; index < 512; ++index) {
+      uint64_t address =
+          ((uint64_t)table * UINT64_C(0x40000000)) +
+          ((uint64_t)index * LARGE_PAGE_SIZE);
+      uint64_t flags = PTE_PRESENT | PTE_LARGE | PTE_GLOBAL;
+      if (address < UINT64_C(0x200000)) {
+        flags |= PTE_WRITABLE;
+      } else {
+        flags |= PTE_WRITABLE | PTE_NX;
+      }
+      g_pd[table][index] = address | flags;
+    }
+    g_pdpt[table] = ((uint64_t)(uintptr_t)g_pd[table]) | PTE_PRESENT |
+                    PTE_WRITABLE;
+  }
+  g_pml4[0] = ((uint64_t)(uintptr_t)g_pdpt) | PTE_PRESENT | PTE_WRITABLE;
+
+  uint64_t efer = rdmsr(MSR_IA32_EFER);
+  wrmsr(MSR_IA32_EFER, efer | EFER_NXE);
+  write_cr3((uint64_t)(uintptr_t)g_pml4);
+  g_page_tables_loaded = 1;
+
+  serial_puts(serial_base, "x86_64: early page tables loaded cr3=");
+  serial_hex64(serial_base, read_cr3());
+  serial_puts(serial_base, " identity_limit=");
+  serial_hex64(serial_base, EARLY_IDENTITY_LIMIT);
+  serial_puts(serial_base, "\n");
+  serial_puts(serial_base, "x86_64: VMM policy kernel/user split prepared\n");
+}
+
+static void discover_timer_apic(uint16_t serial_base) {
+  uint32_t eax = 0;
+  uint32_t ebx = 0;
+  uint32_t ecx = 0;
+  uint32_t edx = 0;
+  cpuid(0, 0, &eax, &ebx, &ecx, &edx);
+  uint32_t max_leaf = eax;
+  cpuid(1, 0, &eax, &ebx, &ecx, &edx);
+  uint32_t apic_supported = (edx & (UINT32_C(1) << 9)) != 0U;
+  uint32_t tsc_supported = (edx & (UINT32_C(1) << 4)) != 0U;
+  uint32_t deadline_supported = (ecx & (UINT32_C(1) << 24)) != 0U;
+  uint64_t apic_base = apic_supported ? rdmsr(MSR_IA32_APIC_BASE) : 0;
+  uint32_t tsc_denominator = 0;
+  uint32_t tsc_numerator = 0;
+  uint32_t crystal_hz = 0;
+  if (max_leaf >= 0x15U) {
+    cpuid(0x15U, 0, &tsc_denominator, &tsc_numerator, &crystal_hz, &edx);
+  }
+
+  serial_puts(serial_base, "x86_64: APIC discovery supported=");
+  serial_dec(serial_base, apic_supported);
+  serial_puts(serial_base, " base=");
+  serial_hex64(serial_base, apic_base & UINT64_C(0xfffff000));
+  serial_puts(serial_base, "\n");
+  serial_puts(serial_base, "x86_64: timer discovery tsc=");
+  serial_dec(serial_base, tsc_supported);
+  serial_puts(serial_base, " deadline=");
+  serial_dec(serial_base, deadline_supported);
+  serial_puts(serial_base, " ratio=");
+  serial_dec(serial_base, tsc_numerator);
+  serial_puts(serial_base, "/");
+  serial_dec(serial_base, tsc_denominator);
+  serial_puts(serial_base, " crystal_hz=");
+  serial_dec(serial_base, crystal_hz);
+  serial_puts(serial_base, "\n");
+}
+
+static uint32_t pci_read_config(uint8_t bus, uint8_t device, uint8_t function,
+                                uint8_t offset) {
+  uint32_t address = UINT32_C(0x80000000) | ((uint32_t)bus << 16) |
+                     ((uint32_t)device << 11) | ((uint32_t)function << 8) |
+                     ((uint32_t)offset & UINT32_C(0xfc));
+  outl(PCI_CONFIG_ADDRESS, address);
+  return inl(PCI_CONFIG_DATA);
+}
+
+static void discover_pci(uint16_t serial_base) {
+  g_pci = (x86_64_pci_state_t){0};
+  for (uint16_t bus = 0; bus < 256; ++bus) {
+    for (uint8_t device = 0; device < 32; ++device) {
+      uint32_t header0 = pci_read_config((uint8_t)bus, device, 0, 0);
+      if (header0 == UINT32_C(0xffffffff)) {
+        continue;
+      }
+      uint32_t header_type_reg = pci_read_config((uint8_t)bus, device, 0, 0x0c);
+      uint8_t header_type = (uint8_t)((header_type_reg >> 16) & 0xffU);
+      uint8_t functions = (header_type & 0x80U) != 0U ? 8U : 1U;
+      for (uint8_t function = 0; function < functions; ++function) {
+        uint32_t id = pci_read_config((uint8_t)bus, device, function, 0);
+        if (id == UINT32_C(0xffffffff)) {
+          continue;
+        }
+        uint16_t vendor = (uint16_t)(id & UINT32_C(0xffff));
+        uint16_t device_id = (uint16_t)((id >> 16) & UINT32_C(0xffff));
+        uint32_t class_reg =
+            pci_read_config((uint8_t)bus, device, function, 0x08);
+        uint8_t class_code = (uint8_t)(class_reg >> 24);
+        uint8_t subclass = (uint8_t)((class_reg >> 16) & UINT32_C(0xff));
+        g_pci.functions++;
+        if (function == 0) {
+          g_pci.devices++;
+        }
+        if (class_code == 0x06U && subclass == 0x04U) {
+          g_pci.bridges++;
+        }
+        if (vendor == 0x1af4U) {
+          g_pci.virtio_devices++;
+        }
+        if (class_code == 0x02U) {
+          g_pci.network_devices++;
+        }
+        if (class_code == 0x01U && subclass == 0x08U) {
+          g_pci.nvme_devices++;
+        }
+        (void)device_id;
+      }
+    }
+  }
+
+  if (g_pci.devices == 0) {
+    panic_halt(serial_base, "PCI enumeration found no devices");
+  }
+
+  serial_puts(serial_base, "x86_64: PCI discovery devices=");
+  serial_dec(serial_base, g_pci.devices);
+  serial_puts(serial_base, " functions=");
+  serial_dec(serial_base, g_pci.functions);
+  serial_puts(serial_base, " virtio=");
+  serial_dec(serial_base, g_pci.virtio_devices);
+  serial_puts(serial_base, " net=");
+  serial_dec(serial_base, g_pci.network_devices);
+  serial_puts(serial_base, " nvme=");
+  serial_dec(serial_base, g_pci.nvme_devices);
+  serial_puts(serial_base, "\n");
+}
+
+void x86_64_exception_entry(const x86_64_exception_frame_t *frame) {
+  uint16_t serial_base = COM1_PORT;
+  serial_init(serial_base);
+  serial_puts(serial_base, "\nEXCEPTION x86_64 vector=");
+  serial_dec(serial_base, frame->vector);
+  serial_puts(serial_base, " error=");
+  serial_hex64(serial_base, frame->error_code);
+  serial_puts(serial_base, " rip=");
+  serial_hex64(serial_base, frame->rip);
+  if (frame->vector == 14U) {
+    serial_puts(serial_base, " cr2=");
+    serial_hex64(serial_base, read_cr2());
+  }
+  serial_puts(serial_base, "\n");
+  panic_halt(serial_base, "controlled x86_64 exception reported");
 }
 
 void x86_64_kmain(const osai_boot_info_t *boot) {
@@ -92,6 +540,19 @@ void x86_64_kmain(const osai_boot_info_t *boot) {
   serial_puts(serial_base, "\n");
   serial_puts(serial_base, "x86_64: COM1 serial online\n");
   serial_puts(serial_base, "x86_64: Intel Desktop milestone 43 boot path passed\n");
+  install_idt(serial_base);
+  serial_puts(serial_base, "x86_64: Intel Desktop milestone 44 early exceptions passed\n");
+  parse_memory_map(serial_base, boot);
+  serial_puts(serial_base, "x86_64: Intel Desktop milestone 45 memory map passed\n");
+  install_page_tables(serial_base);
+  if (g_page_tables_loaded == 0U) {
+    panic_halt(serial_base, "page tables not loaded");
+  }
+  serial_puts(serial_base, "x86_64: Intel Desktop milestone 46 page tables passed\n");
+  discover_timer_apic(serial_base);
+  serial_puts(serial_base, "x86_64: Intel Desktop milestone 47 timers APIC passed\n");
+  discover_pci(serial_base);
+  serial_puts(serial_base, "x86_64: Intel Desktop milestone 48 PCI discovery passed\n");
 
   for (;;) {
     __asm__ volatile("hlt");

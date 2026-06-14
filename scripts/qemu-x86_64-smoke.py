@@ -17,6 +17,19 @@ TARGETS = [
     "x86_64: UEFI boot info valid",
     "x86_64: COM1 serial online",
     "x86_64: Intel Desktop milestone 43 boot path passed",
+    "x86_64: IDT installed vectors=32",
+    "x86_64: early exception path online",
+    "x86_64: Intel Desktop milestone 44 early exceptions passed",
+    "x86_64: PMM parsed descriptors=",
+    "x86_64: Intel Desktop milestone 45 memory map passed",
+    "x86_64: early page tables loaded cr3=",
+    "x86_64: VMM policy kernel/user split prepared",
+    "x86_64: Intel Desktop milestone 46 page tables passed",
+    "x86_64: APIC discovery supported=",
+    "x86_64: timer discovery tsc=",
+    "x86_64: Intel Desktop milestone 47 timers APIC passed",
+    "x86_64: PCI discovery devices=",
+    "x86_64: Intel Desktop milestone 48 PCI discovery passed",
 ]
 
 
@@ -53,7 +66,7 @@ def main() -> int:
                 if all(target in text for target in TARGETS):
                     print(
                         "qemu-x86_64-smoke: x86_64 boot reached all "
-                        "Intel Desktop milestone 43 markers"
+                        "Intel Desktop milestone 43-48 markers"
                     )
                     return 0
             elif proc.poll() is not None:

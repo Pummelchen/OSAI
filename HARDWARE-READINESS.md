@@ -72,8 +72,10 @@ Before moving to Intel Desktop bring-up, these contracts must remain stable:
 The QEMU release-candidate gate intentionally does not claim:
 
 - performance wins against Linux or BSD;
-- x86_64 OSAI kernel boot;
-- Intel APIC, HPET, TSC-deadline, PCIe, NVMe, and NIC hardware drivers;
+- complete x86_64 full OS contract parity beyond the milestone 43-48
+  bring-up path;
+- Intel APIC interrupt routing, HPET, TSC-deadline timers, PCIe, NVMe, and
+  NIC hardware drivers;
 - production update signing and key management;
 - a production mutable filesystem;
 - production tokenizer/model runtimes beyond the QEMU CPU-only deterministic
@@ -104,9 +106,12 @@ Intel Desktop work can begin only after:
 ## First Intel Desktop Deliverables
 
 - UEFI x86_64 boot path: milestone 43 gate is `make qemu-x86_64-smoke`.
-- Serial console and early exception reporting.
-- PMM/VMM initialization from the x86_64 firmware memory map.
-- APIC/timer discovery.
-- PCI discovery sufficient for NVMe and NIC bring-up planning.
+- Serial console and early exception reporting: milestone 44 gate is
+  `make qemu-x86_64-smoke`.
+- PMM/VMM initialization from the x86_64 firmware memory map: milestones 45
+  and 46 gate through `make qemu-x86_64-smoke`.
+- APIC/timer discovery: milestone 47 gate is `make qemu-x86_64-smoke`.
+- PCI discovery sufficient for NVMe and NIC bring-up planning: milestone 48
+  gate is `make qemu-x86_64-smoke`.
 - P-core/E-core placement policy metadata.
 - Initial tuned Linux/BSD baseline plan for later measured comparisons.
