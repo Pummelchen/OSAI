@@ -546,7 +546,9 @@ static osai_status_t handle_update(const char *signature) {
   }
 
   if (token_safe(signature) == 0 ||
-      security_validate_update_signature(signature) != OSAI_OK) {
+      security_authorize_update_signature(signature,
+                                          user_current_process()
+                                              ->capability_mask) != OSAI_OK) {
     ++g_init_service.update_rejections;
     return OSAI_ERR_INVALID;
   }

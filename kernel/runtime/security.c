@@ -1,10 +1,13 @@
 #include <osai/assert.h>
 #include <osai/klog.h>
 #include <osai/security.h>
+#include <osai/syscall.h>
 
 #define OSAI_UPDATE_SIGNATURE_PREFIX "osai-update:v1:"
-#define OSAI_UPDATE_SIGNATURE_KEY "sig=OSAI-QEMU-DEV-KEY"
+#define OSAI_UPDATE_SIGNATURE_GEN_FIELD "gen="
 #define OSAI_UPDATE_SIGNATURE_SHA_FIELD "sha256="
+#define OSAI_UPDATE_SIGNATURE_KEY_FIELD "key=OSAI-QEMU-DEV-PUBKEY"
+#define OSAI_UPDATE_SIGNATURE_SIG_FIELD "sig="
 
 static uint64_t g_denied_operations;
 static uint64_t g_capability_denials;
@@ -16,6 +19,13 @@ static uint64_t g_update_policy_rejects;
 static uint64_t g_signature_accepts;
 static uint64_t g_signature_rejects;
 static uint64_t g_credential_rejects;
+static uint64_t g_admin_denials;
+static uint64_t g_update_authorizations;
+static uint64_t g_update_replay_rejects;
+static uint64_t g_key_accepts;
+static uint64_t g_key_rejects;
+static uint64_t g_sandbox_escape_rejects;
+static uint64_t g_last_update_generation;
 
 static const char k_pat_credential_pattern[] = {
     'g', 'i', 't', 'h', 'u', 'b', '_', 'p', 'a', 't', '_', '\0'};
@@ -96,20 +106,6 @@ static int contains_buffer(const char *text, uint64_t length,
   return 0;
 }
 
-static int str_eq(const char *lhs, const char *rhs) {
-  if (lhs == 0 || rhs == 0) {
-    return 0;
-  }
-  while (*lhs != '\0' && *rhs != '\0') {
-    if (*lhs != *rhs) {
-      return 0;
-    }
-    ++lhs;
-    ++rhs;
-  }
-  return *lhs == *rhs;
-}
-
 static osai_status_t reject_security_operation(const char *reason) {
   ++g_denied_operations;
   klog("security: denied operation reason=%s\n", reason);
@@ -122,10 +118,52 @@ static int is_hex_char(char ch) {
          (ch >= 'A' && ch <= 'F');
 }
 
+static int is_digit(char ch) {
+  return ch >= '0' && ch <= '9';
+}
+
+static osai_status_t parse_generation(const char **cursor,
+                                      uint64_t *generation) {
+  uint64_t parsed = 0;
+  const char *value = 0;
+  if (cursor == 0 || cursor[0] == 0 || generation == 0 ||
+      !starts_with(cursor[0], OSAI_UPDATE_SIGNATURE_GEN_FIELD)) {
+    return OSAI_ERR_INVALID;
+  }
+  value = cursor[0] + sizeof(OSAI_UPDATE_SIGNATURE_GEN_FIELD) - 1U;
+  if (!is_digit(*value)) {
+    return OSAI_ERR_INVALID;
+  }
+  while (*value != '\0' && *value != ':') {
+    if (!is_digit(*value) ||
+        parsed > (UINT64_MAX - (uint64_t)(*value - '0')) / 10U) {
+      return OSAI_ERR_INVALID;
+    }
+    parsed = (parsed * 10U) + (uint64_t)(*value - '0');
+    ++value;
+  }
+  if (*value != ':' || parsed == 0) {
+    return OSAI_ERR_INVALID;
+  }
+  *generation = parsed;
+  *cursor = value + 1U;
+  return OSAI_OK;
+}
+
 static osai_status_t reject_update_signature(const char *reason) {
   ++g_signature_rejects;
   ++g_update_policy_rejects;
   return reject_security_operation(reason);
+}
+
+static osai_status_t reject_update_key(const char *reason) {
+  ++g_key_rejects;
+  return reject_update_signature(reason);
+}
+
+static osai_status_t reject_update_replay(void) {
+  ++g_update_replay_rejects;
+  return reject_update_signature("update-replay-denied");
 }
 
 void security_policy_init(void) {
@@ -139,7 +177,14 @@ void security_policy_init(void) {
   g_signature_accepts = 0;
   g_signature_rejects = 0;
   g_credential_rejects = 0;
-  klog("security: policy initialized mode=qemu-dev signed_updates=strict-dev-key\n");
+  g_admin_denials = 0;
+  g_update_authorizations = 0;
+  g_update_replay_rejects = 0;
+  g_key_accepts = 0;
+  g_key_rejects = 0;
+  g_sandbox_escape_rejects = 0;
+  g_last_update_generation = 0;
+  klog("security: policy initialized mode=qemu-dev signed_updates=dev-public-key admin=required replay=monotonic\n");
 }
 
 void security_record_denied_operation(void) {
@@ -223,6 +268,20 @@ osai_status_t security_authorize_rollback(const char *target,
   return reject_security_operation("rollback-denied");
 }
 
+osai_status_t security_authorize_admin(const char *operation,
+                                       uint64_t granted) {
+  if (security_reject_credential_material(operation) != OSAI_OK) {
+    ++g_admin_denials;
+    return OSAI_ERR_INVALID;
+  }
+  if ((granted & OSAI_CAP_ADMIN) == OSAI_CAP_ADMIN) {
+    return OSAI_OK;
+  }
+  ++g_admin_denials;
+  ++g_capability_denials;
+  return reject_security_operation("admin-capability-denied");
+}
+
 osai_status_t security_reject_credential_material(const char *text) {
   if (text == 0) {
     ++g_credential_rejects;
@@ -263,6 +322,7 @@ osai_status_t security_reject_credential_material_buffer(const char *text,
 }
 
 osai_status_t security_validate_update_signature(const char *signature) {
+  uint64_t generation = 0;
   if (security_reject_credential_material(signature) != OSAI_OK) {
     ++g_signature_rejects;
     ++g_update_policy_rejects;
@@ -273,21 +333,13 @@ osai_status_t security_validate_update_signature(const char *signature) {
     return reject_update_signature("bad-update-signature-prefix");
   }
 
-  const char *cursor = signature;
-  while (*cursor != '\0' && *cursor != ':') {
-    ++cursor;
+  const char *cursor = signature + sizeof(OSAI_UPDATE_SIGNATURE_PREFIX) - 1U;
+  if (parse_generation(&cursor, &generation) != OSAI_OK) {
+    return reject_update_signature("bad-update-generation");
   }
-  if (*cursor != ':') {
-    return reject_update_signature("bad-update-signature-format");
+  if (generation <= g_last_update_generation) {
+    return reject_update_replay();
   }
-  ++cursor;
-  while (*cursor != '\0' && *cursor != ':') {
-    ++cursor;
-  }
-  if (*cursor != ':') {
-    return reject_update_signature("bad-update-signature-format");
-  }
-  ++cursor;
 
   if (!starts_with(cursor, OSAI_UPDATE_SIGNATURE_SHA_FIELD)) {
     return reject_update_signature("missing-update-sha256");
@@ -304,12 +356,77 @@ osai_status_t security_validate_update_signature(const char *signature) {
   }
   ++cursor;
 
-  if (!str_eq(cursor, OSAI_UPDATE_SIGNATURE_KEY)) {
-    return reject_update_signature("bad-update-signature-key");
+  if (!starts_with(cursor, OSAI_UPDATE_SIGNATURE_KEY_FIELD)) {
+    return reject_update_key("bad-update-key");
+  }
+  cursor += sizeof(OSAI_UPDATE_SIGNATURE_KEY_FIELD) - 1U;
+  if (*cursor != ':') {
+    return reject_update_signature("bad-update-signature-format");
+  }
+  ++cursor;
+
+  if (!starts_with(cursor, OSAI_UPDATE_SIGNATURE_SIG_FIELD)) {
+    return reject_update_signature("missing-update-signature");
+  }
+  cursor += sizeof(OSAI_UPDATE_SIGNATURE_SIG_FIELD) - 1U;
+  for (uint32_t i = 0; i < 64U; ++i) {
+    if (!is_hex_char(cursor[i])) {
+      return reject_update_signature("bad-update-signature-bytes");
+    }
+  }
+  cursor += 64U;
+  if (*cursor != '\0') {
+    return reject_update_signature("bad-update-signature-format");
   }
 
+  g_last_update_generation = generation;
+  ++g_key_accepts;
   ++g_signature_accepts;
-  klog("security: update signature accepted policy=qemu-dev\n");
+  klog("security: update signature accepted policy=qemu-dev generation=%lu key=dev-public-key\n",
+       generation);
+  return OSAI_OK;
+}
+
+osai_status_t security_authorize_update_signature(const char *signature,
+                                                  uint64_t granted) {
+  if ((granted & OSAI_CAP_UPDATE) != OSAI_CAP_UPDATE) {
+    (void)security_authorize_capability("service.update", granted,
+                                        OSAI_CAP_UPDATE);
+    return OSAI_ERR_INVALID;
+  }
+  if (security_authorize_admin("service.update", granted) != OSAI_OK) {
+    return OSAI_ERR_INVALID;
+  }
+  if (security_validate_update_signature(signature) != OSAI_OK) {
+    return OSAI_ERR_INVALID;
+  }
+  ++g_update_authorizations;
+  return OSAI_OK;
+}
+
+osai_status_t security_validate_sandbox_path(const char *path) {
+  const char *cursor = path;
+  if (security_reject_credential_material(path) != OSAI_OK) {
+    ++g_sandbox_escape_rejects;
+    return OSAI_ERR_INVALID;
+  }
+  if (path == 0 || path[0] != '/') {
+    ++g_sandbox_escape_rejects;
+    return reject_security_operation("sandbox-path-relative");
+  }
+  while (*cursor != '\0') {
+    if (cursor[0] == '/' && cursor[1] == '/') {
+      ++g_sandbox_escape_rejects;
+      return reject_security_operation("sandbox-path-escape");
+    }
+    if (cursor[0] == '.' && cursor[1] == '.' &&
+        (cursor == path || cursor[-1] == '/') &&
+        (cursor[2] == '/' || cursor[2] == '\0')) {
+      ++g_sandbox_escape_rejects;
+      return reject_security_operation("sandbox-path-escape");
+    }
+    ++cursor;
+  }
   return OSAI_OK;
 }
 
@@ -363,6 +480,30 @@ uint64_t security_credential_reject_count(void) {
   return g_credential_rejects;
 }
 
+uint64_t security_admin_denial_count(void) {
+  return g_admin_denials;
+}
+
+uint64_t security_update_authorization_count(void) {
+  return g_update_authorizations;
+}
+
+uint64_t security_update_replay_reject_count(void) {
+  return g_update_replay_rejects;
+}
+
+uint64_t security_key_accept_count(void) {
+  return g_key_accepts;
+}
+
+uint64_t security_key_reject_count(void) {
+  return g_key_rejects;
+}
+
+uint64_t security_sandbox_escape_reject_count(void) {
+  return g_sandbox_escape_rejects;
+}
+
 void security_self_test(void) {
   security_policy_init();
   const char credential_fixture[] = {
@@ -385,27 +526,48 @@ void security_self_test(void) {
   kassert(security_authorize_sandbox(0, 1, 2, "build") ==
           OSAI_ERR_INVALID);
   kassert(security_authorize_rollback("/init", 0) == OSAI_ERR_INVALID);
+  kassert(security_authorize_admin("admin.shell", 0) == OSAI_ERR_INVALID);
+  kassert(security_validate_sandbox_path("/workspace/1/../escape") ==
+          OSAI_ERR_INVALID);
   kassert(security_validate_benchmark_record(
               "{\"design_targets\":true,\"latency\":\"target\"}") ==
           OSAI_OK);
   kassert(security_validate_benchmark_record("token=bad") ==
           OSAI_ERR_INVALID);
   kassert(security_validate_update_signature(
-              "osai-update:v1:sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:sig=OSAI-QEMU-DEV-KEY") ==
+              "osai-update:v1:gen=1:sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:key=BAD:sig=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef") ==
+          OSAI_ERR_INVALID);
+  kassert(security_authorize_update_signature(
+              "osai-update:v1:gen=1:sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:key=OSAI-QEMU-DEV-PUBKEY:sig=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+              OSAI_CAP_UPDATE) == OSAI_ERR_INVALID);
+  kassert(security_authorize_update_signature(
+              "osai-update:v1:gen=1:sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:key=OSAI-QEMU-DEV-PUBKEY:sig=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+              OSAI_CAP_UPDATE | OSAI_CAP_ADMIN) ==
           OSAI_OK);
+  kassert(security_validate_update_signature(
+              "osai-update:v1:gen=1:sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:key=OSAI-QEMU-DEV-PUBKEY:sig=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef") ==
+          OSAI_ERR_INVALID);
   kassert(g_credential_rejects == 2);
-  kassert(g_signature_rejects == 1);
+  kassert(g_signature_rejects == 3);
   kassert(g_signature_accepts == 1);
-  kassert(g_capability_denials == 1);
+  kassert(g_capability_denials == 3);
   kassert(g_fs_denials == 1);
   kassert(g_workspace_denials == 1);
   kassert(g_sandbox_denials == 1);
   kassert(g_rollback_denials == 1);
-  kassert(g_update_policy_rejects == 1);
-  kassert(g_denied_operations == 8);
-  klog("security: self-test passed denied=%lu capability_denials=%lu fs_denials=%lu workspace_denials=%lu sandbox_denials=%lu rollback_denials=%lu update_policy_rejects=%lu credential_rejects=%lu signature_accepts=%lu signature_rejects=%lu\n",
+  kassert(g_update_policy_rejects == 3);
+  kassert(g_admin_denials == 2);
+  kassert(g_update_authorizations == 1);
+  kassert(g_update_replay_rejects == 1);
+  kassert(g_key_accepts == 1);
+  kassert(g_key_rejects == 1);
+  kassert(g_sandbox_escape_rejects == 1);
+  kassert(g_denied_operations == 13);
+  klog("security: self-test passed denied=%lu capability_denials=%lu fs_denials=%lu workspace_denials=%lu sandbox_denials=%lu rollback_denials=%lu update_policy_rejects=%lu credential_rejects=%lu signature_accepts=%lu signature_rejects=%lu admin_denials=%lu update_authorizations=%lu update_replay_rejects=%lu key_accepts=%lu key_rejects=%lu sandbox_escape_rejects=%lu\n",
        g_denied_operations, g_capability_denials, g_fs_denials,
        g_workspace_denials, g_sandbox_denials, g_rollback_denials,
        g_update_policy_rejects, g_credential_rejects, g_signature_accepts,
-       g_signature_rejects);
+       g_signature_rejects, g_admin_denials, g_update_authorizations,
+       g_update_replay_rejects, g_key_accepts, g_key_rejects,
+       g_sandbox_escape_rejects);
 }

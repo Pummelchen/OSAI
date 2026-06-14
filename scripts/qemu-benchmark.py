@@ -83,6 +83,12 @@ def main() -> int:
         "security_credential_rejects",
         "security_signature_accepts",
         "security_signature_rejects",
+        "security_admin_denials",
+        "security_update_authorizations",
+        "security_update_replay_rejects",
+        "security_key_accepts",
+        "security_key_rejects",
+        "security_sandbox_escape_rejects",
         "virtio_block_sectors",
         "cpu_ai_model_loads",
         "cpu_ai_model_load_failures",
@@ -194,15 +200,21 @@ def main() -> int:
         and telemetry["cpu_ai_kernel_dispatches"] >= 4
         and telemetry["cpu_ai_admission_rejects"] >= 5
         and telemetry["cpu_ai_checksum_failures"] >= 1,
-        "security_enforcement_recorded": telemetry["security_denied_ops"] >= 16
-        and telemetry["security_capability_denials"] >= 3
+        "security_enforcement_recorded": telemetry["security_denied_ops"] >= 22
+        and telemetry["security_capability_denials"] >= 5
         and telemetry["security_fs_denials"] >= 1
         and telemetry["security_workspace_denials"] >= 4
         and telemetry["security_sandbox_denials"] >= 3
         and telemetry["security_rollback_denials"] >= 1
-        and telemetry["security_update_policy_rejects"] >= 1
+        and telemetry["security_update_policy_rejects"] >= 3
         and telemetry["security_credential_rejects"] >= 3
-        and telemetry["security_signature_rejects"] >= 1,
+        and telemetry["security_signature_rejects"] >= 3
+        and telemetry["security_admin_denials"] >= 2
+        and telemetry["security_update_authorizations"] >= 1
+        and telemetry["security_update_replay_rejects"] >= 1
+        and telemetry["security_key_accepts"] >= 1
+        and telemetry["security_key_rejects"] >= 1
+        and telemetry["security_sandbox_escape_rejects"] >= 2,
         "persistence_rollbacks_present": telemetry["persistence_rollbacks"] >= 5,
         "disk_persistence_reloaded": telemetry["persistence_disk_writes"] >= 1
         and telemetry["persistence_disk_loads"] >= 1

@@ -57,6 +57,12 @@ static osai_status_t validate_manifest(
       manifest->allow_network != 0) {
     return OSAI_ERR_INVALID;
   }
+  if (security_validate_sandbox_path(manifest->repo_path) != OSAI_OK ||
+      security_validate_sandbox_path(manifest->worktree_path) != OSAI_OK ||
+      security_validate_sandbox_path(manifest->build_dir) != OSAI_OK ||
+      security_validate_sandbox_path(manifest->artifact_dir) != OSAI_OK) {
+    return OSAI_ERR_INVALID;
+  }
   return OSAI_OK;
 }
 
@@ -251,6 +257,10 @@ void sandbox_self_test(void) {
   kassert(sandbox_create(&invalid) == OSAI_ERR_INVALID);
 
   fill_manifest(&invalid, 1, 2, "/repo/app", 1);
+  kassert(sandbox_create(&invalid) == OSAI_ERR_INVALID);
+
+  fill_manifest(&invalid, 1, 2, "/repo/app", 0);
+  invalid.worktree_path = "/workspace/1/../escape";
   kassert(sandbox_create(&invalid) == OSAI_ERR_INVALID);
 
   klog("sandbox: lifecycle self-test passed active=%lu transitions=%lu\n",

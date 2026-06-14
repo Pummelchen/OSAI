@@ -106,15 +106,21 @@ REQUIRED_TELEMETRY_MINIMUMS = {
     "cpu_ai_kernel_dispatches": 4,
     "cpu_ai_admission_rejects": 5,
     "cpu_ai_checksum_failures": 1,
-    "security_denied_ops": 16,
-    "security_capability_denials": 3,
+    "security_denied_ops": 22,
+    "security_capability_denials": 5,
     "security_fs_denials": 1,
     "security_workspace_denials": 4,
     "security_sandbox_denials": 3,
     "security_rollback_denials": 1,
-    "security_update_policy_rejects": 1,
+    "security_update_policy_rejects": 3,
     "security_credential_rejects": 3,
-    "security_signature_rejects": 1,
+    "security_signature_rejects": 3,
+    "security_admin_denials": 2,
+    "security_update_authorizations": 1,
+    "security_update_replay_rejects": 1,
+    "security_key_accepts": 1,
+    "security_key_rejects": 1,
+    "security_sandbox_escape_rejects": 2,
     "persistence_snapshots": 5,
     "persistence_rollbacks": 5,
     "persistence_disk_writes": 1,
@@ -268,8 +274,8 @@ def validate_contract(contract: Dict[str, Any], failures: List[str]) -> Dict[str
     check_equal(syscall_abi.get("version"), 1, "contract.syscall_abi.version", failures)
     if len(syscalls) != 10:
         failures.append(f"contract.syscall_abi.syscalls expected 10 entries, got {len(syscalls)}")
-    if len(capabilities) != 7:
-        failures.append(f"contract.syscall_abi.capabilities expected 7 entries, got {len(capabilities)}")
+    if len(capabilities) != 8:
+        failures.append(f"contract.syscall_abi.capabilities expected 8 entries, got {len(capabilities)}")
     expected_syscall_numbers = list(range(1, 11))
     actual_syscall_numbers = [entry.get("number") for entry in syscalls]
     if actual_syscall_numbers != expected_syscall_numbers:
@@ -318,6 +324,18 @@ def validate_contract(contract: Dict[str, Any], failures: List[str]) -> Dict[str
     for key in ["name", "parent", "restart", "start", "status"]:
         if key not in descriptor.get("required_keys", []):
             failures.append(f"contract.service_descriptor.required_keys missing {key}")
+
+    security_policy = contract.get("security_policy", {})
+    check_bool(security_policy.get("admin_capability_required"), True, "contract.security_policy.admin_capability_required", failures)
+    check_equal(security_policy.get("admin_capability"), "OSAI_CAP_ADMIN", "contract.security_policy.admin_capability", failures)
+    check_equal(security_policy.get("update_generation_policy"), "strictly monotonic", "contract.security_policy.update_generation_policy", failures)
+    check_equal(security_policy.get("accepted_update_key"), "OSAI-QEMU-DEV-PUBKEY", "contract.security_policy.accepted_update_key", failures)
+    for cap in ["OSAI_CAP_UPDATE", "OSAI_CAP_ADMIN"]:
+        if cap not in security_policy.get("update_requires_capabilities", []):
+            failures.append(f"contract.security_policy.update_requires_capabilities missing {cap}")
+    check_bool(security_policy.get("rollback_authorization_required"), True, "contract.security_policy.rollback_authorization_required", failures)
+    check_bool(security_policy.get("sandbox_path_escape_rejected"), True, "contract.security_policy.sandbox_path_escape_rejected", failures)
+    check_bool(security_policy.get("credential_material_rejected"), True, "contract.security_policy.credential_material_rejected", failures)
 
     out_of_scope = contract.get("out_of_scope_before_intel", [])
     if len(out_of_scope) < 5:

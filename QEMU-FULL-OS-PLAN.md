@@ -29,6 +29,10 @@ The AI Cell production-contract slice adds a stable descriptor ABI, descriptor
 checksum validation, required resource flags, PMM/VMM-backed arena accounting,
 real NIC queue binding and release, workspace lifecycle accounting, conflict
 tests, and readiness-gate telemetry for the AI Cell resource contract.
+The security-hardening slice adds an explicit admin capability, stricter
+signed-update format with development public-key id, monotonic update generation
+and replay rejection, sandbox path escape rejection, and QEMU gates for the
+new policy counters.
 
 The current implementation still has important MVP/stub areas:
 
@@ -106,6 +110,6 @@ The current implementation still has important MVP/stub areas:
 
 ## Current Slice
 
-Milestones 34 through 38 are complete in QEMU. The next active slice starts at
-milestone 39 under the full-core workdown. The detailed checklist lives in
+Milestones 34 through 39 are complete in QEMU. The next active slice starts at
+milestone 40 under the full-core workdown. The detailed checklist lives in
 `QEMU-FULL-OS-CORE-WORKDOWN.md`.

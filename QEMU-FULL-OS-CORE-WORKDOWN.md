@@ -249,3 +249,33 @@ Definition of done:
   backpressure drops, and zero flow/core mismatches.
 - `make qemu-smoke`, `python3 ./scripts/qemu-benchmark.py`, and
   `make qemu-readiness-gate` require the mature networking telemetry.
+
+## Phase Q13: Security Hardening
+
+Goal: move from broad security fixtures to explicit QEMU policy gates for admin,
+signed update, key, rollback, sandbox, and secret-handling paths.
+
+Required work:
+
+- [x] Add `OSAI_CAP_ADMIN` as a separate administrative capability.
+- [x] Require both `OSAI_CAP_UPDATE` and `OSAI_CAP_ADMIN` for signed update
+  authorization.
+- [x] Replace the old update token stub with a structured development
+  public-key signature format.
+- [x] Require monotonic update generations and reject replayed update
+  signatures.
+- [x] Track accepted and rejected update keys.
+- [x] Reject sandbox path traversal and duplicate slash escape attempts.
+- [x] Keep rollback authorization fail-closed.
+- [x] Emit telemetry for admin denials, update authorization, replay rejection,
+  key accept/reject, and sandbox escape rejection.
+- [x] Add smoke, benchmark, readiness, and RC contract gates for the hardened
+  policy.
+
+Definition of done:
+
+- QEMU boot proves missing admin capability, bad update key, replayed update
+  generation, sandbox path escape, credential material, rollback denial, and
+  signed update authorization paths are all exercised and counted.
+- `make qemu-smoke`, `python3 ./scripts/qemu-benchmark.py`, and
+  `make qemu-readiness-gate` require the security-hardening telemetry.

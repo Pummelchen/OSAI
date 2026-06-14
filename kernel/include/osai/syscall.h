@@ -22,6 +22,7 @@
 #define OSAI_CAP_UPDATE UINT64_C(16)
 #define OSAI_CAP_FS_READ UINT64_C(32)
 #define OSAI_CAP_SERVICE_CONTROL UINT64_C(64)
+#define OSAI_CAP_ADMIN UINT64_C(128)
 
 uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
                           uint64_t arg2);

@@ -31,7 +31,8 @@
       {"bit": 8, "name": "OSAI_CAP_SERVICE_ROLLBACK"},
       {"bit": 16, "name": "OSAI_CAP_UPDATE"},
       {"bit": 32, "name": "OSAI_CAP_FS_READ"},
-      {"bit": 64, "name": "OSAI_CAP_SERVICE_CONTROL"}
+      {"bit": 64, "name": "OSAI_CAP_SERVICE_CONTROL"},
+      {"bit": 128, "name": "OSAI_CAP_ADMIN"}
     ]
   },
   "telemetry_schema": {
@@ -68,15 +69,21 @@
       "cpu_ai_kernel_dispatches": 4,
       "cpu_ai_admission_rejects": 5,
       "cpu_ai_checksum_failures": 1,
-      "security_denied_ops": 16,
-      "security_capability_denials": 3,
+      "security_denied_ops": 22,
+      "security_capability_denials": 5,
       "security_fs_denials": 1,
       "security_workspace_denials": 4,
       "security_sandbox_denials": 3,
       "security_rollback_denials": 1,
-      "security_update_policy_rejects": 1,
+      "security_update_policy_rejects": 3,
       "security_credential_rejects": 3,
-      "security_signature_rejects": 1,
+      "security_signature_rejects": 3,
+      "security_admin_denials": 2,
+      "security_update_authorizations": 1,
+      "security_update_replay_rejects": 1,
+      "security_key_accepts": 1,
+      "security_key_rejects": 1,
+      "security_sandbox_escape_rejects": 2,
       "persistence_snapshots": 5,
       "persistence_rollbacks": 5,
       "persistence_disk_writes": 1,
@@ -238,6 +245,21 @@
       "start": "true",
       "status": "true"
     }
+  },
+  "security_policy": {
+    "name": "OSAI QEMU security hardening policy",
+    "admin_capability_required": true,
+    "admin_capability": "OSAI_CAP_ADMIN",
+    "update_signature_format": "osai-update:v1:gen=<monotonic>:sha256=<64 hex>:key=OSAI-QEMU-DEV-PUBKEY:sig=<64 hex>",
+    "update_requires_capabilities": [
+      "OSAI_CAP_UPDATE",
+      "OSAI_CAP_ADMIN"
+    ],
+    "update_generation_policy": "strictly monotonic",
+    "accepted_update_key": "OSAI-QEMU-DEV-PUBKEY",
+    "rollback_authorization_required": true,
+    "sandbox_path_escape_rejected": true,
+    "credential_material_rejected": true
   },
   "cpu_matrix": {
     "schema": "osai.qemu.cpu_matrix.v1",
