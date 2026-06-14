@@ -52,5 +52,6 @@ uint64_t user_process_loaded_count(void);
 uint64_t user_process_running_count(void);
 uint64_t user_process_exited_count(void);
 uint64_t user_process_failed_count(void);
+uint64_t user_process_reclaim_count(void);
 
 #endif

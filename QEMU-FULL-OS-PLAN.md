@@ -15,11 +15,14 @@ The full-OS filesystem slice adds a VirtIO-backed mutable filesystem region
 with checksum-protected metadata, read-write mount policy, directory records,
 allocator-backed multi-sector files, journal replay, create/update/read/delete
 operations, and commit/rollback self-tests.
+The process-supervisor slice adds a parent-child service tree, child restart
+policy enforcement, supervised crash handling, service cleanup, service log
+accounting, and process address-space reclaim telemetry.
 
 The current implementation still has important MVP/stub areas:
 
-- single foreground EL0 `/init` path;
-- kernel-hosted service policy;
+- two foreground EL0 process path (`/init` and `/bin/service-manager`);
+- userspace-driven service policy with QEMU supervisor coverage;
 - persistence records plus a mutable filesystem layer;
 - correctness-only network paths;
 - deterministic CPU-AI runtime stub;
@@ -91,6 +94,6 @@ The current implementation still has important MVP/stub areas:
 
 ## Current Slice
 
-Milestone 34 is complete in QEMU. The next active slice starts at milestone 35
-under the full-core workdown. The detailed checklist lives in
+Milestones 34 and 35 are complete in QEMU. The next active slice starts at
+milestone 36 under the full-core workdown. The detailed checklist lives in
 `QEMU-FULL-OS-CORE-WORKDOWN.md`.

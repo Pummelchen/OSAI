@@ -192,3 +192,34 @@ Definition of done:
 - A later production-ready filesystem can add a POSIX-like surface and larger
   storage area, but the QEMU contract no longer depends on fixed one-sector
   file slots.
+
+## Phase Q9: Process Supervisor
+
+Goal: make the service manager behave like a small supervisor instead of a
+single child-service smoke test.
+
+Required work:
+
+- [x] Track parent-child service tree edges.
+- [x] Store child parent metadata in the service record.
+- [x] Allow service configuration to apply to child services, not only `/init`.
+- [x] Enforce child restart policy and `max_restarts`.
+- [x] Add a controlled child crash path through the userspace service manager.
+- [x] Restart a failed child when policy allows it.
+- [x] Clean up service runtime state after exit or crash.
+- [x] Count service logs globally and per service.
+- [x] Count process address-space reclamation after EL0 process exit.
+- [x] Add smoke, benchmark, readiness, and contract gates for supervisor
+  telemetry.
+
+Definition of done:
+
+- `/bin/service-manager` defines `/svc/source-index` as a child of `/init`,
+  starts it, proves restart denial while policy is `never`, reconfigures it to
+  `always`, logs a service event, injects a controlled crash, and observes the
+  supervisor cleanup/restart path.
+- Telemetry includes `service_tree_edges`, `service_restarts`,
+  `service_crashes`, `service_cleanups`, `service_log_records`, and
+  `user_process_reclaims`.
+- `make qemu-readiness-gate` requires the service-supervisor counters and still
+  requires zero user process failures.

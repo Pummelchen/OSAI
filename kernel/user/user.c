@@ -76,6 +76,7 @@ static uint64_t g_process_loaded_count;
 static uint64_t g_process_running_count;
 static uint64_t g_process_exited_count;
 static uint64_t g_process_failed_count;
+static uint64_t g_process_reclaim_count;
 
 extern uint64_t aarch64_enter_user(uint64_t entry, uint64_t stack);
 
@@ -200,6 +201,7 @@ void user_process_table_init(void) {
   g_process_running_count = 0;
   g_process_exited_count = 0;
   g_process_failed_count = 0;
+  g_process_reclaim_count = 0;
   klog("user: process table initialized slots=%u\n", OSAI_MAX_USER_PROCESSES);
 }
 
@@ -462,6 +464,7 @@ void user_process_reclaim_address_space(const osai_user_process_t *process) {
       pmm_free_page((void *)(uintptr_t)physical);
     }
   }
+  ++g_process_reclaim_count;
   klog("user: reclaimed address space pid=%u range=[0x%lx,0x%lx)\n",
        process->pid, process->mapped_low, process->mapped_high);
 }
@@ -484,4 +487,8 @@ uint64_t user_process_exited_count(void) {
 
 uint64_t user_process_failed_count(void) {
   return g_process_failed_count;
+}
+
+uint64_t user_process_reclaim_count(void) {
+  return g_process_reclaim_count;
 }

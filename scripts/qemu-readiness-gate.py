@@ -110,14 +110,20 @@ REQUIRED_TELEMETRY_MINIMUMS = {
     "network_packet_drops": 2,
     "network_packet_lifecycle": 12,
     "service_child_descriptors": 1,
-    "service_transitions": 8,
-    "control_plane_syscalls": 8,
+    "service_tree_edges": 1,
+    "service_transitions": 12,
+    "service_restarts": 1,
+    "service_crashes": 1,
+    "service_cleanups": 3,
+    "service_log_records": 2,
+    "control_plane_syscalls": 13,
     "control_plane_denials": 4,
     "service_descriptor_reads": 1,
     "user_process_transitions": 6,
     "user_process_loaded": 2,
     "user_process_running": 2,
     "user_process_exited": 2,
+    "user_process_reclaims": 2,
 }
 
 REQUIRED_TELEMETRY_EQUALS = {

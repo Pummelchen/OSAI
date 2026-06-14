@@ -14,6 +14,7 @@ typedef enum osai_service_state {
 
 typedef struct osai_service {
   const char *name;
+  const char *parent_name;
   const char *restart_policy;
   const char *log_policy;
   uint32_t max_restarts;
@@ -22,6 +23,9 @@ typedef struct osai_service {
   uint64_t starts;
   uint64_t restart_attempts;
   uint64_t log_records;
+  uint64_t child_count;
+  uint64_t crash_count;
+  uint64_t cleanup_count;
   uint64_t update_attempts;
   uint64_t update_rejections;
   uint64_t rollback_count;
@@ -46,6 +50,11 @@ osai_status_t service_exit(const char *name, int exit_code);
 osai_status_t osctl_execute(const char *command);
 void service_supervisor_self_test(void);
 uint64_t service_child_descriptor_count(void);
+uint64_t service_tree_edge_count(void);
 uint64_t service_transition_count(void);
+uint64_t service_restart_count(void);
+uint64_t service_crash_count(void);
+uint64_t service_cleanup_count(void);
+uint64_t service_log_record_count(void);
 
 #endif

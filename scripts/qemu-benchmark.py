@@ -109,7 +109,12 @@ def main() -> int:
         "migration_total",
         "context_switch_total",
         "service_child_descriptors",
+        "service_tree_edges",
         "service_transitions",
+        "service_restarts",
+        "service_crashes",
+        "service_cleanups",
+        "service_log_records",
         "control_plane_syscalls",
         "control_plane_denials",
         "service_descriptor_reads",
@@ -118,6 +123,7 @@ def main() -> int:
         "user_process_running",
         "user_process_exited",
         "user_process_failed",
+        "user_process_reclaims",
     }
     missing = sorted(expected_keys - set(telemetry.keys()))
     if missing:
@@ -177,14 +183,20 @@ def main() -> int:
         and telemetry["network_packet_drops"] >= 2
         and telemetry["network_packet_lifecycle"] >= 12,
         "child_service_supervised": telemetry["service_child_descriptors"] >= 1
-        and telemetry["service_transitions"] >= 8,
-        "userspace_control_plane_active": telemetry["control_plane_syscalls"] >= 8
+        and telemetry["service_tree_edges"] >= 1
+        and telemetry["service_transitions"] >= 12
+        and telemetry["service_restarts"] >= 1
+        and telemetry["service_crashes"] >= 1
+        and telemetry["service_cleanups"] >= 3
+        and telemetry["service_log_records"] >= 2,
+        "userspace_control_plane_active": telemetry["control_plane_syscalls"] >= 13
         and telemetry["control_plane_denials"] >= 4
         and telemetry["service_descriptor_reads"] >= 1,
         "user_process_lifecycle_complete": telemetry["user_process_loaded"] >= 2
         and telemetry["user_process_running"] >= 2
         and telemetry["user_process_exited"] >= 2
-        and telemetry["user_process_failed"] == 0,
+        and telemetry["user_process_failed"] == 0
+        and telemetry["user_process_reclaims"] >= 2,
     }
     failed_gates = sorted(name for name, passed in gates.items() if not passed)
     if failed_gates:
