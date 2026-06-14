@@ -19,6 +19,11 @@
 #define OSAI_SYSCALL_FS_WRITE UINT64_C(13)
 #define OSAI_SYSCALL_FS_CLOSE UINT64_C(14)
 #define OSAI_SYSCALL_FS_STAT UINT64_C(15)
+#define OSAI_SYSCALL_FS_MKDIR UINT64_C(16)
+#define OSAI_SYSCALL_FS_DELETE UINT64_C(17)
+#define OSAI_SYSCALL_FS_RENAME UINT64_C(18)
+#define OSAI_SYSCALL_FS_LIST UINT64_C(19)
+#define OSAI_SYSCALL_CLOCK_NANOS UINT64_C(20)
 
 #define OSAI_CAP_LOG UINT64_C(1)
 #define OSAI_CAP_EXIT UINT64_C(2)
@@ -29,6 +34,20 @@
 #define OSAI_CAP_SERVICE_CONTROL UINT64_C(64)
 #define OSAI_CAP_ADMIN UINT64_C(128)
 #define OSAI_CAP_FS_WRITE UINT64_C(256)
+#define OSAI_CAP_TIME UINT64_C(512)
+
+typedef struct osai_syscall_rename_request {
+  uint64_t old_path;
+  uint64_t old_path_len;
+  uint64_t new_path;
+  uint64_t new_path_len;
+} osai_syscall_rename_request_t;
+
+typedef struct osai_syscall_list_request {
+  uint64_t buffer;
+  uint64_t buffer_size;
+  uint64_t out_size;
+} osai_syscall_list_request_t;
 
 uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
                           uint64_t arg2);

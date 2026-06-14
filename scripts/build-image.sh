@@ -17,6 +17,9 @@ SERVICE_MANAGER_OBJ="$INIT_BUILD_DIR/service-manager.o"
 SERVICE_MANAGER_ELF="$INIT_BUILD_DIR/service-manager.elf"
 WORKER_OBJ="$INIT_BUILD_DIR/worker.o"
 WORKER_ELF="$INIT_BUILD_DIR/worker.elf"
+USER_START_OBJ="$INIT_BUILD_DIR/user-start.o"
+USER_LIB_OBJ="$INIT_BUILD_DIR/osai-user.o"
+USER_APPS="osai-shell hello sysinfo systest smptest nettest lstm-xor"
 
 find_tool() {
   tool_name="$1"
@@ -271,6 +274,66 @@ printf '%s\n' "Building userspace /bin/osai-worker ELF..."
   -o "$WORKER_ELF" \
   "$WORKER_OBJ"
 
+printf '%s\n' "Building userspace C runtime..."
+"$CLANG" \
+  --target=aarch64-none-elf \
+  -ffreestanding \
+  -fno-stack-protector \
+  -fno-builtin \
+  -fno-pic \
+  -fno-pie \
+  -Wall \
+  -Wextra \
+  -Werror \
+  -I"$ROOT_DIR/userspace/include" \
+  -c "$ROOT_DIR/userspace/lib/start.S" \
+  -o "$USER_START_OBJ"
+
+"$CLANG" \
+  --target=aarch64-none-elf \
+  -std=c99 \
+  -ffreestanding \
+  -fno-stack-protector \
+  -fno-builtin \
+  -fno-pic \
+  -fno-pie \
+  -Wall \
+  -Wextra \
+  -Werror \
+  -I"$ROOT_DIR/userspace/include" \
+  -c "$ROOT_DIR/userspace/lib/osai_user.c" \
+  -o "$USER_LIB_OBJ"
+
+APP_INITFS_ARGS=""
+for app in $USER_APPS; do
+  app_obj="$INIT_BUILD_DIR/$app.o"
+  app_elf="$INIT_BUILD_DIR/$app.elf"
+  printf '%s\n' "Building userspace /bin/$app ELF..."
+  "$CLANG" \
+    --target=aarch64-none-elf \
+    -std=c99 \
+    -ffreestanding \
+    -fno-stack-protector \
+    -fno-builtin \
+    -fno-pic \
+    -fno-pie \
+    -Wall \
+    -Wextra \
+    -Werror \
+    -I"$ROOT_DIR/userspace/include" \
+    -c "$ROOT_DIR/userspace/apps/$app.c" \
+    -o "$app_obj"
+
+  "$LD_LLD" \
+    -nostdlib \
+    -T "$ROOT_DIR/userspace/init/linker.ld" \
+    -o "$app_elf" \
+    "$USER_START_OBJ" \
+    "$USER_LIB_OBJ" \
+    "$app_obj"
+  APP_INITFS_ARGS="$APP_INITFS_ARGS /bin/$app=$app_elf"
+done
+
 rm -f "$IMAGE_PATH"
 mkdir -p "$(dirname -- "$IMAGE_PATH")"
 
@@ -295,5 +358,6 @@ printf 'OSAI-VIRTIO-BLOCK-TEST\n' | dd of="$TEST_BLOCK_IMAGE" bs=512 count=1 con
   "$SERVICE_MANAGER_ELF" \
   "$WORKER_ELF" \
   "$ROOT_DIR/userspace/init/osai-init.conf" \
-  "$ROOT_DIR/userspace/service-manager/source-index.svc"
+  "$ROOT_DIR/userspace/service-manager/source-index.svc" \
+  $APP_INITFS_ARGS
 printf '%s\n' "Created $TEST_BLOCK_IMAGE"

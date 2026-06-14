@@ -17,8 +17,8 @@ COMMAND_MARKERS = {
     ],
     "osctl_telemetry": [
         "\"control_plane_syscalls\"",
-        "\"user_process_loaded\":5",
-        "\"user_process_scheduled\":5",
+        "\"user_process_loaded\":12",
+        "\"user_process_scheduled\":12",
         "\"ai_cell_transitions\":14",
     ],
     "osctl_rollback": [
@@ -33,6 +33,13 @@ COMMAND_MARKERS = {
         "/service-manager: control plane complete",
         "/worker: scheduled child process ran",
         "kernel: /bin/osai-worker pid=5 returned to kernel exit_code=0",
+        "/bin/osai-shell: commands passed pwd ls mkdir touch mv rm rmdir",
+        "/bin/hello: C toolchain and EL0 runtime integration passed",
+        "/bin/sysinfo: complete",
+        "/bin/systest: syscall and filesystem suite passed",
+        "/bin/smptest: complete",
+        "/bin/nettest: complete",
+        "/bin/lstm-xor: xor solve passed predictions=0,1,1,0",
     ],
 }
 

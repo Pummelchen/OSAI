@@ -6,7 +6,7 @@
 #include <osai/syscall.h>
 #include <osai/types.h>
 
-#define OSAI_MAX_USER_PROCESSES 8U
+#define OSAI_MAX_USER_PROCESSES 16U
 #define OSAI_USER_EXIT_RETURN_MAGIC UINT64_C(0x4f53414900000000)
 #define OSAI_USER_EXIT_RETURN_MASK UINT64_C(0xffffffff00000000)
 

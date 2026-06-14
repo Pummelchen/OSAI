@@ -32,6 +32,18 @@
 static const char g_vmm_rodata_probe[] = "vmm-rodata";
 static uint64_t g_vmm_data_probe;
 
+static void run_user_app(const char *path, uint32_t pid, uint64_t capabilities) {
+  const osai_initramfs_file_t *file = 0;
+  osai_user_process_t process;
+  kassert(initramfs_lookup(path, &file) == OSAI_OK);
+  kassert(user_load_process(file, pid, capabilities, &process) == OSAI_OK);
+  int exit_code = user_process_run(&process);
+  kassert(exit_code == 0);
+  klog("kernel: %s returned to kernel exit_code=%u\n",
+       path, (unsigned)exit_code);
+  user_process_reclaim_address_space(&process);
+}
+
 static void map_mmio_range(uint64_t start, uint64_t size) {
   const uint64_t page_size = 4096;
   uint64_t page = start & ~(page_size - 1U);
@@ -184,6 +196,17 @@ void kmain(const osai_boot_info_t *boot) {
          pid, (unsigned)worker_exit_code);
     user_process_reclaim_address_space(&worker_process);
   }
+
+  const uint64_t app_caps = OSAI_CAP_LOG | OSAI_CAP_EXIT | OSAI_CAP_OSCTL |
+                            OSAI_CAP_FS_READ | OSAI_CAP_FS_WRITE |
+                            OSAI_CAP_TIME;
+  run_user_app("/bin/osai-shell", 6, app_caps);
+  run_user_app("/bin/hello", 7, app_caps);
+  run_user_app("/bin/sysinfo", 8, app_caps);
+  run_user_app("/bin/systest", 9, app_caps);
+  run_user_app("/bin/smptest", 10, app_caps);
+  run_user_app("/bin/nettest", 11, app_caps);
+  run_user_app("/bin/lstm-xor", 12, app_caps);
 
   telemetry_emit_boot_summary();
 

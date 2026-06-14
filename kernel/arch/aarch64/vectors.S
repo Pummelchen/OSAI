@@ -14,7 +14,11 @@
   mrs x1, esr_el1
   mrs x2, elr_el1
   mrs x3, far_el1
+  sub sp, sp, #16
+  str x30, [sp]
   bl aarch64_exception_entry
+  ldr x30, [sp]
+  add sp, sp, #16
   lsr x9, x0, #32
   movz x10, #0x4f53, lsl #16
   movk x10, #0x4149

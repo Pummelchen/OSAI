@@ -7,15 +7,24 @@ import sys
 SECTOR_SIZE = 512
 MAGIC = b"OSAIROFS2"
 VERSION = 2
-MAX_FILES = 6
+MAX_FILES = 16
 PATH_MAX = 64
 HEADER_SECTOR = 1
-HEADER_BYTES = 1024
+HEADER_BYTES = 2048
 DATA_OFFSET = 4096
 FLAG_READ_ONLY = 1
 ENTRY_FLAG_EXECUTABLE = 1
 ENTRY_FLAG_MANIFEST = 2
 ENTRY_TYPE_FILE = 1
+EXTRA_EXECUTABLE_PATHS = [
+    "/bin/osai-shell",
+    "/bin/hello",
+    "/bin/sysinfo",
+    "/bin/systest",
+    "/bin/smptest",
+    "/bin/nettest",
+    "/bin/lstm-xor",
+]
 FNV1A64_OFFSET = 0xCBF29CE484222325
 FNV1A64_PRIME = 0x100000001B3
 CPU_AI_MAGIC = 0x4941494D
@@ -81,9 +90,9 @@ def write_entry(path: str, offset: int, size: int, flags: int, content_hash: int
 
 
 def main() -> int:
-    if len(sys.argv) != 7:
+    if len(sys.argv) < 7:
         print(
-            "usage: create-initfs.py <image> <init-elf> <service-manager-elf> <worker-elf> <config> <service-descriptor>",
+            "usage: create-initfs.py <image> <init-elf> <service-manager-elf> <worker-elf> <config> <service-descriptor> [<initfs-path>=<host-file> ...]",
             file=sys.stderr,
         )
         return 2
@@ -103,6 +112,13 @@ def main() -> int:
         ("/etc/services/source-index.svc", service_descriptor, 0),
         ("/models/cpu-ai-mvp.osaimodel", model_file, 0),
     ]
+    for spec in sys.argv[7:]:
+        if "=" not in spec:
+            raise SystemExit(f"bad extra initfs spec: {spec}")
+        path, host_file = spec.split("=", 1)
+        if not path.startswith("/"):
+            raise SystemExit(f"initfs path must be absolute: {path}")
+        files.append((path, pathlib.Path(host_file).read_bytes(), ENTRY_FLAG_EXECUTABLE))
     if len(files) > MAX_FILES:
         raise SystemExit("too many initfs files")
 

@@ -86,6 +86,14 @@ static uint64_t cstr_length(const char *text) {
   return len;
 }
 
+static int path_in_tree(const char *path, const char *root) {
+  uint64_t root_len = cstr_length(root);
+  if (!starts_with(path, root)) {
+    return 0;
+  }
+  return path[root_len] == '\0' || path[root_len] == '/';
+}
+
 static int contains_buffer(const char *text, uint64_t length,
                            const char *needle) {
   uint64_t needle_len = cstr_length(needle);
@@ -207,7 +215,9 @@ osai_status_t security_authorize_fs_read(const char *path) {
     ++g_fs_denials;
     return OSAI_ERR_INVALID;
   }
-  if (starts_with(path, "/etc/")) {
+  if (starts_with(path, "/etc/") || path_in_tree(path, "/tmp") ||
+      path_in_tree(path, "/home") || path_in_tree(path, "/apps") ||
+      path_in_tree(path, "/state") || path_in_tree(path, "/logs")) {
     return OSAI_OK;
   }
   ++g_fs_denials;
@@ -218,6 +228,11 @@ osai_status_t security_authorize_fs_write(const char *path) {
   if (security_reject_credential_material(path) != OSAI_OK) {
     ++g_fs_denials;
     return OSAI_ERR_INVALID;
+  }
+  if (path_in_tree(path, "/tmp") || path_in_tree(path, "/home") ||
+      path_in_tree(path, "/apps") || path_in_tree(path, "/state") ||
+      path_in_tree(path, "/logs")) {
+    return OSAI_OK;
   }
   ++g_fs_denials;
   return reject_security_operation("fs-write-denied");

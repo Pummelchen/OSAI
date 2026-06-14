@@ -7,7 +7,7 @@ SCHEMA = "osai.qemu.process_scheduler_gate.v1"
 REPORT = BUILD / "qemu-milestone-60-process-gate.json"
 
 MARKERS = [
-    "user: process table initialized slots=8",
+    "user: process table initialized slots=16",
     "scheduler: lifecycle self-test passed",
     "scheduler: process pid=3 parent=2 runnable name=/bin/osai-worker",
     "scheduler: dispatch pid=3 parent=2 name=/bin/osai-worker",
@@ -22,13 +22,13 @@ MARKERS = [
 ]
 
 MINIMUMS = {
-    "user_process_transitions": 18,
-    "user_process_loaded": 5,
+    "user_process_transitions": 39,
+    "user_process_loaded": 12,
     "user_process_runnable": 3,
-    "user_process_running": 5,
-    "user_process_exited": 5,
-    "user_process_reclaims": 5,
-    "user_process_scheduled": 5,
+    "user_process_running": 12,
+    "user_process_exited": 12,
+    "user_process_reclaims": 12,
+    "user_process_scheduled": 12,
 }
 
 EQUALS = {

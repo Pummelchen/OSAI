@@ -164,25 +164,25 @@ REQUIRED_TELEMETRY_MINIMUMS = {
     "admin_log_reads": 1,
     "admin_remote_safe_accepts": 1,
     "admin_remote_safe_rejects": 1,
-    "control_plane_syscalls": 34,
+    "control_plane_syscalls": 72,
     "control_plane_denials": 5,
     "service_descriptor_reads": 1,
-    "user_process_transitions": 18,
-    "user_process_loaded": 5,
+    "user_process_transitions": 39,
+    "user_process_loaded": 12,
     "user_process_runnable": 3,
-    "user_process_running": 5,
-    "user_process_exited": 5,
-    "user_process_reclaims": 5,
-    "user_process_scheduled": 5,
+    "user_process_running": 12,
+    "user_process_exited": 12,
+    "user_process_reclaims": 12,
+    "user_process_scheduled": 12,
     "mutable_fs_files": 8,
-    "mutable_fs_directories": 11,
-    "mutable_fs_writes": 26,
-    "mutable_fs_reads": 8,
-    "mutable_fs_renames": 1,
-    "mutable_fs_lists": 1,
-    "mutable_fs_stats": 4,
-    "mutable_fs_opens": 5,
-    "mutable_fs_closes": 5,
+    "mutable_fs_directories": 13,
+    "mutable_fs_writes": 32,
+    "mutable_fs_reads": 11,
+    "mutable_fs_renames": 3,
+    "mutable_fs_lists": 3,
+    "mutable_fs_stats": 5,
+    "mutable_fs_opens": 8,
+    "mutable_fs_closes": 8,
     "mutable_fs_rejects": 8,
 }
 
@@ -317,13 +317,13 @@ def validate_contract(contract: Dict[str, Any], failures: List[str]) -> Dict[str
     filesystem = contract.get("filesystem_format", {})
     check_equal(filesystem.get("magic"), "OSAIROFS2", "contract.filesystem.magic", failures)
     check_equal(filesystem.get("version"), 2, "contract.filesystem.version", failures)
-    check_equal(filesystem.get("header_bytes"), 1024, "contract.filesystem.header_bytes", failures)
+    check_equal(filesystem.get("header_bytes"), 2048, "contract.filesystem.header_bytes", failures)
     check_equal(filesystem.get("manifest_path"), "/etc/osai-init.conf", "contract.filesystem.manifest_path", failures)
     required_paths = filesystem.get("required_paths", [])
-    for path in ["/init", "/bin/service-manager", "/bin/osai-worker", "/etc/osai-init.conf", "/etc/services/source-index.svc", "/models/cpu-ai-mvp.osaimodel"]:
+    for path in ["/init", "/bin/service-manager", "/bin/osai-worker", "/bin/osai-shell", "/bin/hello", "/bin/sysinfo", "/bin/systest", "/bin/smptest", "/bin/nettest", "/bin/lstm-xor", "/etc/osai-init.conf", "/etc/services/source-index.svc", "/models/cpu-ai-mvp.osaimodel"]:
         if path not in required_paths:
             failures.append(f"contract.filesystem.required_paths missing {path}")
-    check_equal(filesystem.get("max_files"), 6, "contract.filesystem.max_files", failures)
+    check_equal(filesystem.get("max_files"), 16, "contract.filesystem.max_files", failures)
 
     model_format = contract.get("cpu_ai_model_format", {})
     check_equal(model_format.get("magic"), "OSAI_MODEL_MIAI", "contract.cpu_ai_model_format.magic", failures)

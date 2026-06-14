@@ -5,6 +5,7 @@
 #include <osai/security.h>
 #include <osai/service.h>
 #include <osai/syscall.h>
+#include <osai/timer.h>
 #include <osai/user.h>
 #include <osai/vmm.h>
 
@@ -34,6 +35,11 @@ static const osai_syscall_entry_t g_syscall_table[] = {
     {OSAI_SYSCALL_FS_WRITE, "fs_write", OSAI_CAP_FS_WRITE},
     {OSAI_SYSCALL_FS_CLOSE, "fs_close", OSAI_CAP_FS_READ},
     {OSAI_SYSCALL_FS_STAT, "fs_stat", OSAI_CAP_FS_READ},
+    {OSAI_SYSCALL_FS_MKDIR, "fs_mkdir", OSAI_CAP_FS_WRITE},
+    {OSAI_SYSCALL_FS_DELETE, "fs_delete", OSAI_CAP_FS_WRITE},
+    {OSAI_SYSCALL_FS_RENAME, "fs_rename", OSAI_CAP_FS_WRITE},
+    {OSAI_SYSCALL_FS_LIST, "fs_list", OSAI_CAP_FS_READ},
+    {OSAI_SYSCALL_CLOCK_NANOS, "clock_nanos", OSAI_CAP_TIME},
 };
 
 static uint64_t g_control_plane_syscall_count;
@@ -75,7 +81,7 @@ static void bytes_copy(void *dst, const void *src, uint64_t size) {
 static int is_control_plane_syscall(uint64_t syscall) {
   return syscall == OSAI_SYSCALL_OSCTL ||
          (syscall >= OSAI_SYSCALL_READ_SERVICE_DESCRIPTOR &&
-          syscall <= OSAI_SYSCALL_FS_STAT);
+          syscall <= OSAI_SYSCALL_CLOCK_NANOS);
 }
 
 static uint64_t reject_syscall(uint64_t syscall, uint64_t arg0, uint64_t arg1,
@@ -129,15 +135,18 @@ uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
     const osai_user_process_t *process = user_current_process();
     const char *name = process != 0 && process->name != 0 ? process->name : "";
     if (service_exit(name, (int)arg0) != OSAI_OK) {
-      klog("user: %s exit rejected status=%u service_not_running\n",
+      klog("user: %s exit without service record status=%u\n",
            name, (unsigned)arg0);
-      return reject_syscall(syscall, arg0, arg1, "service-not-running");
     }
     user_process_note_syscall(0);
     klog("user: %s exited status=%u syscalls=%lu rejected=%lu\n",
          name, (unsigned)arg0, process != 0 ? process->syscall_count : 0,
          process != 0 ? process->rejected_syscall_count : 0);
     return user_process_note_exit((int)arg0);
+  }
+
+  if (syscall == OSAI_SYSCALL_CLOCK_NANOS) {
+    return complete_control_syscall(timer_now_ns());
   }
 
   if (syscall == OSAI_SYSCALL_READ_SERVICE_DESCRIPTOR) {
@@ -226,6 +235,14 @@ uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
                                           OSAI_CAP_FS_WRITE);
       return reject_syscall(syscall, arg0, arg1, "missing-fs-write");
     }
+    if ((arg2 & OSAI_MFS_OPEN_WRITE) != 0 &&
+        security_authorize_fs_write(path) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "fs-open-write-denied");
+    }
+    if ((arg2 & OSAI_MFS_OPEN_WRITE) == 0 &&
+        security_authorize_fs_read(path) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "fs-open-read-denied");
+    }
     int64_t fd = mutable_fs_open(path, (uint32_t)arg2);
     if (fd < 0) {
       return reject_syscall(syscall, arg0, arg1, "fs-open-denied");
@@ -281,6 +298,79 @@ uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
     return complete_control_syscall(sizeof(osai_mfs_stat_t));
   }
 
+  if (syscall == OSAI_SYSCALL_FS_MKDIR) {
+    char path[OSAI_MFS_PATH_MAX];
+    if (copy_user_string(arg0, arg1, path, sizeof(path)) != OSAI_OK ||
+        security_authorize_fs_write(path) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "fs-mkdir-denied");
+    }
+    if (mutable_fs_mkdir(path) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "fs-mkdir-failed");
+    }
+    return complete_control_syscall(0);
+  }
+
+  if (syscall == OSAI_SYSCALL_FS_DELETE) {
+    char path[OSAI_MFS_PATH_MAX];
+    if (copy_user_string(arg0, arg1, path, sizeof(path)) != OSAI_OK ||
+        security_authorize_fs_write(path) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "fs-delete-denied");
+    }
+    if (mutable_fs_delete(path) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "fs-delete-failed");
+    }
+    return complete_control_syscall(0);
+  }
+
+  if (syscall == OSAI_SYSCALL_FS_RENAME) {
+    osai_syscall_rename_request_t request;
+    char old_path[OSAI_MFS_PATH_MAX];
+    char new_path[OSAI_MFS_PATH_MAX];
+    if (arg1 != sizeof(request) ||
+        vmm_validate_user_buffer(arg0, sizeof(request), 0) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "bad-fs-rename-request");
+    }
+    bytes_copy(&request, (const void *)(uintptr_t)arg0, sizeof(request));
+    if (copy_user_string(request.old_path, request.old_path_len, old_path,
+                         sizeof(old_path)) != OSAI_OK ||
+        copy_user_string(request.new_path, request.new_path_len, new_path,
+                         sizeof(new_path)) != OSAI_OK ||
+        security_authorize_fs_write(old_path) != OSAI_OK ||
+        security_authorize_fs_write(new_path) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "fs-rename-denied");
+    }
+    if (mutable_fs_rename(old_path, new_path) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "fs-rename-failed");
+    }
+    return complete_control_syscall(0);
+  }
+
+  if (syscall == OSAI_SYSCALL_FS_LIST) {
+    osai_syscall_list_request_t request;
+    char path[OSAI_MFS_PATH_MAX];
+    uint64_t out_size = 0;
+    if (copy_user_string(arg0, arg1, path, sizeof(path)) != OSAI_OK ||
+        vmm_validate_user_buffer(arg2, sizeof(request), 0) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "bad-fs-list-request");
+    }
+    bytes_copy(&request, (const void *)(uintptr_t)arg2, sizeof(request));
+    if (request.buffer_size == 0 ||
+        vmm_validate_user_buffer(request.buffer, request.buffer_size,
+                                 OSAI_VMM_WRITABLE) != OSAI_OK ||
+        vmm_validate_user_buffer(request.out_size, sizeof(out_size),
+                                 OSAI_VMM_WRITABLE) != OSAI_OK ||
+        security_authorize_fs_read(path) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "fs-list-denied");
+    }
+    if (mutable_fs_list(path, (char *)(uintptr_t)request.buffer,
+                        request.buffer_size, &out_size) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "fs-list-failed");
+    }
+    bytes_copy((void *)(uintptr_t)request.out_size, &out_size,
+               sizeof(out_size));
+    return complete_control_syscall(out_size);
+  }
+
   return reject_syscall(syscall, arg0, arg1, "unreachable");
 }
 
@@ -300,6 +390,11 @@ void syscall_self_test(void) {
   kassert(lookup_syscall(OSAI_SYSCALL_FS_WRITE) != 0);
   kassert(lookup_syscall(OSAI_SYSCALL_FS_CLOSE) != 0);
   kassert(lookup_syscall(OSAI_SYSCALL_FS_STAT) != 0);
+  kassert(lookup_syscall(OSAI_SYSCALL_FS_MKDIR) != 0);
+  kassert(lookup_syscall(OSAI_SYSCALL_FS_DELETE) != 0);
+  kassert(lookup_syscall(OSAI_SYSCALL_FS_RENAME) != 0);
+  kassert(lookup_syscall(OSAI_SYSCALL_FS_LIST) != 0);
+  kassert(lookup_syscall(OSAI_SYSCALL_CLOCK_NANOS) != 0);
   kassert(lookup_syscall(99) == 0);
   klog("syscall: table self-test passed entries=%lu\n",
        (uint64_t)(sizeof(g_syscall_table) / sizeof(g_syscall_table[0])));
