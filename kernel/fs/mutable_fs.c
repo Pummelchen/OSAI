@@ -3,51 +3,82 @@
 #include <osai/mutable_fs.h>
 #include <osai/virtio_blk.h>
 
-#define MFS_MAGIC "OSAIMFS1"
+#define MFS_MAGIC "OSAIMFS2"
+#define MFS_JOURNAL_MAGIC "OSAIMFJ1"
 #define MFS_MAGIC_LEN 8U
-#define MFS_VERSION 1U
+#define MFS_VERSION 2U
+#define MFS_JOURNAL_VERSION 1U
 #define MFS_SECTOR_SIZE UINT64_C(512)
 #define MFS_START_SECTOR UINT64_C(1600)
-#define MFS_METADATA_SECTORS UINT64_C(4)
-#define MFS_DATA_START_SECTOR (MFS_START_SECTOR + MFS_METADATA_SECTORS)
-#define MFS_MAX_FILES 8U
-#define MFS_PATH_MAX 64U
-#define MFS_FILE_BYTES 512U
+#define MFS_METADATA_SECTORS UINT64_C(8)
+#define MFS_JOURNAL_HEADER_SECTOR (MFS_START_SECTOR + MFS_METADATA_SECTORS)
+#define MFS_JOURNAL_DATA_SECTOR (MFS_JOURNAL_HEADER_SECTOR + 1U)
+#define MFS_JOURNAL_SECTORS UINT64_C(2)
+#define MFS_DATA_START_SECTOR \
+  (MFS_START_SECTOR + MFS_METADATA_SECTORS + MFS_JOURNAL_SECTORS)
+#define MFS_DATA_SECTORS 96U
+#define MFS_MAX_NODES 18U
+#define MFS_PATH_MAX 96U
+#define MFS_FILE_MAX_BLOCKS 6U
+#define MFS_MAX_FILE_BYTES (MFS_FILE_MAX_BLOCKS * MFS_SECTOR_SIZE)
+#define MFS_NODE_FREE 0U
+#define MFS_NODE_DIR 1U
+#define MFS_NODE_FILE 2U
 #define MFS_MOUNT_READ_WRITE 1U
+#define MFS_JOURNAL_EMPTY 0U
+#define MFS_JOURNAL_PENDING 1U
+#define MFS_JOURNAL_OP_WRITE_FILE 1U
 #define FNV1A64_OFFSET UINT64_C(14695981039346656037)
 #define FNV1A64_PRIME UINT64_C(1099511628211)
 
-typedef struct osai_mfs_entry {
+typedef struct osai_mfs_node {
   uint32_t active;
   uint32_t snapshot_active;
-  uint32_t deleted;
-  uint32_t reserved;
-  uint64_t data_sector;
-  uint64_t snapshot_sector;
+  uint32_t type;
+  uint32_t snapshot_type;
   uint64_t size;
   uint64_t content_hash;
   uint64_t generation;
   uint64_t snapshot_size;
   uint64_t snapshot_hash;
   uint64_t snapshot_generation;
+  uint16_t block_count;
+  uint16_t snapshot_block_count;
+  uint16_t blocks[MFS_FILE_MAX_BLOCKS];
+  uint16_t snapshot_blocks[MFS_FILE_MAX_BLOCKS];
   char path[MFS_PATH_MAX];
-} osai_mfs_entry_t;
+} osai_mfs_node_t;
 
 typedef struct osai_mfs_disk {
-  char magic[8];
+  char magic[MFS_MAGIC_LEN];
   uint32_t version;
   uint32_t sector_size;
   uint32_t metadata_sectors;
-  uint32_t max_files;
+  uint32_t max_nodes;
   uint64_t start_sector;
+  uint64_t journal_header_sector;
+  uint64_t journal_data_sector;
   uint64_t data_start_sector;
   uint64_t data_sectors;
   uint64_t generation;
   uint64_t committed_generation;
   uint64_t checksum;
-  osai_mfs_entry_t entries[MFS_MAX_FILES];
-  uint8_t padding[824];
+  uint8_t block_bitmap[MFS_DATA_SECTORS];
+  osai_mfs_node_t nodes[MFS_MAX_NODES];
 } osai_mfs_disk_t;
+
+typedef struct osai_mfs_journal {
+  char magic[MFS_MAGIC_LEN];
+  uint32_t version;
+  uint32_t state;
+  uint32_t op;
+  uint32_t reserved;
+  uint64_t size;
+  uint64_t content_hash;
+  uint64_t checksum;
+  char path[MFS_PATH_MAX];
+  uint8_t padding[368];
+} osai_mfs_journal_t;
 
 static osai_mfs_disk_t g_mfs;
 static uint32_t g_mounted;
@@ -62,13 +93,24 @@ static uint64_t g_commit_count;
 static uint64_t g_rollback_count;
 static uint64_t g_reject_count;
 static uint64_t g_checksum_error_count;
+static uint64_t g_allocation_count;
+static uint64_t g_free_count;
+static uint64_t g_directory_count;
+static uint64_t g_replay_count;
+static uint64_t g_journal_write_count;
+static uint64_t g_multi_sector_file_count;
+static uint64_t g_state_record_count;
 
-static const char k_service_v1[] =
-    "service=/svc/source-index\nstate=running\n";
-static const char k_service_v2[] =
-    "service=/svc/source-index\nstate=restarting\n";
 static const char k_config_v1[] = "mode=qemu-full-os\nmutable=true\n";
+static const char k_service_running[] =
+    "service=/svc/source-index\nstate=running\n";
+static const char k_service_restarting[] =
+    "service=/svc/source-index\nstate=restarting\n";
+static const char k_update_state[] =
+    "policy=signed-update-required\nrollback=enabled\n";
 static const char k_boot_log[] = "boot=ok\n";
+static const char k_replayed_state[] =
+    "service=/svc/replayed\nstate=recovered\n";
 
 static void bytes_zero(void *buffer, uint64_t size) {
   uint8_t *bytes = (uint8_t *)buffer;
@@ -96,6 +138,69 @@ static int bytes_eq(const void *a, const void *b, uint64_t size) {
   return 1;
 }
 
+static uint64_t cstr_len(const char *value) {
+  uint64_t len = 0;
+  while (value[len] != '\0') {
+    ++len;
+  }
+  return len;
+}
+
+static int str_eq(const char *a, const char *b) {
+  while (*a != '\0' && *b != '\0') {
+    if (*a != *b) {
+      return 0;
+    }
+    ++a;
+    ++b;
+  }
+  return *a == '\0' && *b == '\0';
+}
+
+static osai_status_t append_char(char *buffer, uint64_t capacity,
+                                 uint64_t *offset, char value) {
+  if (buffer == 0 || offset == 0 || *offset + 1U >= capacity) {
+    return OSAI_ERR_NO_MEMORY;
+  }
+  buffer[*offset] = value;
+  ++(*offset);
+  buffer[*offset] = '\0';
+  return OSAI_OK;
+}
+
+static osai_status_t append_cstr(char *buffer, uint64_t capacity,
+                                 uint64_t *offset, const char *value) {
+  if (value == 0) {
+    return OSAI_ERR_INVALID;
+  }
+  for (uint64_t i = 0; value[i] != '\0'; ++i) {
+    if (append_char(buffer, capacity, offset, value[i]) != OSAI_OK) {
+      return OSAI_ERR_NO_MEMORY;
+    }
+  }
+  return OSAI_OK;
+}
+
+static osai_status_t append_u32(char *buffer, uint64_t capacity,
+                                uint64_t *offset, uint32_t value) {
+  char digits[10];
+  uint32_t count = 0;
+  if (value == 0) {
+    return append_char(buffer, capacity, offset, '0');
+  }
+  while (value != 0 && count < sizeof(digits)) {
+    digits[count++] = (char)('0' + (value % 10U));
+    value /= 10U;
+  }
+  while (count > 0) {
+    --count;
+    if (append_char(buffer, capacity, offset, digits[count]) != OSAI_OK) {
+      return OSAI_ERR_NO_MEMORY;
+    }
+  }
+  return OSAI_OK;
+}
+
 static uint64_t fnv1a64(const void *buffer, uint64_t size) {
   const uint8_t *bytes = (const uint8_t *)buffer;
   uint64_t hash = FNV1A64_OFFSET;
@@ -114,46 +219,12 @@ static uint64_t disk_checksum(osai_mfs_disk_t *disk) {
   return checksum;
 }
 
-static int str_eq(const char *a, const char *b) {
-  while (*a != '\0' && *b != '\0') {
-    if (*a != *b) {
-      return 0;
-    }
-    ++a;
-    ++b;
-  }
-  return *a == '\0' && *b == '\0';
-}
-
-static int path_prefix(const char *path, const char *prefix) {
-  while (*prefix != '\0') {
-    if (*path != *prefix) {
-      return 0;
-    }
-    ++path;
-    ++prefix;
-  }
-  return 1;
-}
-
-static osai_status_t validate_path(const char *path) {
-  if (path == 0 || path[0] != '/') {
-    return OSAI_ERR_INVALID;
-  }
-  if (!path_prefix(path, "/state/") && !path_prefix(path, "/config/") &&
-      !path_prefix(path, "/logs/")) {
-    return OSAI_ERR_INVALID;
-  }
-  for (uint32_t i = 0; i < MFS_PATH_MAX; ++i) {
-    char c = path[i];
-    if (c == '\0') {
-      return i > 1 ? OSAI_OK : OSAI_ERR_INVALID;
-    }
-    if (c < '!' || c > '~') {
-      return OSAI_ERR_INVALID;
-    }
-  }
-  return OSAI_ERR_INVALID;
+static uint64_t journal_checksum(osai_mfs_journal_t *journal) {
+  uint64_t saved = journal->checksum;
+  journal->checksum = 0;
+  uint64_t checksum = fnv1a64(journal, sizeof(*journal));
+  journal->checksum = saved;
+  return checksum;
 }
 
 static void copy_path(char dst[MFS_PATH_MAX], const char *src) {
@@ -165,49 +236,118 @@ static void copy_path(char dst[MFS_PATH_MAX], const char *src) {
   dst[i] = '\0';
 }
 
-static uint64_t file_count(void) {
+static const char *basename_of(const char *path) {
+  const char *base = path;
+  if (path == 0) {
+    return 0;
+  }
+  for (uint32_t i = 0; path[i] != '\0'; ++i) {
+    if (path[i] == '/' && path[i + 1U] != '\0') {
+      base = &path[i + 1U];
+    }
+  }
+  return base;
+}
+
+static osai_status_t validate_path(const char *path) {
+  if (path == 0 || path[0] != '/') {
+    return OSAI_ERR_INVALID;
+  }
+  uint32_t len = 0;
+  uint32_t last_slash = 1;
+  for (uint32_t i = 0; i < MFS_PATH_MAX; ++i) {
+    char c = path[i];
+    if (c == '\0') {
+      if (len == 0 || (len > 1U && last_slash != 0)) {
+        return OSAI_ERR_INVALID;
+      }
+      return OSAI_OK;
+    }
+    if (c < '!' || c > '~' || c == ':' || c == '*' || c == '?' ||
+        c == '"' || c == '<' || c == '>' || c == '|') {
+      return OSAI_ERR_INVALID;
+    }
+    if (c == '/' && last_slash != 0 && i != 0) {
+      return OSAI_ERR_INVALID;
+    }
+    last_slash = c == '/' ? 1U : 0U;
+    ++len;
+  }
+  return OSAI_ERR_INVALID;
+}
+
+static void parent_path_of(const char *path, char parent[MFS_PATH_MAX]) {
+  uint32_t last_slash = 0;
+  for (uint32_t i = 0; i < MFS_PATH_MAX && path[i] != '\0'; ++i) {
+    if (path[i] == '/') {
+      last_slash = i;
+    }
+  }
+  if (last_slash == 0) {
+    parent[0] = '/';
+    parent[1] = '\0';
+    return;
+  }
+  for (uint32_t i = 0; i < last_slash; ++i) {
+    parent[i] = path[i];
+  }
+  parent[last_slash] = '\0';
+}
+
+static uint64_t node_count_by_type(uint32_t type) {
   uint64_t count = 0;
-  for (uint32_t i = 0; i < MFS_MAX_FILES; ++i) {
-    if (g_mfs.entries[i].active != 0) {
+  for (uint32_t i = 0; i < MFS_MAX_NODES; ++i) {
+    if (g_mfs.nodes[i].active != 0 && g_mfs.nodes[i].type == type) {
       ++count;
     }
   }
   return count;
 }
 
-static osai_mfs_entry_t *find_entry(const char *path, uint32_t include_deleted) {
-  for (uint32_t i = 0; i < MFS_MAX_FILES; ++i) {
-    if ((g_mfs.entries[i].active != 0 ||
-         (include_deleted != 0 && g_mfs.entries[i].snapshot_active != 0)) &&
-        str_eq(g_mfs.entries[i].path, path)) {
-      return &g_mfs.entries[i];
+static uint64_t block_count_used(void) {
+  uint64_t count = 0;
+  for (uint32_t i = 0; i < MFS_DATA_SECTORS; ++i) {
+    if (g_mfs.block_bitmap[i] != 0) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+static osai_mfs_node_t *find_node(const char *path, uint32_t include_snapshot) {
+  for (uint32_t i = 0; i < MFS_MAX_NODES; ++i) {
+    osai_mfs_node_t *node = &g_mfs.nodes[i];
+    if ((node->active != 0 ||
+         (include_snapshot != 0 && node->snapshot_active != 0)) &&
+        str_eq(node->path, path)) {
+      return node;
     }
   }
   return 0;
 }
 
-static osai_mfs_entry_t *find_free_entry(void) {
-  for (uint32_t i = 0; i < MFS_MAX_FILES; ++i) {
-    if (g_mfs.entries[i].active == 0 &&
-        g_mfs.entries[i].snapshot_active == 0) {
-      return &g_mfs.entries[i];
-    }
-  }
-  for (uint32_t i = 0; i < MFS_MAX_FILES; ++i) {
-    if (g_mfs.entries[i].active == 0) {
-      return &g_mfs.entries[i];
+static osai_mfs_node_t *find_free_node(void) {
+  for (uint32_t i = 0; i < MFS_MAX_NODES; ++i) {
+    if (g_mfs.nodes[i].active == 0 && g_mfs.nodes[i].snapshot_active == 0) {
+      return &g_mfs.nodes[i];
     }
   }
   return 0;
 }
 
 static osai_status_t read_metadata(osai_mfs_disk_t *disk) {
-  uint8_t *bytes = (uint8_t *)disk;
+  bytes_zero(disk, sizeof(*disk));
+  uint8_t sector[MFS_SECTOR_SIZE];
   for (uint64_t i = 0; i < MFS_METADATA_SECTORS; ++i) {
-    if (virtio_block_read_sector(MFS_START_SECTOR + i,
-                                 bytes + i * MFS_SECTOR_SIZE,
-                                 MFS_SECTOR_SIZE) != OSAI_OK) {
+    if (virtio_block_read_sector(MFS_START_SECTOR + i, sector,
+                                 sizeof(sector)) != OSAI_OK) {
       return OSAI_ERR_IO;
+    }
+    uint64_t offset = i * MFS_SECTOR_SIZE;
+    if (offset < sizeof(*disk)) {
+      uint64_t remaining = sizeof(*disk) - offset;
+      uint64_t copy = remaining < MFS_SECTOR_SIZE ? remaining : MFS_SECTOR_SIZE;
+      bytes_copy((uint8_t *)disk + offset, sector, copy);
     }
   }
   return OSAI_OK;
@@ -215,11 +355,18 @@ static osai_status_t read_metadata(osai_mfs_disk_t *disk) {
 
 static osai_status_t write_metadata(void) {
   g_mfs.checksum = disk_checksum(&g_mfs);
+  uint8_t sector[MFS_SECTOR_SIZE];
   const uint8_t *bytes = (const uint8_t *)&g_mfs;
   for (uint64_t i = 0; i < MFS_METADATA_SECTORS; ++i) {
-    if (virtio_block_write_sector(MFS_START_SECTOR + i,
-                                  bytes + i * MFS_SECTOR_SIZE,
-                                  MFS_SECTOR_SIZE) != OSAI_OK) {
+    bytes_zero(sector, sizeof(sector));
+    uint64_t offset = i * MFS_SECTOR_SIZE;
+    if (offset < sizeof(g_mfs)) {
+      uint64_t remaining = sizeof(g_mfs) - offset;
+      uint64_t copy = remaining < MFS_SECTOR_SIZE ? remaining : MFS_SECTOR_SIZE;
+      bytes_copy(sector, bytes + offset, copy);
+    }
+    if (virtio_block_write_sector(MFS_START_SECTOR + i, sector,
+                                  sizeof(sector)) != OSAI_OK) {
       ++g_reject_count;
       return OSAI_ERR_IO;
     }
@@ -227,40 +374,113 @@ static osai_status_t write_metadata(void) {
   return OSAI_OK;
 }
 
+static osai_status_t clear_journal(void) {
+  uint8_t sector[MFS_SECTOR_SIZE];
+  bytes_zero(sector, sizeof(sector));
+  if (virtio_block_write_sector(MFS_JOURNAL_HEADER_SECTOR, sector,
+                                sizeof(sector)) != OSAI_OK ||
+      virtio_block_write_sector(MFS_JOURNAL_DATA_SECTOR, sector,
+                                sizeof(sector)) != OSAI_OK) {
+    ++g_reject_count;
+    return OSAI_ERR_IO;
+  }
+  return OSAI_OK;
+}
+
+static osai_status_t read_journal(osai_mfs_journal_t *journal) {
+  if (virtio_block_read_sector(MFS_JOURNAL_HEADER_SECTOR, journal,
+                               sizeof(*journal)) != OSAI_OK) {
+    return OSAI_ERR_IO;
+  }
+  return OSAI_OK;
+}
+
+static osai_status_t write_journal(osai_mfs_journal_t *journal) {
+  journal->checksum = journal_checksum(journal);
+  if (virtio_block_write_sector(MFS_JOURNAL_HEADER_SECTOR, journal,
+                                sizeof(*journal)) != OSAI_OK) {
+    ++g_reject_count;
+    return OSAI_ERR_IO;
+  }
+  ++g_journal_write_count;
+  return OSAI_OK;
+}
+
+static uint64_t absolute_data_sector(uint16_t block_index) {
+  return MFS_DATA_START_SECTOR + (uint64_t)block_index;
+}
+
+static osai_status_t allocate_blocks(uint16_t count,
+                                     uint16_t blocks[MFS_FILE_MAX_BLOCKS]) {
+  if (count == 0 || count > MFS_FILE_MAX_BLOCKS) {
+    return OSAI_ERR_INVALID;
+  }
+  uint16_t found = 0;
+  for (uint16_t i = 0; i < MFS_DATA_SECTORS && found < count; ++i) {
+    if (g_mfs.block_bitmap[i] == 0) {
+      g_mfs.block_bitmap[i] = 1;
+      blocks[found++] = i;
+      ++g_allocation_count;
+    }
+  }
+  if (found != count) {
+    for (uint16_t i = 0; i < found; ++i) {
+      g_mfs.block_bitmap[blocks[i]] = 0;
+      ++g_free_count;
+    }
+    ++g_reject_count;
+    return OSAI_ERR_NO_MEMORY;
+  }
+  return OSAI_OK;
+}
+
+static void free_blocks(uint16_t count,
+                        const uint16_t blocks[MFS_FILE_MAX_BLOCKS]) {
+  for (uint16_t i = 0; i < count; ++i) {
+    if (blocks[i] < MFS_DATA_SECTORS && g_mfs.block_bitmap[blocks[i]] != 0) {
+      g_mfs.block_bitmap[blocks[i]] = 0;
+      ++g_free_count;
+    }
+  }
+}
+
 static osai_status_t validate_disk(osai_mfs_disk_t *disk) {
   if (!bytes_eq(disk->magic, MFS_MAGIC, MFS_MAGIC_LEN) ||
       disk->version != MFS_VERSION ||
       disk->sector_size != MFS_SECTOR_SIZE ||
       disk->metadata_sectors != MFS_METADATA_SECTORS ||
-      disk->max_files != MFS_MAX_FILES ||
+      disk->max_nodes != MFS_MAX_NODES ||
       disk->start_sector != MFS_START_SECTOR ||
+      disk->journal_header_sector != MFS_JOURNAL_HEADER_SECTOR ||
+      disk->journal_data_sector != MFS_JOURNAL_DATA_SECTOR ||
       disk->data_start_sector != MFS_DATA_START_SECTOR ||
-      disk->data_sectors != MFS_MAX_FILES * 2U) {
+      disk->data_sectors != MFS_DATA_SECTORS) {
     return OSAI_ERR_INVALID;
   }
   uint64_t expected = disk->checksum;
-  uint64_t actual = disk_checksum(disk);
-  if (actual != expected) {
+  if (disk_checksum(disk) != expected) {
     ++g_checksum_error_count;
     return OSAI_ERR_INVALID;
   }
-  for (uint32_t i = 0; i < MFS_MAX_FILES; ++i) {
-    osai_mfs_entry_t *entry = &disk->entries[i];
-    uint64_t expected_data = MFS_DATA_START_SECTOR + i;
-    uint64_t expected_snapshot = MFS_DATA_START_SECTOR + MFS_MAX_FILES + i;
-    if (entry->data_sector != 0 && entry->data_sector != expected_data) {
+  for (uint32_t i = 0; i < MFS_MAX_NODES; ++i) {
+    osai_mfs_node_t *node = &disk->nodes[i];
+    if ((node->active != 0 || node->snapshot_active != 0) &&
+        validate_path(node->path) != OSAI_OK) {
       return OSAI_ERR_INVALID;
     }
-    if (entry->snapshot_sector != 0 &&
-        entry->snapshot_sector != expected_snapshot) {
+    if (node->active != 0 &&
+        node->type != MFS_NODE_DIR && node->type != MFS_NODE_FILE) {
       return OSAI_ERR_INVALID;
     }
-    if ((entry->active != 0 || entry->snapshot_active != 0) &&
-        validate_path(entry->path) != OSAI_OK) {
+    if (node->snapshot_active != 0 &&
+        node->snapshot_type != MFS_NODE_DIR &&
+        node->snapshot_type != MFS_NODE_FILE) {
       return OSAI_ERR_INVALID;
     }
-    if (entry->size > MFS_FILE_BYTES ||
-        entry->snapshot_size > MFS_FILE_BYTES) {
+    if (node->block_count > MFS_FILE_MAX_BLOCKS ||
+        node->snapshot_block_count > MFS_FILE_MAX_BLOCKS ||
+        node->size > MFS_MAX_FILE_BYTES ||
+        node->snapshot_size > MFS_MAX_FILE_BYTES) {
       return OSAI_ERR_INVALID;
     }
   }
@@ -273,30 +493,78 @@ static osai_status_t format_volume(void) {
   g_mfs.version = MFS_VERSION;
   g_mfs.sector_size = (uint32_t)MFS_SECTOR_SIZE;
   g_mfs.metadata_sectors = (uint32_t)MFS_METADATA_SECTORS;
-  g_mfs.max_files = MFS_MAX_FILES;
+  g_mfs.max_nodes = MFS_MAX_NODES;
   g_mfs.start_sector = MFS_START_SECTOR;
+  g_mfs.journal_header_sector = MFS_JOURNAL_HEADER_SECTOR;
+  g_mfs.journal_data_sector = MFS_JOURNAL_DATA_SECTOR;
   g_mfs.data_start_sector = MFS_DATA_START_SECTOR;
-  g_mfs.data_sectors = MFS_MAX_FILES * 2U;
+  g_mfs.data_sectors = MFS_DATA_SECTORS;
   g_mfs.generation = 1;
   g_mfs.committed_generation = 0;
-  for (uint32_t i = 0; i < MFS_MAX_FILES; ++i) {
-    g_mfs.entries[i].data_sector = MFS_DATA_START_SECTOR + i;
-    g_mfs.entries[i].snapshot_sector = MFS_DATA_START_SECTOR + MFS_MAX_FILES + i;
-  }
   ++g_format_count;
+  if (clear_journal() != OSAI_OK) {
+    return OSAI_ERR_IO;
+  }
   return write_metadata();
+}
+
+static osai_status_t write_file(const char *path, const void *data,
+                                uint64_t size);
+
+static osai_status_t replay_journal(void) {
+  osai_mfs_journal_t journal;
+  if (read_journal(&journal) != OSAI_OK) {
+    ++g_reject_count;
+    return OSAI_ERR_IO;
+  }
+  if (!bytes_eq(journal.magic, MFS_JOURNAL_MAGIC, MFS_MAGIC_LEN) ||
+      journal.state == MFS_JOURNAL_EMPTY) {
+    return OSAI_OK;
+  }
+  uint64_t expected = journal.checksum;
+  if (journal.version != MFS_JOURNAL_VERSION ||
+      journal.state != MFS_JOURNAL_PENDING ||
+      journal.op != MFS_JOURNAL_OP_WRITE_FILE ||
+      journal.size == 0 || journal.size > MFS_SECTOR_SIZE ||
+      journal_checksum(&journal) != expected ||
+      validate_path(journal.path) != OSAI_OK) {
+    ++g_checksum_error_count;
+    ++g_reject_count;
+    return clear_journal();
+  }
+
+  uint8_t sector[MFS_SECTOR_SIZE];
+  if (virtio_block_read_sector(MFS_JOURNAL_DATA_SECTOR, sector,
+                               sizeof(sector)) != OSAI_OK) {
+    ++g_reject_count;
+    return OSAI_ERR_IO;
+  }
+  if (fnv1a64(sector, journal.size) != journal.content_hash) {
+    ++g_checksum_error_count;
+    ++g_reject_count;
+    return clear_journal();
+  }
+  if (write_file(journal.path, sector, journal.size) != OSAI_OK) {
+    return OSAI_ERR_IO;
+  }
+  if (clear_journal() != OSAI_OK) {
+    return OSAI_ERR_IO;
+  }
+  ++g_replay_count;
+  klog("mutable-fs: journal replay path=%s size=%lu\n",
+       journal.path, journal.size);
+  return OSAI_OK;
 }
 
 static osai_status_t mount_volume(uint32_t mount_flags) {
   if (virtio_block_capacity_sectors() <
-      MFS_DATA_START_SECTOR + (MFS_MAX_FILES * 2U)) {
+      MFS_DATA_START_SECTOR + MFS_DATA_SECTORS) {
     ++g_reject_count;
     return OSAI_ERR_IO;
   }
 
   g_mount_flags = mount_flags;
   osai_mfs_disk_t disk;
-  bytes_zero(&disk, sizeof(disk));
   if (read_metadata(&disk) != OSAI_OK) {
     ++g_reject_count;
     return OSAI_ERR_IO;
@@ -304,8 +572,9 @@ static osai_status_t mount_volume(uint32_t mount_flags) {
   if (validate_disk(&disk) == OSAI_OK) {
     bytes_copy(&g_mfs, &disk, sizeof(g_mfs));
     ++g_boot_load_count;
-    klog("mutable-fs: existing state loaded files=%lu generation=%lu committed=%lu\n",
-         file_count(), g_mfs.generation, g_mfs.committed_generation);
+    klog("mutable-fs: existing state loaded files=%lu directories=%lu blocks=%lu generation=%lu committed=%lu\n",
+         node_count_by_type(MFS_NODE_FILE), node_count_by_type(MFS_NODE_DIR),
+         block_count_used(), g_mfs.generation, g_mfs.committed_generation);
   } else {
     klog("mutable-fs: no valid filesystem at sector=%lu; formatting\n",
          MFS_START_SECTOR);
@@ -316,49 +585,168 @@ static osai_status_t mount_volume(uint32_t mount_flags) {
 
   g_mounted = 1;
   ++g_mount_count;
-  klog("mutable-fs: mounted start=%lu metadata=%lu data=%lu sectors=%u policy=%s\n",
-       MFS_START_SECTOR, MFS_METADATA_SECTORS, MFS_DATA_START_SECTOR,
-       MFS_MAX_FILES * 2U,
+  if (replay_journal() != OSAI_OK) {
+    return OSAI_ERR_IO;
+  }
+  klog("mutable-fs: mounted start=%lu metadata=%lu journal=%lu data=%lu sectors=%u nodes=%u policy=%s\n",
+       MFS_START_SECTOR, MFS_METADATA_SECTORS, MFS_JOURNAL_SECTORS,
+       MFS_DATA_START_SECTOR, MFS_DATA_SECTORS, MFS_MAX_NODES,
        (g_mount_flags & MFS_MOUNT_READ_WRITE) != 0 ? "rw" : "ro");
+  return OSAI_OK;
+}
+
+static int parent_exists_for(const char *path) {
+  char parent[MFS_PATH_MAX];
+  parent_path_of(path, parent);
+  if (str_eq(parent, "/")) {
+    return 1;
+  }
+  osai_mfs_node_t *node = find_node(parent, 0);
+  return node != 0 && node->active != 0 && node->type == MFS_NODE_DIR;
+}
+
+static osai_status_t create_dir(const char *path) {
+  if (g_mounted == 0 || (g_mount_flags & MFS_MOUNT_READ_WRITE) == 0 ||
+      validate_path(path) != OSAI_OK || !parent_exists_for(path)) {
+    ++g_reject_count;
+    return OSAI_ERR_INVALID;
+  }
+  osai_mfs_node_t *node = find_node(path, 1);
+  if (node != 0 && node->active != 0) {
+    return node->type == MFS_NODE_DIR ? OSAI_OK : OSAI_ERR_INVALID;
+  }
+  if (node == 0) {
+    node = find_free_node();
+  }
+  if (node == 0) {
+    ++g_reject_count;
+    return OSAI_ERR_NO_MEMORY;
+  }
+  if (node->snapshot_active == 0) {
+    bytes_zero(node, sizeof(*node));
+  }
+  node->active = 1;
+  node->type = MFS_NODE_DIR;
+  node->size = 0;
+  node->content_hash = 0;
+  node->generation = g_mfs.generation++;
+  node->block_count = 0;
+  bytes_zero(node->blocks, sizeof(node->blocks));
+  copy_path(node->path, path);
+  ++g_directory_count;
+  klog("mutable-fs: mkdir path=%s generation=%lu\n",
+       node->path, node->generation);
+  return write_metadata();
+}
+
+static uint16_t block_count_for_size(uint64_t size) {
+  return (uint16_t)((size + MFS_SECTOR_SIZE - 1U) / MFS_SECTOR_SIZE);
+}
+
+static osai_status_t write_blocks(const uint16_t blocks[MFS_FILE_MAX_BLOCKS],
+                                  uint16_t block_count, const void *data,
+                                  uint64_t size) {
+  const uint8_t *bytes = (const uint8_t *)data;
+  uint8_t sector[MFS_SECTOR_SIZE];
+  for (uint16_t i = 0; i < block_count; ++i) {
+    bytes_zero(sector, sizeof(sector));
+    uint64_t offset = (uint64_t)i * MFS_SECTOR_SIZE;
+    uint64_t remaining = size - offset;
+    uint64_t copy = remaining < MFS_SECTOR_SIZE ? remaining : MFS_SECTOR_SIZE;
+    bytes_copy(sector, bytes + offset, copy);
+    if (virtio_block_write_sector(absolute_data_sector(blocks[i]), sector,
+                                  sizeof(sector)) != OSAI_OK) {
+      ++g_reject_count;
+      return OSAI_ERR_IO;
+    }
+  }
+  return OSAI_OK;
+}
+
+static osai_status_t read_blocks(const uint16_t blocks[MFS_FILE_MAX_BLOCKS],
+                                 uint16_t block_count, void *buffer,
+                                 uint64_t size) {
+  uint8_t *bytes = (uint8_t *)buffer;
+  uint8_t sector[MFS_SECTOR_SIZE];
+  for (uint16_t i = 0; i < block_count; ++i) {
+    uint64_t offset = (uint64_t)i * MFS_SECTOR_SIZE;
+    uint64_t remaining = size - offset;
+    uint64_t copy = remaining < MFS_SECTOR_SIZE ? remaining : MFS_SECTOR_SIZE;
+    if (virtio_block_read_sector(absolute_data_sector(blocks[i]), sector,
+                                 sizeof(sector)) != OSAI_OK) {
+      ++g_reject_count;
+      return OSAI_ERR_IO;
+    }
+    bytes_copy(bytes + offset, sector, copy);
+  }
   return OSAI_OK;
 }
 
 static osai_status_t write_file(const char *path, const void *data,
                                 uint64_t size) {
   if (g_mounted == 0 || (g_mount_flags & MFS_MOUNT_READ_WRITE) == 0 ||
-      validate_path(path) != OSAI_OK || data == 0 || size == 0 ||
-      size > MFS_FILE_BYTES) {
+      validate_path(path) != OSAI_OK || !parent_exists_for(path) ||
+      data == 0 || size == 0 || size > MFS_MAX_FILE_BYTES) {
+    klog("mutable-fs: write rejected path=%s mounted=%u flags=0x%x parent=%u size=%lu\n",
+         path == 0 ? "<null>" : path, g_mounted, g_mount_flags,
+         path == 0 ? 0U : (uint32_t)parent_exists_for(path), size);
     ++g_reject_count;
     return OSAI_ERR_INVALID;
   }
 
-  osai_mfs_entry_t *entry = find_entry(path, 1);
-  if (entry == 0) {
-    entry = find_free_entry();
+  uint16_t new_count = block_count_for_size(size);
+  uint16_t new_blocks[MFS_FILE_MAX_BLOCKS];
+  bytes_zero(new_blocks, sizeof(new_blocks));
+  if (allocate_blocks(new_count, new_blocks) != OSAI_OK) {
+    klog("mutable-fs: write allocation failed path=%s blocks=%u used=%lu\n",
+         path, new_count, block_count_used());
+    return OSAI_ERR_NO_MEMORY;
   }
-  if (entry == 0) {
+  if (write_blocks(new_blocks, new_count, data, size) != OSAI_OK) {
+    klog("mutable-fs: write block IO failed path=%s blocks=%u\n",
+         path, new_count);
+    free_blocks(new_count, new_blocks);
+    return OSAI_ERR_IO;
+  }
+
+  osai_mfs_node_t *node = find_node(path, 1);
+  if (node != 0 && node->active != 0 && node->type != MFS_NODE_FILE) {
+    klog("mutable-fs: write rejected existing non-file path=%s type=%u\n",
+         path, node->type);
+    free_blocks(new_count, new_blocks);
+    ++g_reject_count;
+    return OSAI_ERR_INVALID;
+  }
+  if (node == 0) {
+    node = find_free_node();
+  }
+  if (node == 0) {
+    klog("mutable-fs: write no free node path=%s files=%lu directories=%lu\n",
+         path, node_count_by_type(MFS_NODE_FILE),
+         node_count_by_type(MFS_NODE_DIR));
+    free_blocks(new_count, new_blocks);
     ++g_reject_count;
     return OSAI_ERR_NO_MEMORY;
   }
 
-  uint8_t sector[MFS_FILE_BYTES];
-  bytes_zero(sector, sizeof(sector));
-  bytes_copy(sector, data, size);
-  if (virtio_block_write_sector(entry->data_sector, sector, sizeof(sector)) !=
-      OSAI_OK) {
-    ++g_reject_count;
-    return OSAI_ERR_IO;
+  if (node->active != 0 && node->type == MFS_NODE_FILE) {
+    free_blocks(node->block_count, node->blocks);
   }
-
-  entry->active = 1;
-  entry->deleted = 0;
-  copy_path(entry->path, path);
-  entry->size = size;
-  entry->content_hash = fnv1a64(sector, size);
-  entry->generation = g_mfs.generation++;
+  node->active = 1;
+  node->type = MFS_NODE_FILE;
+  node->size = size;
+  node->content_hash = fnv1a64(data, size);
+  node->generation = g_mfs.generation++;
+  node->block_count = new_count;
+  copy_path(node->path, path);
+  bytes_zero(node->blocks, sizeof(node->blocks));
+  bytes_copy(node->blocks, new_blocks, sizeof(new_blocks));
+  if (new_count > 1U) {
+    ++g_multi_sector_file_count;
+  }
   ++g_write_count;
-  klog("mutable-fs: write path=%s size=%lu generation=%lu\n",
-       entry->path, entry->size, entry->generation);
+  klog("mutable-fs: write path=%s size=%lu blocks=%u generation=%lu\n",
+       node->path, node->size, node->block_count, node->generation);
   return write_metadata();
 }
 
@@ -369,49 +757,66 @@ static osai_status_t read_file(const char *path, void *buffer,
     ++g_reject_count;
     return OSAI_ERR_INVALID;
   }
-  osai_mfs_entry_t *entry = find_entry(path, 0);
-  if (entry == 0 || entry->active == 0 || entry->size > buffer_size) {
+  osai_mfs_node_t *node = find_node(path, 0);
+  if (node == 0 || node->active == 0 || node->type != MFS_NODE_FILE ||
+      node->size > buffer_size) {
     ++g_reject_count;
     return OSAI_ERR_NOT_FOUND;
   }
-
-  uint8_t sector[MFS_FILE_BYTES];
-  if (virtio_block_read_sector(entry->data_sector, sector, sizeof(sector)) !=
+  if (read_blocks(node->blocks, node->block_count, buffer, node->size) !=
       OSAI_OK) {
-    ++g_reject_count;
     return OSAI_ERR_IO;
   }
-  uint64_t hash = fnv1a64(sector, entry->size);
-  if (hash != entry->content_hash) {
+  if (fnv1a64(buffer, node->size) != node->content_hash) {
     ++g_checksum_error_count;
     ++g_reject_count;
     return OSAI_ERR_INVALID;
   }
-  bytes_copy(buffer, sector, entry->size);
-  *out_size = entry->size;
+  *out_size = node->size;
   ++g_read_count;
-  klog("mutable-fs: read path=%s size=%lu generation=%lu\n",
-       entry->path, entry->size, entry->generation);
+  klog("mutable-fs: read path=%s size=%lu blocks=%u generation=%lu\n",
+       node->path, node->size, node->block_count, node->generation);
   return OSAI_OK;
 }
 
-static osai_status_t delete_file(const char *path) {
+static int has_active_children(const char *path) {
+  uint64_t parent_len = cstr_len(path);
+  for (uint32_t i = 0; i < MFS_MAX_NODES; ++i) {
+    osai_mfs_node_t *node = &g_mfs.nodes[i];
+    if (node->active == 0 || str_eq(node->path, path)) {
+      continue;
+    }
+    if (bytes_eq(node->path, path, parent_len) && node->path[parent_len] == '/') {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static osai_status_t delete_node(const char *path) {
   if (g_mounted == 0 || (g_mount_flags & MFS_MOUNT_READ_WRITE) == 0 ||
       validate_path(path) != OSAI_OK) {
     ++g_reject_count;
     return OSAI_ERR_INVALID;
   }
-  osai_mfs_entry_t *entry = find_entry(path, 0);
-  if (entry == 0) {
+  osai_mfs_node_t *node = find_node(path, 0);
+  if (node == 0 || node->active == 0) {
     ++g_reject_count;
     return OSAI_ERR_NOT_FOUND;
   }
-  entry->active = 0;
-  entry->deleted = 1;
-  entry->generation = g_mfs.generation++;
+  if (node->type == MFS_NODE_DIR && has_active_children(path)) {
+    ++g_reject_count;
+    return OSAI_ERR_BUSY;
+  }
+  if (node->type == MFS_NODE_FILE) {
+    free_blocks(node->block_count, node->blocks);
+    node->block_count = 0;
+  }
+  node->active = 0;
+  node->generation = g_mfs.generation++;
   ++g_delete_count;
   klog("mutable-fs: delete path=%s generation=%lu\n",
-       entry->path, entry->generation);
+       node->path, node->generation);
   return write_metadata();
 }
 
@@ -421,29 +826,90 @@ static osai_status_t commit_snapshot(const char *label) {
     ++g_reject_count;
     return OSAI_ERR_INVALID;
   }
-  uint8_t sector[MFS_FILE_BYTES];
-  for (uint32_t i = 0; i < MFS_MAX_FILES; ++i) {
-    osai_mfs_entry_t *entry = &g_mfs.entries[i];
-    if (entry->active == 0) {
+  uint8_t buffer[MFS_MAX_FILE_BYTES];
+  for (uint32_t i = 0; i < MFS_MAX_NODES; ++i) {
+    osai_mfs_node_t *node = &g_mfs.nodes[i];
+    if (node->snapshot_active != 0 && node->snapshot_type == MFS_NODE_FILE) {
+      free_blocks(node->snapshot_block_count, node->snapshot_blocks);
+    }
+    node->snapshot_active = 0;
+    node->snapshot_type = MFS_NODE_FREE;
+    node->snapshot_size = 0;
+    node->snapshot_hash = 0;
+    node->snapshot_generation = 0;
+    node->snapshot_block_count = 0;
+    bytes_zero(node->snapshot_blocks, sizeof(node->snapshot_blocks));
+    if (node->active == 0) {
       continue;
     }
-    if (virtio_block_read_sector(entry->data_sector, sector, sizeof(sector)) !=
-        OSAI_OK ||
-        virtio_block_write_sector(entry->snapshot_sector, sector,
-                                  sizeof(sector)) != OSAI_OK) {
-      ++g_reject_count;
-      return OSAI_ERR_IO;
+    node->snapshot_active = 1;
+    node->snapshot_type = node->type;
+    node->snapshot_size = node->size;
+    node->snapshot_hash = node->content_hash;
+    node->snapshot_generation = node->generation;
+    if (node->type == MFS_NODE_FILE) {
+      if (read_blocks(node->blocks, node->block_count, buffer, node->size) !=
+          OSAI_OK) {
+        return OSAI_ERR_IO;
+      }
+      uint16_t snapshot_blocks[MFS_FILE_MAX_BLOCKS];
+      bytes_zero(snapshot_blocks, sizeof(snapshot_blocks));
+      if (allocate_blocks(node->block_count, snapshot_blocks) != OSAI_OK) {
+        return OSAI_ERR_NO_MEMORY;
+      }
+      if (write_blocks(snapshot_blocks, node->block_count, buffer,
+                       node->size) != OSAI_OK) {
+        free_blocks(node->block_count, snapshot_blocks);
+        return OSAI_ERR_IO;
+      }
+      node->snapshot_block_count = node->block_count;
+      bytes_copy(node->snapshot_blocks, snapshot_blocks,
+                 sizeof(snapshot_blocks));
     }
-    entry->snapshot_active = 1;
-    entry->snapshot_size = entry->size;
-    entry->snapshot_hash = entry->content_hash;
-    entry->snapshot_generation = entry->generation;
   }
   g_mfs.committed_generation = g_mfs.generation;
   ++g_commit_count;
-  klog("mutable-fs: snapshot committed generation=%lu files=%lu\n",
-       g_mfs.committed_generation, file_count());
+  klog("mutable-fs: snapshot committed generation=%lu files=%lu directories=%lu blocks=%lu\n",
+       g_mfs.committed_generation, node_count_by_type(MFS_NODE_FILE),
+       node_count_by_type(MFS_NODE_DIR), block_count_used());
   return write_metadata();
+}
+
+static osai_status_t restore_snapshot_node(osai_mfs_node_t *node) {
+  uint8_t buffer[MFS_MAX_FILE_BYTES];
+  if (node->snapshot_active == 0) {
+    return OSAI_OK;
+  }
+  if (node->active != 0 && node->type == MFS_NODE_FILE) {
+    free_blocks(node->block_count, node->blocks);
+  }
+  node->active = 1;
+  node->type = node->snapshot_type;
+  node->size = node->snapshot_size;
+  node->content_hash = node->snapshot_hash;
+  node->generation = node->snapshot_generation;
+  node->block_count = 0;
+  bytes_zero(node->blocks, sizeof(node->blocks));
+  if (node->snapshot_type == MFS_NODE_FILE) {
+    if (read_blocks(node->snapshot_blocks, node->snapshot_block_count, buffer,
+                    node->snapshot_size) != OSAI_OK) {
+      return OSAI_ERR_IO;
+    }
+    uint16_t restored_blocks[MFS_FILE_MAX_BLOCKS];
+    bytes_zero(restored_blocks, sizeof(restored_blocks));
+    if (allocate_blocks(node->snapshot_block_count, restored_blocks) !=
+        OSAI_OK) {
+      return OSAI_ERR_NO_MEMORY;
+    }
+    if (write_blocks(restored_blocks, node->snapshot_block_count, buffer,
+                     node->snapshot_size) != OSAI_OK) {
+      free_blocks(node->snapshot_block_count, restored_blocks);
+      return OSAI_ERR_IO;
+    }
+    node->block_count = node->snapshot_block_count;
+    bytes_copy(node->blocks, restored_blocks, sizeof(restored_blocks));
+  }
+  return OSAI_OK;
 }
 
 static osai_status_t rollback_snapshot(void) {
@@ -451,81 +917,176 @@ static osai_status_t rollback_snapshot(void) {
     ++g_reject_count;
     return OSAI_ERR_INVALID;
   }
-  uint8_t sector[MFS_FILE_BYTES];
-  for (uint32_t i = 0; i < MFS_MAX_FILES; ++i) {
-    osai_mfs_entry_t *entry = &g_mfs.entries[i];
-    if (entry->snapshot_active != 0) {
-      if (virtio_block_read_sector(entry->snapshot_sector, sector,
-                                   sizeof(sector)) != OSAI_OK ||
-          virtio_block_write_sector(entry->data_sector, sector,
-                                    sizeof(sector)) != OSAI_OK) {
-        ++g_reject_count;
-        return OSAI_ERR_IO;
+  for (uint32_t i = 0; i < MFS_MAX_NODES; ++i) {
+    osai_mfs_node_t *node = &g_mfs.nodes[i];
+    if (node->snapshot_active == 0 && node->active != 0 &&
+        node->generation >= g_mfs.committed_generation) {
+      if (node->type == MFS_NODE_FILE) {
+        free_blocks(node->block_count, node->blocks);
       }
-      entry->active = 1;
-      entry->deleted = 0;
-      entry->size = entry->snapshot_size;
-      entry->content_hash = entry->snapshot_hash;
-      entry->generation = entry->snapshot_generation;
-    } else if (entry->active != 0 &&
-               entry->generation >= g_mfs.committed_generation) {
-      entry->active = 0;
-      entry->deleted = 1;
+      node->active = 0;
+      node->block_count = 0;
+      bytes_zero(node->blocks, sizeof(node->blocks));
+    }
+  }
+  for (uint32_t pass = 0; pass < 2U; ++pass) {
+    for (uint32_t i = 0; i < MFS_MAX_NODES; ++i) {
+      osai_mfs_node_t *node = &g_mfs.nodes[i];
+      if (node->snapshot_active == 0) {
+        continue;
+      }
+      if ((pass == 0 && node->snapshot_type == MFS_NODE_DIR) ||
+          (pass == 1 && node->snapshot_type == MFS_NODE_FILE)) {
+        if (restore_snapshot_node(node) != OSAI_OK) {
+          return OSAI_ERR_IO;
+        }
+      }
     }
   }
   ++g_mfs.generation;
   ++g_rollback_count;
-  klog("mutable-fs: snapshot rollback committed=%lu files=%lu\n",
-       g_mfs.committed_generation, file_count());
+  klog("mutable-fs: snapshot rollback committed=%lu files=%lu directories=%lu blocks=%lu\n",
+       g_mfs.committed_generation, node_count_by_type(MFS_NODE_FILE),
+       node_count_by_type(MFS_NODE_DIR), block_count_used());
   return write_metadata();
 }
 
-uint64_t mutable_fs_mount_count(void) {
-  return g_mount_count;
+static osai_status_t write_pending_journal_file(const char *path,
+                                                const void *data,
+                                                uint64_t size) {
+  if (validate_path(path) != OSAI_OK || data == 0 || size == 0 ||
+      size > MFS_SECTOR_SIZE) {
+    ++g_reject_count;
+    return OSAI_ERR_INVALID;
+  }
+  uint8_t sector[MFS_SECTOR_SIZE];
+  bytes_zero(sector, sizeof(sector));
+  bytes_copy(sector, data, size);
+  if (virtio_block_write_sector(MFS_JOURNAL_DATA_SECTOR, sector,
+                                sizeof(sector)) != OSAI_OK) {
+    ++g_reject_count;
+    return OSAI_ERR_IO;
+  }
+  osai_mfs_journal_t journal;
+  bytes_zero(&journal, sizeof(journal));
+  bytes_copy(journal.magic, MFS_JOURNAL_MAGIC, MFS_MAGIC_LEN);
+  journal.version = MFS_JOURNAL_VERSION;
+  journal.state = MFS_JOURNAL_PENDING;
+  journal.op = MFS_JOURNAL_OP_WRITE_FILE;
+  journal.size = size;
+  journal.content_hash = fnv1a64(data, size);
+  copy_path(journal.path, path);
+  klog("mutable-fs: journal pending path=%s size=%lu\n", path, size);
+  return write_journal(&journal);
 }
 
-uint64_t mutable_fs_format_count(void) {
-  return g_format_count;
+osai_status_t mutable_fs_record_service_state(const char *name,
+                                              const char *state) {
+  char path[MFS_PATH_MAX];
+  char record[256];
+  uint64_t path_offset = 0;
+  uint64_t record_offset = 0;
+  const char *base = basename_of(name);
+  bytes_zero(path, sizeof(path));
+  bytes_zero(record, sizeof(record));
+  if (base == 0 || *base == '\0' || state == 0 ||
+      append_cstr(path, sizeof(path), &path_offset, "/state/services/") !=
+          OSAI_OK ||
+      append_cstr(path, sizeof(path), &path_offset, base) != OSAI_OK ||
+      append_cstr(path, sizeof(path), &path_offset, ".state") != OSAI_OK ||
+      append_cstr(record, sizeof(record), &record_offset, "service=") !=
+          OSAI_OK ||
+      append_cstr(record, sizeof(record), &record_offset, name) != OSAI_OK ||
+      append_cstr(record, sizeof(record), &record_offset, "\nstate=") !=
+          OSAI_OK ||
+      append_cstr(record, sizeof(record), &record_offset, state) != OSAI_OK ||
+      append_char(record, sizeof(record), &record_offset, '\n') != OSAI_OK) {
+    ++g_reject_count;
+    return OSAI_ERR_INVALID;
+  }
+  osai_status_t status = write_file(path, record, record_offset + 1U);
+  if (status == OSAI_OK) {
+    ++g_state_record_count;
+  }
+  return status;
 }
 
-uint64_t mutable_fs_boot_load_count(void) {
-  return g_boot_load_count;
+osai_status_t mutable_fs_record_workspace_state(uint32_t workspace_id,
+                                                const char *revision) {
+  char path[MFS_PATH_MAX];
+  char record[256];
+  uint64_t path_offset = 0;
+  uint64_t record_offset = 0;
+  bytes_zero(path, sizeof(path));
+  bytes_zero(record, sizeof(record));
+  if (revision == 0 ||
+      append_cstr(path, sizeof(path), &path_offset, "/state/workspaces/workspace-") !=
+          OSAI_OK ||
+      append_u32(path, sizeof(path), &path_offset, workspace_id) != OSAI_OK ||
+      append_cstr(path, sizeof(path), &path_offset, ".state") != OSAI_OK ||
+      append_cstr(record, sizeof(record), &record_offset, "workspace=") !=
+          OSAI_OK ||
+      append_u32(record, sizeof(record), &record_offset, workspace_id) !=
+          OSAI_OK ||
+      append_cstr(record, sizeof(record), &record_offset,
+                  "\npath=/repo/workspaces/source-index\nrevision=") !=
+          OSAI_OK ||
+      append_cstr(record, sizeof(record), &record_offset, revision) !=
+          OSAI_OK ||
+      append_char(record, sizeof(record), &record_offset, '\n') != OSAI_OK) {
+    ++g_reject_count;
+    return OSAI_ERR_INVALID;
+  }
+  osai_status_t status = write_file(path, record, record_offset + 1U);
+  if (status == OSAI_OK) {
+    ++g_state_record_count;
+  }
+  return status;
 }
 
-uint64_t mutable_fs_file_count(void) {
-  return file_count();
+osai_status_t mutable_fs_record_update_state(const char *policy) {
+  char record[256];
+  uint64_t record_offset = 0;
+  bytes_zero(record, sizeof(record));
+  if (policy == 0 ||
+      append_cstr(record, sizeof(record), &record_offset, "policy=") !=
+          OSAI_OK ||
+      append_cstr(record, sizeof(record), &record_offset, policy) != OSAI_OK ||
+      append_cstr(record, sizeof(record), &record_offset,
+                  "\nrollback=enabled\n") != OSAI_OK) {
+    ++g_reject_count;
+    return OSAI_ERR_INVALID;
+  }
+  osai_status_t status = write_file("/state/updates/update.state",
+                                    record, record_offset + 1U);
+  if (status == OSAI_OK) {
+    ++g_state_record_count;
+  }
+  return status;
 }
 
-uint64_t mutable_fs_write_count(void) {
-  return g_write_count;
-}
-
-uint64_t mutable_fs_read_count(void) {
-  return g_read_count;
-}
-
-uint64_t mutable_fs_delete_count(void) {
-  return g_delete_count;
-}
-
-uint64_t mutable_fs_commit_count(void) {
-  return g_commit_count;
-}
-
-uint64_t mutable_fs_rollback_count(void) {
-  return g_rollback_count;
-}
-
-uint64_t mutable_fs_reject_count(void) {
-  return g_reject_count;
-}
-
-uint64_t mutable_fs_checksum_error_count(void) {
-  return g_checksum_error_count;
-}
+uint64_t mutable_fs_mount_count(void) { return g_mount_count; }
+uint64_t mutable_fs_format_count(void) { return g_format_count; }
+uint64_t mutable_fs_boot_load_count(void) { return g_boot_load_count; }
+uint64_t mutable_fs_file_count(void) { return node_count_by_type(MFS_NODE_FILE); }
+uint64_t mutable_fs_directory_count(void) { return node_count_by_type(MFS_NODE_DIR); }
+uint64_t mutable_fs_write_count(void) { return g_write_count; }
+uint64_t mutable_fs_read_count(void) { return g_read_count; }
+uint64_t mutable_fs_delete_count(void) { return g_delete_count; }
+uint64_t mutable_fs_commit_count(void) { return g_commit_count; }
+uint64_t mutable_fs_rollback_count(void) { return g_rollback_count; }
+uint64_t mutable_fs_reject_count(void) { return g_reject_count; }
+uint64_t mutable_fs_checksum_error_count(void) { return g_checksum_error_count; }
+uint64_t mutable_fs_allocation_count(void) { return g_allocation_count; }
+uint64_t mutable_fs_free_count(void) { return g_free_count; }
+uint64_t mutable_fs_replay_count(void) { return g_replay_count; }
+uint64_t mutable_fs_journal_write_count(void) { return g_journal_write_count; }
+uint64_t mutable_fs_multi_sector_file_count(void) { return g_multi_sector_file_count; }
+uint64_t mutable_fs_state_record_count(void) { return g_state_record_count; }
 
 void mutable_fs_self_test(void) {
-  kassert(sizeof(osai_mfs_disk_t) == MFS_METADATA_SECTORS * MFS_SECTOR_SIZE);
+  kassert(sizeof(osai_mfs_journal_t) == MFS_SECTOR_SIZE);
+  kassert(sizeof(osai_mfs_disk_t) <= MFS_METADATA_SECTORS * MFS_SECTOR_SIZE);
   g_mounted = 0;
   g_mount_flags = 0;
   g_mount_count = 0;
@@ -538,62 +1099,117 @@ void mutable_fs_self_test(void) {
   g_rollback_count = 0;
   g_reject_count = 0;
   g_checksum_error_count = 0;
+  g_allocation_count = 0;
+  g_free_count = 0;
+  g_directory_count = 0;
+  g_replay_count = 0;
+  g_journal_write_count = 0;
+  g_multi_sector_file_count = 0;
+  g_state_record_count = 0;
 
   kassert(mount_volume(MFS_MOUNT_READ_WRITE) == OSAI_OK);
   kassert(format_volume() == OSAI_OK);
 
-  char buffer[MFS_FILE_BYTES];
-  uint64_t size = 0;
+  kassert(create_dir("/state") == OSAI_OK);
+  kassert(create_dir("/state/services") == OSAI_OK);
+  kassert(create_dir("/state/workspaces") == OSAI_OK);
+  kassert(create_dir("/state/updates") == OSAI_OK);
+  kassert(create_dir("/config") == OSAI_OK);
+  kassert(create_dir("/logs") == OSAI_OK);
 
-  kassert(write_file("/state/service.db", k_service_v1,
-                     sizeof(k_service_v1)) == OSAI_OK);
+  kassert(mutable_fs_record_service_state("/svc/source-index", "running") ==
+          OSAI_OK);
+  kassert(mutable_fs_record_workspace_state(0, "boot") == OSAI_OK);
+  kassert(mutable_fs_record_update_state("signed-update-required") == OSAI_OK);
   kassert(write_file("/config/osai.conf", k_config_v1,
                      sizeof(k_config_v1)) == OSAI_OK);
-  kassert(read_file("/state/service.db", buffer, sizeof(buffer), &size) ==
-          OSAI_OK);
-  kassert(size == sizeof(k_service_v1));
-  kassert(bytes_eq(buffer, k_service_v1, sizeof(k_service_v1)) != 0);
-  kassert(commit_snapshot("mfs-snapshot-v1") == OSAI_OK);
 
-  kassert(write_file("/state/service.db", k_service_v2,
-                     sizeof(k_service_v2)) == OSAI_OK);
+  uint8_t large[MFS_SECTOR_SIZE * 3U];
+  for (uint64_t i = 0; i < sizeof(large); ++i) {
+    large[i] = (uint8_t)('A' + (i % 23U));
+  }
+  kassert(write_file("/state/services/large.state", large, sizeof(large)) ==
+          OSAI_OK);
+
+  uint8_t buffer[MFS_MAX_FILE_BYTES];
+  uint64_t size = 0;
+  kassert(read_file("/state/services/large.state", buffer, sizeof(buffer),
+                    &size) == OSAI_OK);
+  kassert(size == sizeof(large));
+  kassert(bytes_eq(buffer, large, sizeof(large)) != 0);
+  kassert(commit_snapshot("mfs-snapshot-v2") == OSAI_OK);
+
+  kassert(write_file("/state/services/source-index.state",
+                     k_service_restarting,
+                     sizeof(k_service_restarting)) == OSAI_OK);
+  kassert(delete_node("/state/updates/update.state") == OSAI_OK);
   kassert(write_file("/logs/boot.log", k_boot_log, sizeof(k_boot_log)) ==
           OSAI_OK);
-  kassert(delete_file("/config/osai.conf") == OSAI_OK);
-  kassert(read_file("/config/osai.conf", buffer, sizeof(buffer), &size) ==
-          OSAI_ERR_NOT_FOUND);
-  kassert(write_file("/init", k_service_v1, sizeof(k_service_v1)) ==
-          OSAI_ERR_INVALID);
-  uint8_t too_large[MFS_FILE_BYTES + 1U];
-  kassert(write_file("/state/too-large", too_large, sizeof(too_large)) ==
-          OSAI_ERR_INVALID);
+  kassert(write_pending_journal_file("/state/services/replayed.state",
+                                     k_replayed_state,
+                                     sizeof(k_replayed_state)) == OSAI_OK);
+  g_mounted = 0;
+  kassert(mount_volume(MFS_MOUNT_READ_WRITE) == OSAI_OK);
+  kassert(read_file("/state/services/replayed.state", buffer, sizeof(buffer),
+                    &size) == OSAI_OK);
+  kassert(size == sizeof(k_replayed_state));
+  kassert(bytes_eq(buffer, k_replayed_state, sizeof(k_replayed_state)) != 0);
 
   kassert(rollback_snapshot() == OSAI_OK);
-  kassert(read_file("/state/service.db", buffer, sizeof(buffer), &size) ==
-          OSAI_OK);
-  kassert(size == sizeof(k_service_v1));
-  kassert(bytes_eq(buffer, k_service_v1, sizeof(k_service_v1)) != 0);
-  kassert(read_file("/config/osai.conf", buffer, sizeof(buffer), &size) ==
-          OSAI_OK);
-  kassert(size == sizeof(k_config_v1));
-  kassert(bytes_eq(buffer, k_config_v1, sizeof(k_config_v1)) != 0);
+  kassert(read_file("/state/services/source-index.state", buffer,
+                    sizeof(buffer), &size) == OSAI_OK);
+  kassert(size == sizeof(k_service_running));
+  kassert(bytes_eq(buffer, k_service_running, sizeof(k_service_running)) != 0);
+  kassert(read_file("/state/updates/update.state", buffer, sizeof(buffer),
+                    &size) == OSAI_OK);
+  kassert(size == sizeof(k_update_state));
+  kassert(bytes_eq(buffer, k_update_state, sizeof(k_update_state)) != 0);
   kassert(read_file("/logs/boot.log", buffer, sizeof(buffer), &size) ==
           OSAI_ERR_NOT_FOUND);
+  kassert(read_file("/state/services/replayed.state", buffer, sizeof(buffer),
+                    &size) == OSAI_ERR_NOT_FOUND);
 
-  kassert(mutable_fs_mount_count() == 1);
+  kassert(write_file("/bad/missing-parent", k_config_v1,
+                     sizeof(k_config_v1)) == OSAI_ERR_INVALID);
+  kassert(create_dir("/state/services/bad") == OSAI_OK);
+  kassert(delete_node("/state/services") == OSAI_ERR_BUSY);
+  uint8_t too_large[MFS_MAX_FILE_BYTES + 1U];
+  kassert(write_file("/state/services/too-large", too_large,
+                     sizeof(too_large)) == OSAI_ERR_INVALID);
+  kassert(read_file("/state/missing.state", buffer, sizeof(buffer), &size) ==
+          OSAI_ERR_NOT_FOUND);
+
+  kassert(mutable_fs_mount_count() == 2);
   kassert(mutable_fs_format_count() >= 1);
   kassert(mutable_fs_format_count() <= 2);
-  kassert(mutable_fs_file_count() == 2);
-  kassert(mutable_fs_write_count() == 4);
-  kassert(mutable_fs_read_count() == 3);
+  kassert(mutable_fs_file_count() == 5);
+  kassert(mutable_fs_directory_count() == 7);
+  kassert(mutable_fs_write_count() == 8);
+  kassert(mutable_fs_read_count() == 4);
   kassert(mutable_fs_delete_count() == 1);
   kassert(mutable_fs_commit_count() == 1);
   kassert(mutable_fs_rollback_count() == 1);
-  kassert(mutable_fs_reject_count() == 4);
+  kassert(mutable_fs_replay_count() == 1);
+  kassert(mutable_fs_journal_write_count() == 1);
+  kassert(mutable_fs_multi_sector_file_count() >= 1);
+  kassert(mutable_fs_state_record_count() == 3);
+  kassert(mutable_fs_reject_count() == 6);
   kassert(mutable_fs_checksum_error_count() == 0);
-  klog("mutable-fs: self-test passed files=%lu writes=%lu reads=%lu deletes=%lu commits=%lu rollbacks=%lu rejects=%lu checksum_errors=%lu\n",
-       mutable_fs_file_count(), mutable_fs_write_count(),
-       mutable_fs_read_count(), mutable_fs_delete_count(),
-       mutable_fs_commit_count(), mutable_fs_rollback_count(),
+  klog("mutable-fs: allocator self-test passed allocations=%lu frees=%lu blocks=%lu\n",
+       mutable_fs_allocation_count(), mutable_fs_free_count(),
+       block_count_used());
+  klog("mutable-fs: directory tree self-test passed directories=%lu\n",
+       mutable_fs_directory_count());
+  klog("mutable-fs: multi-sector file self-test passed files=%lu multi_sector=%lu\n",
+       mutable_fs_file_count(), mutable_fs_multi_sector_file_count());
+  klog("mutable-fs: journal replay self-test passed replays=%lu journal_writes=%lu\n",
+       mutable_fs_replay_count(), mutable_fs_journal_write_count());
+  klog("mutable-fs: subsystem records self-test passed records=%lu\n",
+       mutable_fs_state_record_count());
+  klog("mutable-fs: self-test passed files=%lu directories=%lu writes=%lu reads=%lu deletes=%lu commits=%lu rollbacks=%lu replays=%lu rejects=%lu checksum_errors=%lu\n",
+       mutable_fs_file_count(), mutable_fs_directory_count(),
+       mutable_fs_write_count(), mutable_fs_read_count(),
+       mutable_fs_delete_count(), mutable_fs_commit_count(),
+       mutable_fs_rollback_count(), mutable_fs_replay_count(),
        mutable_fs_reject_count(), mutable_fs_checksum_error_count());
 }

@@ -11,18 +11,19 @@ drivers, telemetry, `/init`, security fixtures, persistence metadata, AI Cell
 runtime fixtures, and correctness benchmark/preview gates.
 The QEMU release-candidate contract is frozen in
 `contracts/qemu-rc-v1.json`.
-The first full-OS filesystem slice adds a VirtIO-backed mutable filesystem
-region with checksum-protected metadata, read-write mount policy,
-create/update/read/delete operations, and commit/rollback self-tests.
+The full-OS filesystem slice adds a VirtIO-backed mutable filesystem region
+with checksum-protected metadata, read-write mount policy, directory records,
+allocator-backed multi-sector files, journal replay, create/update/read/delete
+operations, and commit/rollback self-tests.
 
 The current implementation still has important MVP/stub areas:
 
 - single foreground EL0 `/init` path;
 - kernel-hosted service policy;
-- persistence records plus an early mutable filesystem layer;
+- persistence records plus a mutable filesystem layer;
 - correctness-only network paths;
 - deterministic CPU-AI runtime stub;
-- no production filesystem allocator or directory tree yet;
+- no POSIX filesystem surface yet;
 - no real multi-process scheduling.
 
 ## Full QEMU OS Phases
@@ -80,14 +81,16 @@ The current implementation still has important MVP/stub areas:
 - Add a separate mutable filesystem region on the VirtIO block image.
 - Keep the read-only boot filesystem and mutable state area explicitly
   separated.
-- Validate metadata checksums, mount policy, file mutation, delete behavior,
-  and commit/rollback boundaries.
+- Validate metadata checksums, mount policy, allocation, directory traversal,
+  multi-sector files, file mutation, delete behavior, journal replay, and
+  commit/rollback boundaries.
 - Extend QEMU telemetry and correctness gates for mutable filesystem counters.
-- Continue toward a production filesystem allocator, directory model, and
-  larger persistent state area.
+- Keep this as the QEMU filesystem contract until later production work adds a
+  POSIX-like surface, larger persistent state area, and hardware-specific
+  storage tuning.
 
 ## Current Slice
 
-The active engineering slice is full filesystem work under the full-core
-workdown. The detailed checklist lives in
+Milestone 34 is complete in QEMU. The next active slice starts at milestone 35
+under the full-core workdown. The detailed checklist lives in
 `QEMU-FULL-OS-CORE-WORKDOWN.md`.

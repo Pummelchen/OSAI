@@ -177,16 +177,18 @@ Required work:
 - [x] Add create/update/read/delete file operations.
 - [x] Add commit and rollback boundaries for mutable files.
 - [x] Add QEMU smoke and benchmark gates for mutable filesystem telemetry.
-- [ ] Add a real block allocator instead of fixed one-sector file slots.
-- [ ] Add directory records and path traversal beyond fixed prefixes.
-- [ ] Add larger files spanning multiple sectors.
-- [ ] Add crash-consistency transaction replay.
-- [ ] Connect service, workspace, and update state to the mutable filesystem.
+- [x] Add a real block allocator instead of fixed one-sector file slots.
+- [x] Add directory records and path traversal beyond fixed prefixes.
+- [x] Add larger files spanning multiple sectors.
+- [x] Add crash-consistency transaction replay.
+- [x] Connect service, workspace, and update state to the mutable filesystem.
 
 Definition of done:
 
 - QEMU proves mutable filesystem mount, mutation, checksum validation,
-  delete behavior, reboot load, and rollback behavior without weakening the
-  read-only boot filesystem boundary.
-- A later production-ready filesystem must replace the fixed-slot test layout
-  with allocation, directories, multi-sector files, and transaction replay.
+  allocation, directory records, multi-sector files, journal replay, delete
+  behavior, reboot load, and rollback behavior without weakening the read-only
+  boot filesystem boundary.
+- A later production-ready filesystem can add a POSIX-like surface and larger
+  storage area, but the QEMU contract no longer depends on fixed one-sector
+  file slots.

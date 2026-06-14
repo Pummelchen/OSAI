@@ -1,5 +1,6 @@
 #include <osai/assert.h>
 #include <osai/klog.h>
+#include <osai/mutable_fs.h>
 #include <osai/security.h>
 #include <osai/service.h>
 #include <osai/syscall.h>
@@ -151,6 +152,22 @@ static osai_service_t *find_service(const char *name) {
     return &g_child_service;
   }
   return 0;
+}
+
+static void persist_service_state(osai_service_t *service) {
+  if (service == 0 || !str_eq(service->name, k_child_service_name)) {
+    return;
+  }
+  osai_status_t status = mutable_fs_record_service_state(
+      service->name, service_state_name(service->state));
+  if (status == OSAI_OK) {
+    klog("service: %s mutable-state persisted state=%s\n", service->name,
+         service_state_name(service->state));
+  } else {
+    klog("service: %s mutable-state persist failed state=%s status=%u\n",
+         service->name, service_state_name(service->state),
+         (unsigned)status);
+  }
 }
 
 static void service_snapshot_restore(void) {
@@ -432,6 +449,7 @@ static osai_status_t handle_start(const char *service_name) {
   service->state = OSAI_SERVICE_RUNNING;
   ++g_service_transition_count;
   klog("service: %s state=running\n", service->name);
+  persist_service_state(service);
   return OSAI_OK;
 }
 
@@ -597,6 +615,7 @@ osai_status_t service_start(const char *name) {
   service->state = OSAI_SERVICE_RUNNING;
   ++g_service_transition_count;
   klog("service: %s state=running\n", service->name);
+  persist_service_state(service);
   return OSAI_OK;
 }
 
@@ -628,6 +647,7 @@ osai_status_t service_exit(const char *name, int exit_code) {
   ++g_service_transition_count;
   klog("service: %s state=%s exit_code=%u\n", name,
        service_state_name(service->state), (unsigned)exit_code);
+  persist_service_state(service);
   return OSAI_OK;
 }
 
