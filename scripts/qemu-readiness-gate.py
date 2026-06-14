@@ -154,24 +154,26 @@ REQUIRED_TELEMETRY_MINIMUMS = {
     "network_queue_completions": 6,
     "service_child_descriptors": 1,
     "service_tree_edges": 1,
-    "service_transitions": 12,
+    "service_transitions": 21,
     "service_restarts": 1,
     "service_crashes": 1,
-    "service_cleanups": 3,
+    "service_cleanups": 6,
     "service_log_records": 2,
     "admin_policy_exports": 1,
     "admin_status_exports": 2,
     "admin_log_reads": 1,
     "admin_remote_safe_accepts": 1,
     "admin_remote_safe_rejects": 1,
-    "control_plane_syscalls": 18,
+    "control_plane_syscalls": 27,
     "control_plane_denials": 5,
     "service_descriptor_reads": 1,
-    "user_process_transitions": 6,
-    "user_process_loaded": 2,
-    "user_process_running": 2,
-    "user_process_exited": 2,
-    "user_process_reclaims": 2,
+    "user_process_transitions": 18,
+    "user_process_loaded": 5,
+    "user_process_runnable": 3,
+    "user_process_running": 5,
+    "user_process_exited": 5,
+    "user_process_reclaims": 5,
+    "user_process_scheduled": 5,
 }
 
 REQUIRED_TELEMETRY_EQUALS = {
@@ -308,10 +310,10 @@ def validate_contract(contract: Dict[str, Any], failures: List[str]) -> Dict[str
     check_equal(filesystem.get("header_bytes"), 1024, "contract.filesystem.header_bytes", failures)
     check_equal(filesystem.get("manifest_path"), "/etc/osai-init.conf", "contract.filesystem.manifest_path", failures)
     required_paths = filesystem.get("required_paths", [])
-    for path in ["/init", "/bin/service-manager", "/etc/osai-init.conf", "/etc/services/source-index.svc", "/models/cpu-ai-mvp.osaimodel"]:
+    for path in ["/init", "/bin/service-manager", "/bin/osai-worker", "/etc/osai-init.conf", "/etc/services/source-index.svc", "/models/cpu-ai-mvp.osaimodel"]:
         if path not in required_paths:
             failures.append(f"contract.filesystem.required_paths missing {path}")
-    check_equal(filesystem.get("max_files"), 5, "contract.filesystem.max_files", failures)
+    check_equal(filesystem.get("max_files"), 6, "contract.filesystem.max_files", failures)
 
     model_format = contract.get("cpu_ai_model_format", {})
     check_equal(model_format.get("magic"), "OSAI_MODEL_MIAI", "contract.cpu_ai_model_format.magic", failures)

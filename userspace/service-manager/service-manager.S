@@ -157,6 +157,84 @@ _start:
   mov x8, #1
   svc #0
 
+  adr x0, cmd_osctl_status
+  adr x1, cmd_osctl_status_end
+  sub x1, x1, x0
+  mov x8, #3
+  svc #0
+  cmn x0, #1
+  b.eq manager_failed
+
+  adr x0, cmd_osctl_ps
+  adr x1, cmd_osctl_ps_end
+  sub x1, x1, x0
+  mov x8, #3
+  svc #0
+  cmn x0, #1
+  b.eq manager_failed
+
+  adr x0, cmd_osctl_services
+  adr x1, cmd_osctl_services_end
+  sub x1, x1, x0
+  mov x8, #3
+  svc #0
+  cmn x0, #1
+  b.eq manager_failed
+
+  adr x0, cmd_osctl_cells
+  adr x1, cmd_osctl_cells_end
+  sub x1, x1, x0
+  mov x8, #3
+  svc #0
+  cmn x0, #1
+  b.eq manager_failed
+
+  adr x0, cmd_osctl_fs
+  adr x1, cmd_osctl_fs_end
+  sub x1, x1, x0
+  mov x8, #3
+  svc #0
+  cmn x0, #1
+  b.eq manager_failed
+
+  adr x0, cmd_osctl_net
+  adr x1, cmd_osctl_net_end
+  sub x1, x1, x0
+  mov x8, #3
+  svc #0
+  cmn x0, #1
+  b.eq manager_failed
+
+  adr x0, cmd_osctl_telemetry
+  adr x1, cmd_osctl_telemetry_end
+  sub x1, x1, x0
+  mov x8, #3
+  svc #0
+  cmn x0, #1
+  b.eq manager_failed
+
+  adr x0, cmd_osctl_update
+  adr x1, cmd_osctl_update_end
+  sub x1, x1, x0
+  mov x8, #3
+  svc #0
+  cmn x0, #1
+  b.eq manager_failed
+
+  adr x0, cmd_osctl_rollback
+  adr x1, cmd_osctl_rollback_end
+  sub x1, x1, x0
+  mov x8, #3
+  svc #0
+  cmn x0, #1
+  b.eq manager_failed
+
+  adr x0, msg_osctl_ready
+  adr x1, msg_osctl_ready_end
+  sub x1, x1, x0
+  mov x8, #1
+  svc #0
+
   adr x0, msg_done
   mov x1, #41
   mov x8, #1
@@ -195,6 +273,9 @@ msg_admin_ready:
   .ascii "/service-manager: admin status exported\n"
 msg_admin_safe:
   .ascii "/service-manager: remote-safe checks passed\n"
+msg_osctl_ready:
+  .ascii "/service-manager: osctl command surface passed\n"
+msg_osctl_ready_end:
 msg_done:
   .ascii "/service-manager: control plane complete\n"
 msg_failed:
@@ -219,6 +300,33 @@ cmd_admin_safe_status:
   .ascii "admin remote-safe status"
 cmd_admin_safe_shell:
   .ascii "admin remote-safe shell"
+cmd_osctl_status:
+  .ascii "osctl status"
+cmd_osctl_status_end:
+cmd_osctl_ps:
+  .ascii "osctl ps"
+cmd_osctl_ps_end:
+cmd_osctl_services:
+  .ascii "osctl services"
+cmd_osctl_services_end:
+cmd_osctl_cells:
+  .ascii "osctl cells"
+cmd_osctl_cells_end:
+cmd_osctl_fs:
+  .ascii "osctl fs"
+cmd_osctl_fs_end:
+cmd_osctl_net:
+  .ascii "osctl net"
+cmd_osctl_net_end:
+cmd_osctl_telemetry:
+  .ascii "osctl telemetry"
+cmd_osctl_telemetry_end:
+cmd_osctl_update:
+  .ascii "osctl update"
+cmd_osctl_update_end:
+cmd_osctl_rollback:
+  .ascii "osctl rollback"
+cmd_osctl_rollback_end:
 service_child:
   .ascii "/svc/source-index"
 service_init:

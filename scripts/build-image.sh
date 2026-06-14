@@ -15,6 +15,8 @@ INIT_OBJ="$INIT_BUILD_DIR/init.o"
 INIT_ELF="$INIT_BUILD_DIR/init.elf"
 SERVICE_MANAGER_OBJ="$INIT_BUILD_DIR/service-manager.o"
 SERVICE_MANAGER_ELF="$INIT_BUILD_DIR/service-manager.elf"
+WORKER_OBJ="$INIT_BUILD_DIR/worker.o"
+WORKER_ELF="$INIT_BUILD_DIR/worker.elf"
 
 find_tool() {
   tool_name="$1"
@@ -249,6 +251,26 @@ printf '%s\n' "Building userspace /bin/service-manager ELF..."
   -o "$SERVICE_MANAGER_ELF" \
   "$SERVICE_MANAGER_OBJ"
 
+printf '%s\n' "Building userspace /bin/osai-worker ELF..."
+"$CLANG" \
+  --target=aarch64-none-elf \
+  -ffreestanding \
+  -fno-stack-protector \
+  -fno-builtin \
+  -fno-pic \
+  -fno-pie \
+  -Wall \
+  -Wextra \
+  -Werror \
+  -c "$ROOT_DIR/userspace/worker/worker.S" \
+  -o "$WORKER_OBJ"
+
+"$LD_LLD" \
+  -nostdlib \
+  -T "$ROOT_DIR/userspace/init/linker.ld" \
+  -o "$WORKER_ELF" \
+  "$WORKER_OBJ"
+
 rm -f "$IMAGE_PATH"
 mkdir -p "$(dirname -- "$IMAGE_PATH")"
 
@@ -271,6 +293,7 @@ printf 'OSAI-VIRTIO-BLOCK-TEST\n' | dd of="$TEST_BLOCK_IMAGE" bs=512 count=1 con
   "$TEST_BLOCK_IMAGE" \
   "$INIT_ELF" \
   "$SERVICE_MANAGER_ELF" \
+  "$WORKER_ELF" \
   "$ROOT_DIR/userspace/init/osai-init.conf" \
   "$ROOT_DIR/userspace/service-manager/source-index.svc"
 printf '%s\n' "Created $TEST_BLOCK_IMAGE"

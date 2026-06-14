@@ -7,7 +7,7 @@ import sys
 SECTOR_SIZE = 512
 MAGIC = b"OSAIROFS2"
 VERSION = 2
-MAX_FILES = 5
+MAX_FILES = 6
 PATH_MAX = 64
 HEADER_SECTOR = 1
 HEADER_BYTES = 1024
@@ -81,9 +81,9 @@ def write_entry(path: str, offset: int, size: int, flags: int, content_hash: int
 
 
 def main() -> int:
-    if len(sys.argv) != 6:
+    if len(sys.argv) != 7:
         print(
-            "usage: create-initfs.py <image> <init-elf> <service-manager-elf> <config> <service-descriptor>",
+            "usage: create-initfs.py <image> <init-elf> <service-manager-elf> <worker-elf> <config> <service-descriptor>",
             file=sys.stderr,
         )
         return 2
@@ -91,12 +91,14 @@ def main() -> int:
     image = pathlib.Path(sys.argv[1])
     init_elf = pathlib.Path(sys.argv[2]).read_bytes()
     service_manager_elf = pathlib.Path(sys.argv[3]).read_bytes()
-    config = pathlib.Path(sys.argv[4]).read_bytes()
-    service_descriptor = pathlib.Path(sys.argv[5]).read_bytes()
+    worker_elf = pathlib.Path(sys.argv[4]).read_bytes()
+    config = pathlib.Path(sys.argv[5]).read_bytes()
+    service_descriptor = pathlib.Path(sys.argv[6]).read_bytes()
     model_file = create_cpu_ai_model()
     files = [
         ("/init", init_elf, ENTRY_FLAG_EXECUTABLE),
         ("/bin/service-manager", service_manager_elf, ENTRY_FLAG_EXECUTABLE),
+        ("/bin/osai-worker", worker_elf, ENTRY_FLAG_EXECUTABLE),
         ("/etc/osai-init.conf", config, ENTRY_FLAG_MANIFEST),
         ("/etc/services/source-index.svc", service_descriptor, 0),
         ("/models/cpu-ai-mvp.osaimodel", model_file, 0),
@@ -114,7 +116,7 @@ def main() -> int:
         offset += len(content)
 
     image_size = align(offset, SECTOR_SIZE)
-    manifest_index = 2
+    manifest_index = 3
     header = MAGIC.ljust(16, b"\0") + struct.pack(
         "<IIIIIIQQ",
         VERSION,

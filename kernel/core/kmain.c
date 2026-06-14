@@ -111,6 +111,7 @@ void kmain(const osai_boot_info_t *boot) {
   syscall_self_test();
   user_process_table_init();
   user_process_lifecycle_self_test();
+  user_scheduler_self_test();
   service_supervisor_init();
   model_arena_self_test();
   cpu_ai_runtime_self_test();
@@ -142,6 +143,7 @@ void kmain(const osai_boot_info_t *boot) {
 
   const osai_initramfs_file_t *init_file = 0;
   const osai_initramfs_file_t *manager_file = 0;
+  const osai_initramfs_file_t *worker_file = 0;
   osai_user_process_t init_process;
   osai_user_process_t manager_process;
   const osai_initramfs_config_t *init_config = initramfs_config();
@@ -149,6 +151,7 @@ void kmain(const osai_boot_info_t *boot) {
   kassert(initramfs_lookup(init_config->service_path, &init_file) == OSAI_OK);
   kassert(initramfs_lookup(init_config->service_manager_path, &manager_file) ==
           OSAI_OK);
+  kassert(initramfs_lookup("/bin/osai-worker", &worker_file) == OSAI_OK);
   kassert(user_load_init(init_file, &init_process) == OSAI_OK);
   int init_exit_code = user_process_run(&init_process);
   kassert(init_exit_code == 0);
@@ -167,6 +170,21 @@ void kmain(const osai_boot_info_t *boot) {
   klog("kernel: /bin/service-manager returned to kernel exit_code=%u\n",
        (unsigned)manager_exit_code);
   user_process_reclaim_address_space(&manager_process);
+
+  for (uint32_t pid = 3; pid <= 5; ++pid) {
+    osai_user_process_t worker_process;
+    kassert(user_load_process(worker_file, pid, OSAI_CAP_LOG | OSAI_CAP_EXIT,
+                              &worker_process) == OSAI_OK);
+    kassert(user_process_make_runnable(pid, 2) == OSAI_OK);
+    kassert(user_process_snapshot(pid, &worker_process) == OSAI_OK);
+    kassert(service_start("/bin/osai-worker") == OSAI_OK);
+    int worker_exit_code = user_process_run(&worker_process);
+    kassert(worker_exit_code == 0);
+    klog("kernel: /bin/osai-worker pid=%u returned to kernel exit_code=%u\n",
+         pid, (unsigned)worker_exit_code);
+    user_process_reclaim_address_space(&worker_process);
+  }
+
   telemetry_emit_boot_summary();
 
   for (;;) {

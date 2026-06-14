@@ -17,7 +17,8 @@ COMMAND_MARKERS = {
     ],
     "osctl_telemetry": [
         "\"control_plane_syscalls\"",
-        "\"user_process_loaded\":2",
+        "\"user_process_loaded\":5",
+        "\"user_process_scheduled\":5",
         "\"ai_cell_transitions\":14",
     ],
     "osctl_rollback": [
@@ -30,6 +31,8 @@ COMMAND_MARKERS = {
         "/service-manager: admin status exported",
         "/service-manager: remote-safe checks passed",
         "/service-manager: control plane complete",
+        "/worker: scheduled child process ran",
+        "kernel: /bin/osai-worker pid=5 returned to kernel exit_code=0",
     ],
 }
 

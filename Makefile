@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: all bootstrap test image image-x86_64 qemu qemu-aarch64 qemu-x86_64 qemu-x86_64-smoke intel-desktop-gate qemu-dry-run qemu-smoke qemu-preview qemu-matrix qemu-cpu-matrix qemu-benchmark qemu-persistence-reboot qemu-fault-matrix qemu-regression-suite qemu-fault-injection qemu-abi-contract qemu-boot-loop qemu-userspace-suite qemu-network-suite qemu-cpu-ai-suite qemu-developer-ux qemu-post51-gate qemu-readiness-gate qemu-full-os-rc clean
+.PHONY: all bootstrap test image image-x86_64 qemu qemu-aarch64 qemu-x86_64 qemu-x86_64-smoke intel-desktop-gate qemu-dry-run qemu-smoke qemu-process-gate qemu-osctl-gate qemu-preview qemu-matrix qemu-cpu-matrix qemu-benchmark qemu-persistence-reboot qemu-fault-matrix qemu-regression-suite qemu-fault-injection qemu-abi-contract qemu-boot-loop qemu-userspace-suite qemu-network-suite qemu-cpu-ai-suite qemu-developer-ux qemu-post51-gate qemu-readiness-gate qemu-full-os-rc clean
 
 all: bootstrap image
 
@@ -30,6 +30,12 @@ qemu-dry-run:
 
 qemu-smoke: image
 	python3 ./scripts/qemu-smoke.py
+
+qemu-process-gate: image
+	python3 ./scripts/qemu-process-gate.py
+
+qemu-osctl-gate: image
+	python3 ./scripts/qemu-osctl-gate.py
 
 qemu-x86_64-smoke: image-x86_64
 	python3 ./scripts/qemu-x86_64-smoke.py

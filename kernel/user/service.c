@@ -1,9 +1,14 @@
 #include <osai/assert.h>
+#include <osai/ai_cell.h>
+#include <osai/cpu_ai_runtime.h>
 #include <osai/klog.h>
 #include <osai/mutable_fs.h>
+#include <osai/network_stack.h>
+#include <osai/persistence.h>
 #include <osai/security.h>
 #include <osai/service.h>
 #include <osai/syscall.h>
+#include <osai/update.h>
 #include <osai/user.h>
 
 #define OSAI_CMD_TOKEN_BUFFER 160U
@@ -17,11 +22,13 @@ static const char k_log_serial[] = "serial";
 static const char k_log_off[] = "off";
 static const char k_init_service_name[] = "/init";
 static const char k_manager_service_name[] = "/bin/service-manager";
+static const char k_worker_service_name[] = "/bin/osai-worker";
 static const char k_child_service_name[] = "/svc/source-index";
 static const char k_child_parent_name[] = "/init";
 
 static osai_service_t g_init_service;
 static osai_service_t g_manager_service;
+static osai_service_t g_worker_service;
 static osai_service_t g_child_service;
 static uint64_t g_child_descriptor_count;
 static uint64_t g_service_tree_edge_count;
@@ -177,6 +184,9 @@ static osai_service_t *find_service(const char *name) {
   }
   if (str_eq(name, g_manager_service.name)) {
     return &g_manager_service;
+  }
+  if (str_eq(name, g_worker_service.name)) {
+    return &g_worker_service;
   }
   if (g_child_service.name != 0 && str_eq(name, g_child_service.name)) {
     return &g_child_service;
@@ -768,6 +778,7 @@ static osai_status_t tokenize_command(char *command, uint32_t *argc,
 void service_supervisor_init(void) {
   reset_service(&g_init_service, k_init_service_name);
   reset_service(&g_manager_service, k_manager_service_name);
+  reset_service(&g_worker_service, k_worker_service_name);
   reset_service(&g_child_service, 0);
   g_child_descriptor_count = 0;
   g_service_tree_edge_count = 0;
@@ -823,6 +834,83 @@ osai_status_t service_exit(const char *name, int exit_code) {
   return mark_service_exit(service, exit_code, 0);
 }
 
+static osai_status_t handle_osctl_command(const char *action,
+                                          uint32_t argc) {
+  if (action == 0 || argc != 2U) {
+    return OSAI_ERR_INVALID;
+  }
+
+  if (str_eq(action, "status")) {
+    klog("osctl: status qemu=running processes=%lu services=%lu ai_cells=%lu\n",
+         user_process_active_count(), service_transition_count(),
+         ai_cell_transition_count());
+    return OSAI_OK;
+  }
+  if (str_eq(action, "ps")) {
+    klog("osctl: ps slots=%u loaded=%lu runnable=%lu running=%lu exited=%lu failed=%lu scheduled=%lu active=%lu\n",
+         OSAI_MAX_USER_PROCESSES, user_process_loaded_count(),
+         user_process_runnable_count(), user_process_running_count(),
+         user_process_exited_count(), user_process_failed_count(),
+         user_process_scheduled_count(), user_process_active_count());
+    return OSAI_OK;
+  }
+  if (str_eq(action, "services")) {
+    klog("osctl: services transitions=%lu restarts=%lu crashes=%lu cleanups=%lu descriptors=%lu logs=%lu\n",
+         service_transition_count(), service_restart_count(),
+         service_crash_count(), service_cleanup_count(),
+         service_child_descriptor_count(), service_log_record_count());
+    return OSAI_OK;
+  }
+  if (str_eq(action, "cells")) {
+    klog("osctl: cells transitions=%lu admissions=%lu rejects=%lu queue_binds=%lu workspace_binds=%lu conflicts=%lu\n",
+         ai_cell_transition_count(), ai_cell_resource_admission_count(),
+         ai_cell_resource_reject_count(), ai_cell_queue_bind_count(),
+         ai_cell_workspace_bind_count(), ai_cell_conflict_count());
+    return OSAI_OK;
+  }
+  if (str_eq(action, "fs")) {
+    klog("osctl: fs files=%lu directories=%lu writes=%lu reads=%lu commits=%lu rollbacks=%lu checksum_errors=%lu\n",
+         mutable_fs_file_count(), mutable_fs_directory_count(),
+         mutable_fs_write_count(), mutable_fs_read_count(),
+         mutable_fs_commit_count(), mutable_fs_rollback_count(),
+         mutable_fs_checksum_error_count());
+    return OSAI_OK;
+  }
+  if (str_eq(action, "net")) {
+    klog("osctl: net udp_tx=%lu udp_rx=%lu tcp_established=%lu tcp_closed=%lu rx=%lu tx=%lu drops=%lu flow_mismatches=%lu\n",
+         network_stack_udp_tx_count(), network_stack_udp_rx_count(),
+         network_stack_tcp_established_count(), network_stack_tcp_closed_count(),
+         network_stack_rx_packet_count(), network_stack_tx_packet_count(),
+         network_stack_packet_drop_count(),
+         network_stack_flow_core_mismatch_count());
+    return OSAI_OK;
+  }
+  if (str_eq(action, "telemetry")) {
+    klog("osctl: telemetry cpu_ai_loads=%lu shared_binds=%lu kv_writes=%lu security_denials=%lu updates=%lu rollbacks=%lu\n",
+         cpu_ai_runtime_model_load_count(),
+         cpu_ai_runtime_shared_weight_bind_count(),
+         cpu_ai_runtime_kv_write_count(), security_denied_operation_count(),
+         update_transaction_count(), update_rollback_count());
+    return OSAI_OK;
+  }
+  if (str_eq(action, "update")) {
+    klog("osctl: update transactions=%lu staged=%lu committed=%lu failures=%lu recoveries=%lu rejects=%lu\n",
+         update_transaction_count(), update_stage_count(), update_commit_count(),
+         update_failure_count(), update_recovery_count(), update_reject_count());
+    return OSAI_OK;
+  }
+  if (str_eq(action, "rollback")) {
+    klog("osctl: rollback persistence=%lu mutable_fs=%lu update=%lu boot_fallbacks=%lu\n",
+         persistence_rollback_count(), mutable_fs_rollback_count(),
+         update_rollback_count(), update_boot_fallback_count());
+    return OSAI_OK;
+  }
+
+  klog("osctl: unsupported command name='%s' argc=%lu\n", action,
+       (unsigned long)argc);
+  return OSAI_ERR_INVALID;
+}
+
 osai_status_t osctl_execute(const char *command) {
   if (command == 0 || command[0] == '\0') {
     klog("service: osctl rejected command: empty\n");
@@ -863,6 +951,10 @@ osai_status_t osctl_execute(const char *command) {
            tokens[token_index] != 0 ? tokens[token_index] : "(null)");
       return OSAI_ERR_INVALID;
     }
+  }
+
+  if (str_eq(tokens[0], "osctl")) {
+    return handle_osctl_command(tokens[1], argc);
   }
 
   if (str_eq(tokens[0], "admin")) {

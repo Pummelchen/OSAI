@@ -7,7 +7,7 @@
 #define INITFS_SECTOR UINT64_C(1)
 #define INITFS_MAGIC "OSAIROFS2"
 #define INITFS_MAGIC_LEN 9U
-#define INITFS_MAX_FILES 5U
+#define INITFS_MAX_FILES 6U
 #define INITFS_PATH_MAX 64U
 #define INITFS_MODE_MAX 32U
 #define SECTOR_SIZE UINT64_C(512)
@@ -441,6 +441,9 @@ void initramfs_self_test(void) {
   kassert(str_eq(parsed->child_service_parent, "/init"));
   kassert(str_eq(parsed->child_service_restart, "never"));
   kassert(initramfs_lookup("/bin/service-manager", &init) == OSAI_OK);
+  kassert(init != 0);
+  kassert(init->executable != 0);
+  kassert(initramfs_lookup("/bin/osai-worker", &init) == OSAI_OK);
   kassert(init != 0);
   kassert(init->executable != 0);
   kassert(initramfs_lookup("/etc/services/source-index.svc", &config) ==

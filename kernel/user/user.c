@@ -73,16 +73,22 @@ static osai_user_process_t g_process_table[OSAI_MAX_USER_PROCESSES];
 static osai_user_process_t *g_current_process;
 static uint64_t g_process_transition_count;
 static uint64_t g_process_loaded_count;
+static uint64_t g_process_runnable_count;
 static uint64_t g_process_running_count;
+static uint64_t g_process_waiting_count;
 static uint64_t g_process_exited_count;
 static uint64_t g_process_failed_count;
 static uint64_t g_process_reclaim_count;
+static uint64_t g_process_scheduled_count;
+static uint64_t g_process_wait_count;
+static uint64_t g_process_wake_count;
 
 extern uint64_t aarch64_enter_user(uint64_t entry, uint64_t stack);
 
 static void copy_process(osai_user_process_t *dst,
                          const osai_user_process_t *src) {
   dst->pid = src->pid;
+  dst->parent_pid = src->parent_pid;
   dst->name = src->name;
   dst->state = src->state;
   dst->exit_code = src->exit_code;
@@ -95,6 +101,7 @@ static void copy_process(osai_user_process_t *dst,
   dst->stack_guard_high = src->stack_guard_high;
   dst->mapped_low = src->mapped_low;
   dst->mapped_high = src->mapped_high;
+  dst->scheduler_ticks = src->scheduler_ticks;
 }
 
 static const char *process_state_name(osai_user_process_state_t state) {
@@ -103,8 +110,12 @@ static const char *process_state_name(osai_user_process_state_t state) {
     return "empty";
   case OSAI_USER_PROCESS_LOADED:
     return "loaded";
+  case OSAI_USER_PROCESS_RUNNABLE:
+    return "runnable";
   case OSAI_USER_PROCESS_RUNNING:
     return "running";
+  case OSAI_USER_PROCESS_WAITING:
+    return "waiting";
   case OSAI_USER_PROCESS_EXITED:
     return "exited";
   case OSAI_USER_PROCESS_FAILED:
@@ -116,6 +127,7 @@ static const char *process_state_name(osai_user_process_state_t state) {
 
 static void reset_process_slot(osai_user_process_t *process) {
   process->pid = 0;
+  process->parent_pid = 0;
   process->name = 0;
   process->state = OSAI_USER_PROCESS_EMPTY;
   process->exit_code = 0;
@@ -128,6 +140,7 @@ static void reset_process_slot(osai_user_process_t *process) {
   process->stack_guard_high = 0;
   process->mapped_low = 0;
   process->mapped_high = 0;
+  process->scheduler_ticks = 0;
 }
 
 static void track_process_mapping(osai_user_process_t *process, uint64_t start,
@@ -145,11 +158,22 @@ static osai_status_t validate_process_transition(osai_user_process_state_t from,
   if (from == OSAI_USER_PROCESS_EMPTY && to == OSAI_USER_PROCESS_LOADED) {
     return OSAI_OK;
   }
-  if (from == OSAI_USER_PROCESS_LOADED && to == OSAI_USER_PROCESS_RUNNING) {
+  if (from == OSAI_USER_PROCESS_LOADED &&
+      (to == OSAI_USER_PROCESS_RUNNABLE || to == OSAI_USER_PROCESS_RUNNING)) {
+    return OSAI_OK;
+  }
+  if (from == OSAI_USER_PROCESS_RUNNABLE &&
+      (to == OSAI_USER_PROCESS_RUNNING || to == OSAI_USER_PROCESS_WAITING ||
+       to == OSAI_USER_PROCESS_FAILED)) {
+    return OSAI_OK;
+  }
+  if (from == OSAI_USER_PROCESS_WAITING &&
+      (to == OSAI_USER_PROCESS_RUNNABLE || to == OSAI_USER_PROCESS_FAILED)) {
     return OSAI_OK;
   }
   if (from == OSAI_USER_PROCESS_RUNNING &&
-      (to == OSAI_USER_PROCESS_EXITED || to == OSAI_USER_PROCESS_FAILED)) {
+      (to == OSAI_USER_PROCESS_RUNNABLE || to == OSAI_USER_PROCESS_WAITING ||
+       to == OSAI_USER_PROCESS_EXITED || to == OSAI_USER_PROCESS_FAILED)) {
     return OSAI_OK;
   }
   return OSAI_ERR_INVALID;
@@ -172,8 +196,14 @@ static void transition_process(osai_user_process_t *process,
   case OSAI_USER_PROCESS_LOADED:
     ++g_process_loaded_count;
     break;
+  case OSAI_USER_PROCESS_RUNNABLE:
+    ++g_process_runnable_count;
+    break;
   case OSAI_USER_PROCESS_RUNNING:
     ++g_process_running_count;
+    break;
+  case OSAI_USER_PROCESS_WAITING:
+    ++g_process_waiting_count;
     break;
   case OSAI_USER_PROCESS_EXITED:
     ++g_process_exited_count;
@@ -198,10 +228,15 @@ void user_process_table_init(void) {
   g_current_process = 0;
   g_process_transition_count = 0;
   g_process_loaded_count = 0;
+  g_process_runnable_count = 0;
   g_process_running_count = 0;
+  g_process_waiting_count = 0;
   g_process_exited_count = 0;
   g_process_failed_count = 0;
   g_process_reclaim_count = 0;
+  g_process_scheduled_count = 0;
+  g_process_wait_count = 0;
+  g_process_wake_count = 0;
   klog("user: process table initialized slots=%u\n", OSAI_MAX_USER_PROCESSES);
 }
 
@@ -209,7 +244,13 @@ void user_process_lifecycle_self_test(void) {
   kassert(validate_process_transition(OSAI_USER_PROCESS_EMPTY,
                                       OSAI_USER_PROCESS_LOADED) == OSAI_OK);
   kassert(validate_process_transition(OSAI_USER_PROCESS_LOADED,
+                                      OSAI_USER_PROCESS_RUNNABLE) == OSAI_OK);
+  kassert(validate_process_transition(OSAI_USER_PROCESS_RUNNABLE,
                                       OSAI_USER_PROCESS_RUNNING) == OSAI_OK);
+  kassert(validate_process_transition(OSAI_USER_PROCESS_RUNNING,
+                                      OSAI_USER_PROCESS_WAITING) == OSAI_OK);
+  kassert(validate_process_transition(OSAI_USER_PROCESS_WAITING,
+                                      OSAI_USER_PROCESS_RUNNABLE) == OSAI_OK);
   kassert(validate_process_transition(OSAI_USER_PROCESS_RUNNING,
                                       OSAI_USER_PROCESS_EXITED) == OSAI_OK);
   kassert(validate_process_transition(OSAI_USER_PROCESS_RUNNING,
@@ -217,7 +258,7 @@ void user_process_lifecycle_self_test(void) {
   kassert(validate_process_transition(OSAI_USER_PROCESS_EMPTY,
                                       OSAI_USER_PROCESS_RUNNING) ==
           OSAI_ERR_INVALID);
-  kassert(validate_process_transition(OSAI_USER_PROCESS_LOADED,
+  kassert(validate_process_transition(OSAI_USER_PROCESS_RUNNABLE,
                                       OSAI_USER_PROCESS_EXITED) ==
           OSAI_ERR_INVALID);
   kassert(validate_process_transition(OSAI_USER_PROCESS_EXITED,
@@ -227,6 +268,19 @@ void user_process_lifecycle_self_test(void) {
                                       OSAI_USER_PROCESS_RUNNING) ==
           OSAI_ERR_INVALID);
   klog("user: process lifecycle invalid/failed transition self-test passed\n");
+}
+
+void user_scheduler_self_test(void) {
+  kassert(validate_process_transition(OSAI_USER_PROCESS_LOADED,
+                                      OSAI_USER_PROCESS_RUNNABLE) == OSAI_OK);
+  kassert(validate_process_transition(OSAI_USER_PROCESS_RUNNABLE,
+                                      OSAI_USER_PROCESS_WAITING) == OSAI_OK);
+  kassert(validate_process_transition(OSAI_USER_PROCESS_WAITING,
+                                      OSAI_USER_PROCESS_RUNNABLE) == OSAI_OK);
+  kassert(validate_process_transition(OSAI_USER_PROCESS_EMPTY,
+                                      OSAI_USER_PROCESS_WAITING) ==
+          OSAI_ERR_INVALID);
+  klog("scheduler: lifecycle self-test passed\n");
 }
 
 const osai_user_process_t *user_current_process(void) {
@@ -425,14 +479,89 @@ osai_status_t user_load_init(const osai_initramfs_file_t *file,
                            process);
 }
 
+osai_status_t user_process_snapshot(uint32_t pid, osai_user_process_t *process) {
+  if (process == 0 || pid == 0 || pid > OSAI_MAX_USER_PROCESSES) {
+    return OSAI_ERR_INVALID;
+  }
+
+  const osai_user_process_t *slot = &g_process_table[pid - 1U];
+  if (slot->pid != pid || slot->state == OSAI_USER_PROCESS_EMPTY) {
+    return OSAI_ERR_INVALID;
+  }
+
+  copy_process(process, slot);
+  return OSAI_OK;
+}
+
+osai_status_t user_process_make_runnable(uint32_t pid, uint32_t parent_pid) {
+  if (pid == 0 || pid > OSAI_MAX_USER_PROCESSES || parent_pid == pid) {
+    return OSAI_ERR_INVALID;
+  }
+
+  osai_user_process_t *process = &g_process_table[pid - 1U];
+  if (process->pid != pid) {
+    return OSAI_ERR_INVALID;
+  }
+
+  process->parent_pid = parent_pid;
+  transition_process(process, OSAI_USER_PROCESS_RUNNABLE, 0);
+  klog("scheduler: process pid=%u parent=%u runnable name=%s\n", process->pid,
+       process->parent_pid, process->name != 0 ? process->name : "(none)");
+  return OSAI_OK;
+}
+
+osai_status_t user_process_wait(uint32_t pid) {
+  if (pid == 0 || pid > OSAI_MAX_USER_PROCESSES) {
+    return OSAI_ERR_INVALID;
+  }
+
+  osai_user_process_t *process = &g_process_table[pid - 1U];
+  if (process->pid != pid) {
+    return OSAI_ERR_INVALID;
+  }
+
+  transition_process(process, OSAI_USER_PROCESS_WAITING, process->exit_code);
+  ++g_process_wait_count;
+  klog("scheduler: process pid=%u waiting waits=%lu\n", pid,
+       g_process_wait_count);
+  return OSAI_OK;
+}
+
+osai_status_t user_process_wake(uint32_t pid) {
+  if (pid == 0 || pid > OSAI_MAX_USER_PROCESSES) {
+    return OSAI_ERR_INVALID;
+  }
+
+  osai_user_process_t *process = &g_process_table[pid - 1U];
+  if (process->pid != pid) {
+    return OSAI_ERR_INVALID;
+  }
+
+  transition_process(process, OSAI_USER_PROCESS_RUNNABLE, process->exit_code);
+  ++g_process_wake_count;
+  klog("scheduler: process pid=%u woken wakes=%lu\n", pid,
+       g_process_wake_count);
+  return OSAI_OK;
+}
+
 int user_process_run(const osai_user_process_t *process) {
   kassert(process != 0);
   kassert(process->pid != 0 && process->pid <= OSAI_MAX_USER_PROCESSES);
   g_current_process = &g_process_table[process->pid - 1U];
-  copy_process(g_current_process, process);
-  uint64_t entry = process->entry;
-  uint64_t stack = process->stack_top;
+  if (g_current_process->pid != process->pid ||
+      g_current_process->state == OSAI_USER_PROCESS_EMPTY) {
+    copy_process(g_current_process, process);
+  }
+  uint64_t entry = g_current_process->entry;
+  uint64_t stack = g_current_process->stack_top;
   transition_process(g_current_process, OSAI_USER_PROCESS_RUNNING, 0);
+  ++g_current_process->scheduler_ticks;
+  ++g_process_scheduled_count;
+
+  klog("scheduler: dispatch pid=%u parent=%u name=%s ticks=%lu scheduled=%lu\n",
+       g_current_process->pid, g_current_process->parent_pid,
+       g_current_process->name != 0 ? g_current_process->name : "(none)",
+       g_current_process->scheduler_ticks, g_process_scheduled_count);
 
   klog("user: entering EL0 %s pid=%u entry=0x%lx stack=0x%lx\n",
        g_current_process->name, g_current_process->pid, entry, stack);
@@ -477,8 +606,16 @@ uint64_t user_process_loaded_count(void) {
   return g_process_loaded_count;
 }
 
+uint64_t user_process_runnable_count(void) {
+  return g_process_runnable_count;
+}
+
 uint64_t user_process_running_count(void) {
   return g_process_running_count;
+}
+
+uint64_t user_process_waiting_count(void) {
+  return g_process_waiting_count;
 }
 
 uint64_t user_process_exited_count(void) {
@@ -491,4 +628,30 @@ uint64_t user_process_failed_count(void) {
 
 uint64_t user_process_reclaim_count(void) {
   return g_process_reclaim_count;
+}
+
+uint64_t user_process_scheduled_count(void) {
+  return g_process_scheduled_count;
+}
+
+uint64_t user_process_wait_count(void) {
+  return g_process_wait_count;
+}
+
+uint64_t user_process_wake_count(void) {
+  return g_process_wake_count;
+}
+
+uint64_t user_process_active_count(void) {
+  uint64_t active = 0;
+  for (uint32_t i = 0; i < OSAI_MAX_USER_PROCESSES; ++i) {
+    osai_user_process_state_t state = g_process_table[i].state;
+    if (state == OSAI_USER_PROCESS_LOADED ||
+        state == OSAI_USER_PROCESS_RUNNABLE ||
+        state == OSAI_USER_PROCESS_RUNNING ||
+        state == OSAI_USER_PROCESS_WAITING) {
+      ++active;
+    }
+  }
+  return active;
 }
