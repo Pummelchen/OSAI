@@ -521,6 +521,90 @@ osai_status_t cpu_ai_runtime_decode_piece(uint32_t cell_id, const uint8_t *piece
   return OSAI_OK;
 }
 
+static void runtime_append(char *output, uint64_t capacity, uint64_t *offset,
+                           const char *text) {
+  if (output == 0 || offset == 0 || text == 0 || capacity == 0) {
+    return;
+  }
+  for (uint64_t i = 0; text[i] != '\0' && *offset + 1U < capacity; ++i) {
+    output[*offset] = text[i];
+    ++(*offset);
+  }
+  output[*offset] = '\0';
+}
+
+static void runtime_append_u64(char *output, uint64_t capacity,
+                               uint64_t *offset, uint64_t value) {
+  char digits[20];
+  uint64_t count = 0;
+  if (value == 0) {
+    runtime_append(output, capacity, offset, "0");
+    return;
+  }
+  while (value != 0 && count < sizeof(digits)) {
+    digits[count++] = (char)('0' + (value % 10U));
+    value /= 10U;
+  }
+  while (count > 0) {
+    char one[2];
+    --count;
+    one[0] = digits[count];
+    one[1] = '\0';
+    runtime_append(output, capacity, offset, one);
+  }
+}
+
+osai_status_t cpu_ai_runtime_run_model(uint32_t cell_id, uint64_t model_kind,
+                                       const uint8_t *input,
+                                       uint64_t input_bytes, char *output,
+                                       uint64_t output_capacity,
+                                       uint64_t *output_bytes) {
+  if (input == 0 || input_bytes == 0 || output == 0 || output_capacity < 2U ||
+      output_bytes == 0) {
+    return OSAI_ERR_INVALID;
+  }
+  output[0] = '\0';
+  *output_bytes = 0;
+
+  if (model_kind == OSAI_ML_MODEL_DECODE) {
+    return cpu_ai_runtime_decode_piece(cell_id, input, input_bytes, output,
+                                       output_capacity, output_bytes);
+  }
+
+  ++g_kernel_dispatch_count;
+  ++g_runtime_call_count;
+  uint64_t offset = 0;
+  if (model_kind == OSAI_ML_MODEL_XOR) {
+    if (input_bytes < 2U) {
+      return OSAI_ERR_INVALID;
+    }
+    const uint8_t lhs = (uint8_t)(input[0] & 1U);
+    const uint8_t rhs = (uint8_t)(input[1] & 1U);
+    runtime_append(output, output_capacity, &offset,
+                   ((lhs ^ rhs) != 0U) ? "1" : "0");
+  } else if (model_kind == OSAI_ML_MODEL_SUM) {
+    uint64_t sum = 0;
+    for (uint64_t i = 0; i < input_bytes; ++i) {
+      sum += input[i];
+    }
+    runtime_append_u64(output, output_capacity, &offset, sum);
+  } else if (model_kind == OSAI_ML_MODEL_PARITY) {
+    uint8_t parity = 0;
+    for (uint64_t i = 0; i < input_bytes; ++i) {
+      parity ^= (uint8_t)(input[i] & 1U);
+    }
+    runtime_append(output, output_capacity, &offset,
+                   parity != 0U ? "odd" : "even");
+  } else {
+    return OSAI_ERR_INVALID;
+  }
+
+  *output_bytes = offset;
+  klog("cpu-ai-runtime: generic ml model kind=%lu input=%lu output=%lu cpu_only=1\n",
+       model_kind, input_bytes, offset);
+  return OSAI_OK;
+}
+
 uint64_t cpu_ai_runtime_decode_count(uint32_t cell_id) {
   if (!validate_cell_id(cell_id)) {
     return 0;

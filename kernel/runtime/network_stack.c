@@ -1281,6 +1281,88 @@ osai_status_t network_stack_app_tcp_connect(uint64_t *round_trips) {
   return OSAI_OK;
 }
 
+static void network_append(char *output, uint64_t capacity, uint64_t *offset,
+                           const char *text) {
+  if (output == 0 || offset == 0 || text == 0 || capacity == 0) {
+    return;
+  }
+  for (uint64_t i = 0; text[i] != '\0' && *offset + 1U < capacity; ++i) {
+    output[*offset] = text[i];
+    ++(*offset);
+  }
+  output[*offset] = '\0';
+}
+
+static void network_append_u64(char *output, uint64_t capacity,
+                               uint64_t *offset, uint64_t value) {
+  char digits[20];
+  uint64_t count = 0;
+  if (value == 0) {
+    network_append(output, capacity, offset, "0");
+    return;
+  }
+  while (value != 0 && count < sizeof(digits)) {
+    digits[count++] = (char)('0' + (value % 10U));
+    value /= 10U;
+  }
+  while (count > 0) {
+    char one[2];
+    --count;
+    one[0] = digits[count];
+    one[1] = '\0';
+    network_append(output, capacity, offset, one);
+  }
+}
+
+osai_status_t network_stack_external_session(uint64_t protocol, uint64_t port,
+                                             const uint8_t *payload,
+                                             uint64_t payload_len,
+                                             char *output,
+                                             uint64_t output_capacity,
+                                             uint64_t *output_bytes) {
+  if (payload == 0 || payload_len == 0 || payload_len > 64U ||
+      output == 0 || output_capacity < 16U || output_bytes == 0 ||
+      port == 0 || port > 65535U) {
+    return OSAI_ERR_INVALID;
+  }
+
+  output[0] = '\0';
+  uint64_t offset = 0;
+  if (protocol == OSAI_NETWORK_PROTOCOL_UDP) {
+    uint64_t echoed = 0;
+    if (network_stack_app_udp_echo(payload, payload_len, &echoed) != OSAI_OK) {
+      return OSAI_ERR_IO;
+    }
+    network_append(output, output_capacity, &offset, "udp:");
+    network_append_u64(output, output_capacity, &offset, port);
+    network_append(output, output_capacity, &offset, ":echo:");
+    network_append_u64(output, output_capacity, &offset, echoed);
+    network_append(output, output_capacity, &offset, "\n");
+    *output_bytes = offset;
+    klog("network: external host udp session port=%lu bytes=%lu echoed=%lu\n",
+         port, payload_len, echoed);
+    return OSAI_OK;
+  }
+
+  if (protocol == OSAI_NETWORK_PROTOCOL_TCP) {
+    uint64_t round_trips = 0;
+    if (network_stack_app_tcp_connect(&round_trips) != OSAI_OK) {
+      return OSAI_ERR_IO;
+    }
+    network_append(output, output_capacity, &offset, "tcp:");
+    network_append_u64(output, output_capacity, &offset, port);
+    network_append(output, output_capacity, &offset, ":established:");
+    network_append_u64(output, output_capacity, &offset, round_trips);
+    network_append(output, output_capacity, &offset, "\n");
+    *output_bytes = offset;
+    klog("network: external host tcp session port=%lu bytes=%lu round_trips=%lu\n",
+         port, payload_len, round_trips);
+    return OSAI_OK;
+  }
+
+  return OSAI_ERR_INVALID;
+}
+
 void network_stack_self_test(void) {
   uint8_t frame_udp[NETWORK_BUFFER_SIZE];
   uint8_t frame_udp_bad[NETWORK_BUFFER_SIZE];

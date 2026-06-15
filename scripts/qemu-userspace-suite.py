@@ -16,9 +16,9 @@ COMMAND_MARKERS = {
         "ai-cell: multi-cell shared model/private kv self-test passed",
     ],
     "osctl_telemetry": [
-        "\"control_plane_syscalls\":81",
-        "\"user_process_loaded\":12",
-        "\"user_process_scheduled\":12",
+        "\"control_plane_syscalls\":89",
+        "\"user_process_loaded\":14",
+        "\"user_process_scheduled\":14",
         "\"ai_cell_transitions\":14",
     ],
     "osctl_rollback": [
@@ -39,10 +39,16 @@ COMMAND_MARKERS = {
         "/bin/systest: syscall and filesystem suite passed",
         "/bin/smptest: complete",
         "/bin/nettest: complete",
+        "/bin/sshtest: complete",
+        "/bin/mltest: complete",
         "/bin/smptest: app-requested SMP worker set passed",
+        "/bin/smptest: POSIX-style arbitrary user thread group passed",
         "/bin/nettest: app-callable udp/tcp path passed",
+        "/bin/nettest: external host-to-guest tcp/udp session path passed",
         "/bin/lstm-xor: cpu-ai runtime decode=",
         "/bin/lstm-xor: xor solve passed predictions=0,1,1,0",
+        "/bin/sshtest: interactive remote login command surface passed",
+        "/bin/mltest: multi-model CPU-only ML runtime passed",
     ],
 }
 

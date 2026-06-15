@@ -173,6 +173,63 @@ int osai_cpu_ai_decode(const void *input, u64 input_size, char *output,
   return rc == ~0ULL ? -1 : (int)rc;
 }
 
+int osai_remote_login(const char *user, const char *command, char *output,
+                      u64 output_size, u64 *out_size) {
+  osai_remote_login_request_t request;
+  request.user = (u64)user;
+  request.user_size = osai_strlen(user);
+  request.command = (u64)command;
+  request.command_size = osai_strlen(command);
+  request.output = (u64)output;
+  request.output_size = output_size;
+  request.out_size = (u64)out_size;
+  u64 rc = osai_syscall3(OSAI_SYSCALL_REMOTE_LOGIN, (u64)&request,
+                         sizeof(request), 0);
+  return rc == ~0ULL ? -1 : (int)rc;
+}
+
+int osai_net_external_session(u64 protocol, u64 port, const void *payload,
+                              u64 payload_size, char *output,
+                              u64 output_size, u64 *out_size) {
+  osai_net_external_session_request_t request;
+  request.protocol = protocol;
+  request.port = port;
+  request.payload = (u64)payload;
+  request.payload_size = payload_size;
+  request.output = (u64)output;
+  request.output_size = output_size;
+  request.out_size = (u64)out_size;
+  u64 rc = osai_syscall3(OSAI_SYSCALL_NET_EXTERNAL_SESSION, (u64)&request,
+                         sizeof(request), 0);
+  return rc == ~0ULL ? -1 : (int)rc;
+}
+
+int osai_thread_group_run(u64 thread_count, u64 iterations, u64 *ran_threads,
+                          u64 *checksum) {
+  osai_thread_group_request_t request;
+  request.thread_count = thread_count;
+  request.iterations = iterations;
+  request.out_threads = (u64)ran_threads;
+  request.out_checksum = (u64)checksum;
+  u64 rc = osai_syscall3(OSAI_SYSCALL_THREAD_GROUP_RUN, (u64)&request,
+                         sizeof(request), 0);
+  return rc == ~0ULL ? -1 : (int)rc;
+}
+
+int osai_ml_run(u64 model_kind, const void *input, u64 input_size,
+                char *output, u64 output_size, u64 *out_size) {
+  osai_ml_run_request_t request;
+  request.model_kind = model_kind;
+  request.input = (u64)input;
+  request.input_size = input_size;
+  request.output = (u64)output;
+  request.output_size = output_size;
+  request.out_size = (u64)out_size;
+  u64 rc = osai_syscall3(OSAI_SYSCALL_ML_RUN, (u64)&request,
+                         sizeof(request), 0);
+  return rc == ~0ULL ? -1 : (int)rc;
+}
+
 int osai_write_file(const char *path, const char *content) {
   int fd = osai_fs_open(path, OSAI_MFS_OPEN_WRITE | OSAI_MFS_OPEN_CREATE |
                                   OSAI_MFS_OPEN_TRUNCATE);

@@ -113,6 +113,6 @@ int main(void) {
     }
   }
   osai_log("/bin/osai-shell: commands passed pwd cd ls mkdir touch write cat mv rm rmdir\n");
-  osai_log("/bin/osai-shell: SSH daemon is still pending; this is the shell engine exercised by QEMU\n");
+  osai_log("/bin/osai-shell: command engine ready for QEMU remote-login surface\n");
   return 0;
 }

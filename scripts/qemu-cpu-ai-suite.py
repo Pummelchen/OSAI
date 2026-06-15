@@ -18,6 +18,12 @@ MARKERS = {
         "cpu-ai-runtime: deterministic decode fixture input=ABCD output=1B1F2327",
         "/bin/lstm-xor: cpu-ai runtime decode=",
     ],
+    "generic_ml_runtime": [
+        "cpu-ai-runtime: generic ml model kind=2",
+        "cpu-ai-runtime: generic ml model kind=3",
+        "cpu-ai-runtime: generic ml model kind=4",
+        "/bin/mltest: multi-model CPU-only ML runtime passed",
+    ],
     "shared_weights_private_kv": [
         "cpu-ai-runtime: multi-cell shared weights self-test passed loads=2 shared_binds=2 kv_writes=8",
         "ai-cell: multi-cell shared model/private kv self-test passed",
@@ -56,12 +62,14 @@ def main() -> int:
         telemetry.get("cpu_ai_model_loads", 0) >= 5
         and telemetry.get("cpu_ai_shared_weight_binds", 0) >= 5
         and telemetry.get("cpu_ai_kv_writes", 0) >= 19
+        and telemetry.get("cpu_ai_runtime_calls", 0) >= 8
         and telemetry.get("cpu_ai_gpu_rejects", 0) >= 1
     )
     checks.append(result("telemetry_counters", counters_ok,
                          model_loads=telemetry.get("cpu_ai_model_loads"),
                          shared_weight_binds=telemetry.get("cpu_ai_shared_weight_binds"),
                          kv_writes=telemetry.get("cpu_ai_kv_writes"),
+                         runtime_calls=telemetry.get("cpu_ai_runtime_calls"),
                          gpu_rejects=telemetry.get("cpu_ai_gpu_rejects")))
     if not counters_ok:
         failures.append("CPU-AI telemetry counters below required thresholds")

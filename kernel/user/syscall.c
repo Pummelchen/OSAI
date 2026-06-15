@@ -5,6 +5,7 @@
 #include <osai/klog.h>
 #include <osai/mutable_fs.h>
 #include <osai/network_stack.h>
+#include <osai/remote_login.h>
 #include <osai/security.h>
 #include <osai/service.h>
 #include <osai/smp.h>
@@ -48,6 +49,10 @@ static const osai_syscall_entry_t g_syscall_table[] = {
     {OSAI_SYSCALL_NET_TCP_CONNECT, "net_tcp_connect", OSAI_CAP_NET},
     {OSAI_SYSCALL_SMP_RUN, "smp_run", OSAI_CAP_SMP},
     {OSAI_SYSCALL_CPU_AI_DECODE, "cpu_ai_decode", OSAI_CAP_CPU_AI},
+    {OSAI_SYSCALL_REMOTE_LOGIN, "remote_login", OSAI_CAP_REMOTE_LOGIN},
+    {OSAI_SYSCALL_NET_EXTERNAL_SESSION, "net_external_session", OSAI_CAP_NET},
+    {OSAI_SYSCALL_THREAD_GROUP_RUN, "thread_group_run", OSAI_CAP_THREADS},
+    {OSAI_SYSCALL_ML_RUN, "ml_run", OSAI_CAP_ML},
 };
 
 static uint64_t g_control_plane_syscall_count;
@@ -90,7 +95,7 @@ static void bytes_copy(void *dst, const void *src, uint64_t size) {
 static int is_control_plane_syscall(uint64_t syscall) {
   return syscall == OSAI_SYSCALL_OSCTL ||
          (syscall >= OSAI_SYSCALL_READ_SERVICE_DESCRIPTOR &&
-          syscall <= OSAI_SYSCALL_CPU_AI_DECODE);
+          syscall <= OSAI_SYSCALL_ML_RUN);
 }
 
 static uint64_t reject_syscall(uint64_t syscall, uint64_t arg0, uint64_t arg1,
@@ -506,6 +511,127 @@ uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
     return complete_control_syscall(out_size);
   }
 
+  if (syscall == OSAI_SYSCALL_REMOTE_LOGIN) {
+    osai_syscall_remote_login_request_t request;
+    char user[32];
+    char command[96];
+    uint64_t out_size = 0;
+    if (arg1 != sizeof(request) ||
+        vmm_validate_user_buffer(arg0, sizeof(request), 0) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "bad-remote-login-request");
+    }
+    bytes_copy(&request, (const void *)(uintptr_t)arg0, sizeof(request));
+    if (copy_user_string(request.user, request.user_size, user,
+                         sizeof(user)) != OSAI_OK ||
+        copy_user_string(request.command, request.command_size, command,
+                         sizeof(command)) != OSAI_OK ||
+        request.output_size == 0 ||
+        vmm_validate_user_buffer(request.output, request.output_size,
+                                 OSAI_VMM_WRITABLE) != OSAI_OK ||
+        vmm_validate_user_buffer(request.out_size, sizeof(out_size),
+                                 OSAI_VMM_WRITABLE) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "remote-login-denied");
+    }
+    if (remote_login_execute(user, command, (char *)(uintptr_t)request.output,
+                             request.output_size, &out_size) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "remote-login-failed");
+    }
+    bytes_copy((void *)(uintptr_t)request.out_size, &out_size,
+               sizeof(out_size));
+    return complete_control_syscall(out_size);
+  }
+
+  if (syscall == OSAI_SYSCALL_NET_EXTERNAL_SESSION) {
+    osai_syscall_net_external_session_request_t request;
+    uint8_t payload[64];
+    uint64_t out_size = 0;
+    if (arg1 != sizeof(request) ||
+        vmm_validate_user_buffer(arg0, sizeof(request), 0) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "bad-net-external-request");
+    }
+    bytes_copy(&request, (const void *)(uintptr_t)arg0, sizeof(request));
+    if (request.payload_size == 0 || request.payload_size > sizeof(payload) ||
+        request.output_size == 0 ||
+        vmm_validate_user_buffer(request.payload, request.payload_size, 0) !=
+            OSAI_OK ||
+        vmm_validate_user_buffer(request.output, request.output_size,
+                                 OSAI_VMM_WRITABLE) != OSAI_OK ||
+        vmm_validate_user_buffer(request.out_size, sizeof(out_size),
+                                 OSAI_VMM_WRITABLE) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "net-external-denied");
+    }
+    bytes_copy(payload, (const void *)(uintptr_t)request.payload,
+               request.payload_size);
+    if (network_stack_external_session(
+            request.protocol, request.port, payload, request.payload_size,
+            (char *)(uintptr_t)request.output, request.output_size,
+            &out_size) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "net-external-failed");
+    }
+    bytes_copy((void *)(uintptr_t)request.out_size, &out_size,
+               sizeof(out_size));
+    return complete_control_syscall(out_size);
+  }
+
+  if (syscall == OSAI_SYSCALL_THREAD_GROUP_RUN) {
+    osai_syscall_thread_group_request_t request;
+    uint64_t ran_threads = 0;
+    uint64_t checksum = 0;
+    if (arg1 != sizeof(request) ||
+        vmm_validate_user_buffer(arg0, sizeof(request), 0) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "bad-thread-group-request");
+    }
+    bytes_copy(&request, (const void *)(uintptr_t)arg0, sizeof(request));
+    if (vmm_validate_user_buffer(request.out_threads, sizeof(ran_threads),
+                                 OSAI_VMM_WRITABLE) != OSAI_OK ||
+        vmm_validate_user_buffer(request.out_checksum, sizeof(checksum),
+                                 OSAI_VMM_WRITABLE) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "thread-group-denied");
+    }
+    if (smp_run_user_thread_group(request.thread_count, request.iterations,
+                                  &ran_threads, &checksum) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "thread-group-failed");
+    }
+    bytes_copy((void *)(uintptr_t)request.out_threads, &ran_threads,
+               sizeof(ran_threads));
+    bytes_copy((void *)(uintptr_t)request.out_checksum, &checksum,
+               sizeof(checksum));
+    return complete_control_syscall(ran_threads);
+  }
+
+  if (syscall == OSAI_SYSCALL_ML_RUN) {
+    osai_syscall_ml_run_request_t request;
+    uint8_t input[64];
+    uint64_t out_size = 0;
+    if (arg1 != sizeof(request) ||
+        vmm_validate_user_buffer(arg0, sizeof(request), 0) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "bad-ml-request");
+    }
+    bytes_copy(&request, (const void *)(uintptr_t)arg0, sizeof(request));
+    if (request.input_size == 0 || request.input_size > sizeof(input) ||
+        request.output_size == 0 ||
+        vmm_validate_user_buffer(request.input, request.input_size, 0) !=
+            OSAI_OK ||
+        vmm_validate_user_buffer(request.output, request.output_size,
+                                 OSAI_VMM_WRITABLE) != OSAI_OK ||
+        vmm_validate_user_buffer(request.out_size, sizeof(out_size),
+                                 OSAI_VMM_WRITABLE) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "ml-run-denied");
+    }
+    bytes_copy(input, (const void *)(uintptr_t)request.input,
+               request.input_size);
+    if (ensure_app_cpu_ai_binding() != OSAI_OK ||
+        cpu_ai_runtime_run_model(3, request.model_kind, input,
+                                 request.input_size,
+                                 (char *)(uintptr_t)request.output,
+                                 request.output_size, &out_size) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "ml-run-failed");
+    }
+    bytes_copy((void *)(uintptr_t)request.out_size, &out_size,
+               sizeof(out_size));
+    return complete_control_syscall(out_size);
+  }
+
   return reject_syscall(syscall, arg0, arg1, "unreachable");
 }
 
@@ -534,6 +660,10 @@ void syscall_self_test(void) {
   kassert(lookup_syscall(OSAI_SYSCALL_NET_TCP_CONNECT) != 0);
   kassert(lookup_syscall(OSAI_SYSCALL_SMP_RUN) != 0);
   kassert(lookup_syscall(OSAI_SYSCALL_CPU_AI_DECODE) != 0);
+  kassert(lookup_syscall(OSAI_SYSCALL_REMOTE_LOGIN) != 0);
+  kassert(lookup_syscall(OSAI_SYSCALL_NET_EXTERNAL_SESSION) != 0);
+  kassert(lookup_syscall(OSAI_SYSCALL_THREAD_GROUP_RUN) != 0);
+  kassert(lookup_syscall(OSAI_SYSCALL_ML_RUN) != 0);
   kassert(lookup_syscall(99) == 0);
   klog("syscall: table self-test passed entries=%lu\n",
        (uint64_t)(sizeof(g_syscall_table) / sizeof(g_syscall_table[0])));

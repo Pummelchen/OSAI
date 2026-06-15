@@ -5,6 +5,10 @@
 #include <osai/types.h>
 
 #define OSAI_CPU_AI_RUNTIME_MAX_CELLS 4U
+#define OSAI_ML_MODEL_DECODE UINT64_C(1)
+#define OSAI_ML_MODEL_XOR UINT64_C(2)
+#define OSAI_ML_MODEL_SUM UINT64_C(3)
+#define OSAI_ML_MODEL_PARITY UINT64_C(4)
 
 void cpu_ai_runtime_init(void);
 osai_status_t cpu_ai_runtime_load_model_file(uint32_t model_arena_id,
@@ -20,6 +24,11 @@ osai_status_t cpu_ai_runtime_decode_piece(uint32_t cell_id, const uint8_t *piece
                                          uint64_t piece_bytes, char *output,
                                          uint64_t output_capacity,
                                          uint64_t *output_bytes);
+osai_status_t cpu_ai_runtime_run_model(uint32_t cell_id, uint64_t model_kind,
+                                       const uint8_t *input,
+                                       uint64_t input_bytes, char *output,
+                                       uint64_t output_capacity,
+                                       uint64_t *output_bytes);
 uint64_t cpu_ai_runtime_decode_count(uint32_t cell_id);
 uint64_t cpu_ai_runtime_model_load_count(void);
 uint64_t cpu_ai_runtime_model_load_failure_count(void);

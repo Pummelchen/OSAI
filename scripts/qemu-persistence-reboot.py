@@ -8,9 +8,9 @@ from typing import List
 
 
 FIRST_BOOT_TARGETS = [
-    "persistence: no existing disk state sector=1536",
-    "persistence: disk write sector=1536 version=1 records=5",
-    "persistence: disk loaded sector=1536 version=1 records=5",
+    "persistence: no existing disk state sector=3000",
+    "persistence: disk write sector=3000 version=1 records=5",
+    "persistence: disk loaded sector=3000 version=1 records=5",
     "persistence: disk reload/rollback self-test passed snapshots=5 rollbacks=5 rejects=2 disk_writes=1 disk_loads=1 checksum_errors=0",
     "\"persistence_boot_loads\":0",
     "\"persistence_checksum_errors\":0",
@@ -18,8 +18,8 @@ FIRST_BOOT_TARGETS = [
 
 SECOND_BOOT_TARGETS = [
     "persistence: existing disk state loaded records=5",
-    "persistence: disk write sector=1536 version=1 records=5",
-    "persistence: disk loaded sector=1536 version=1 records=5",
+    "persistence: disk write sector=3000 version=1 records=5",
+    "persistence: disk loaded sector=3000 version=1 records=5",
     "persistence: disk reload/rollback self-test passed snapshots=5 rollbacks=5 rejects=2 disk_writes=1 disk_loads=1 checksum_errors=0",
     "\"persistence_boot_loads\":1",
     "\"persistence_checksum_errors\":0",

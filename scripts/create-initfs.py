@@ -24,6 +24,8 @@ EXTRA_EXECUTABLE_PATHS = [
     "/bin/smptest",
     "/bin/nettest",
     "/bin/lstm-xor",
+    "/bin/sshtest",
+    "/bin/mltest",
 ]
 FNV1A64_OFFSET = 0xCBF29CE484222325
 FNV1A64_PRIME = 0x100000001B3

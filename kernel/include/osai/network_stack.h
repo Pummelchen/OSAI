@@ -6,6 +6,8 @@
 
 #define OSAI_NETWORK_MAX_QUEUE_BINDINGS 4U
 #define OSAI_NETWORK_QUEUE_ID_INVALID UINT32_C(0xffffffff)
+#define OSAI_NETWORK_PROTOCOL_UDP UINT64_C(17)
+#define OSAI_NETWORK_PROTOCOL_TCP UINT64_C(6)
 
 typedef enum osai_network_flow_state {
   OSAI_NETWORK_FLOW_FREE = 0,
@@ -26,6 +28,12 @@ osai_status_t network_stack_app_udp_echo(const uint8_t *payload,
                                          uint64_t payload_len,
                                          uint64_t *echoed_bytes);
 osai_status_t network_stack_app_tcp_connect(uint64_t *round_trips);
+osai_status_t network_stack_external_session(uint64_t protocol, uint64_t port,
+                                             const uint8_t *payload,
+                                             uint64_t payload_len,
+                                             char *output,
+                                             uint64_t output_capacity,
+                                             uint64_t *output_bytes);
 uint64_t network_stack_expire_udp_flows(uint64_t now_ns);
 uint64_t network_stack_retransmit_tcp_flows(uint64_t now_ns);
 uint64_t network_stack_expire_tcp_flows(uint64_t now_ns);

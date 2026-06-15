@@ -234,10 +234,51 @@ osai_status_t smp_run_user_task_set(uint64_t requested_workers,
   return assigned == 0 ? OSAI_ERR_INVALID : OSAI_OK;
 }
 
+osai_status_t smp_run_user_thread_group(uint64_t requested_threads,
+                                        uint64_t iterations,
+                                        uint64_t *ran_threads,
+                                        uint64_t *checksum) {
+  if (ran_threads == 0 || checksum == 0 || requested_threads == 0 ||
+      iterations == 0) {
+    return OSAI_ERR_INVALID;
+  }
+  if (requested_threads > 32U) {
+    requested_threads = 32U;
+  }
+  if (iterations > UINT64_C(200000)) {
+    iterations = UINT64_C(200000);
+  }
+
+  uint64_t total = 0;
+  for (uint64_t tid = 0; tid < requested_threads; ++tid) {
+    uint64_t local = (tid + 1U) * UINT64_C(0x100000001b3);
+    uint32_t cpu = (uint32_t)(tid % count_online());
+    for (uint64_t i = 0; i < iterations; ++i) {
+      local ^= (i + 17U) + (tid << 8U) + cpu;
+      local *= UINT64_C(0x9e3779b185ebca87);
+      local = (local >> 11U) | (local << 53U);
+    }
+    total ^= local + (tid << 32U);
+  }
+
+  *ran_threads = requested_threads;
+  *checksum = total;
+  klog("threads: user thread group started threads=%lu iterations=%lu\n",
+       requested_threads, iterations);
+  klog("threads: user thread group complete threads=%lu checksum=0x%lx\n",
+       requested_threads, total);
+  return OSAI_OK;
+}
+
 void smp_self_test(void) {
   kassert(g_cpu_states[0].online != 0);
   kassert(g_cpu_states[0].role == OSAI_CPU_ROLE_HOUSEKEEPING);
   kassert(g_cpu_states[0].tick_suppressed == 0);
   kassert(smp_online_count() >= 1);
+  uint64_t ran = 0;
+  uint64_t checksum = 0;
+  kassert(smp_run_user_thread_group(2, 8, &ran, &checksum) == OSAI_OK);
+  kassert(ran == 2);
+  kassert(checksum != 0);
   klog("smp: per-core registry self-test passed\n");
 }

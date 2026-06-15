@@ -10,7 +10,7 @@ GATES = {
         "report": "qemu-milestone-62-filesystem-gate.json",
         "name": "filesystem",
         "markers": [
-            "mutable-fs: mounted start=1600 metadata=16 journal=2 data=1618 sectors=96 nodes=32 policy=rw",
+            "mutable-fs: mounted start=3072 metadata=16 journal=2 data=3090 sectors=96 nodes=32 policy=rw",
             "mutable-fs: public API self-test passed list=1 stat=3 rename=1 open=3 close=3",
             "mutable-fs: journal replay self-test passed replays=1 journal_writes=1",
             "mutable-fs: self-test passed files=7 directories=11 writes=12 reads=6 deletes=1 commits=1 rollbacks=1 replays=1 rejects=8 checksum_errors=0",

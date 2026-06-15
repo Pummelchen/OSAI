@@ -19,7 +19,7 @@ WORKER_OBJ="$INIT_BUILD_DIR/worker.o"
 WORKER_ELF="$INIT_BUILD_DIR/worker.elf"
 USER_START_OBJ="$INIT_BUILD_DIR/user-start.o"
 USER_LIB_OBJ="$INIT_BUILD_DIR/osai-user.o"
-USER_APPS="osai-shell hello sysinfo systest smptest nettest lstm-xor"
+USER_APPS="osai-shell hello sysinfo systest smptest nettest lstm-xor sshtest mltest"
 
 find_tool() {
   tool_name="$1"
@@ -156,6 +156,7 @@ KERNEL_OBJECTS="
   $KERNEL_BUILD_DIR/syscall.o
   $KERNEL_BUILD_DIR/core_lease.o
   $KERNEL_BUILD_DIR/security.o
+  $KERNEL_BUILD_DIR/remote_login.o
   $KERNEL_BUILD_DIR/cpu_ai_runtime.o
   $KERNEL_BUILD_DIR/user.o
   $KERNEL_BUILD_DIR/model_arena.o
@@ -193,6 +194,7 @@ KERNEL_OBJECTS="
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/user/syscall.c" -o "$KERNEL_BUILD_DIR/syscall.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/core_lease.c" -o "$KERNEL_BUILD_DIR/core_lease.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/security.c" -o "$KERNEL_BUILD_DIR/security.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/remote_login.c" -o "$KERNEL_BUILD_DIR/remote_login.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/user/user.c" -o "$KERNEL_BUILD_DIR/user.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/model_arena.c" -o "$KERNEL_BUILD_DIR/model_arena.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/ai_cell.c" -o "$KERNEL_BUILD_DIR/ai_cell.o"
@@ -350,7 +352,7 @@ printf '%s\n' "Created $IMAGE_PATH"
 
 printf '%s\n' "Creating VirtIO block test image: $TEST_BLOCK_IMAGE"
 rm -f "$TEST_BLOCK_IMAGE"
-dd if=/dev/zero of="$TEST_BLOCK_IMAGE" bs=512 count=2048 status=none
+dd if=/dev/zero of="$TEST_BLOCK_IMAGE" bs=512 count=4096 status=none
 printf 'OSAI-VIRTIO-BLOCK-TEST\n' | dd of="$TEST_BLOCK_IMAGE" bs=512 count=1 conv=notrunc status=none
 "$PYTHON3" "$ROOT_DIR/scripts/create-initfs.py" \
   "$TEST_BLOCK_IMAGE" \

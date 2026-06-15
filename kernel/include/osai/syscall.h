@@ -28,6 +28,10 @@
 #define OSAI_SYSCALL_NET_TCP_CONNECT UINT64_C(22)
 #define OSAI_SYSCALL_SMP_RUN UINT64_C(23)
 #define OSAI_SYSCALL_CPU_AI_DECODE UINT64_C(24)
+#define OSAI_SYSCALL_REMOTE_LOGIN UINT64_C(25)
+#define OSAI_SYSCALL_NET_EXTERNAL_SESSION UINT64_C(26)
+#define OSAI_SYSCALL_THREAD_GROUP_RUN UINT64_C(27)
+#define OSAI_SYSCALL_ML_RUN UINT64_C(28)
 
 #define OSAI_CAP_LOG UINT64_C(1)
 #define OSAI_CAP_EXIT UINT64_C(2)
@@ -42,6 +46,9 @@
 #define OSAI_CAP_NET UINT64_C(1024)
 #define OSAI_CAP_SMP UINT64_C(2048)
 #define OSAI_CAP_CPU_AI UINT64_C(4096)
+#define OSAI_CAP_REMOTE_LOGIN UINT64_C(8192)
+#define OSAI_CAP_THREADS UINT64_C(16384)
+#define OSAI_CAP_ML UINT64_C(32768)
 
 typedef struct osai_syscall_rename_request {
   uint64_t old_path;
@@ -76,6 +83,42 @@ typedef struct osai_syscall_cpu_ai_decode_request {
   uint64_t output_size;
   uint64_t out_size;
 } osai_syscall_cpu_ai_decode_request_t;
+
+typedef struct osai_syscall_remote_login_request {
+  uint64_t user;
+  uint64_t user_size;
+  uint64_t command;
+  uint64_t command_size;
+  uint64_t output;
+  uint64_t output_size;
+  uint64_t out_size;
+} osai_syscall_remote_login_request_t;
+
+typedef struct osai_syscall_net_external_session_request {
+  uint64_t protocol;
+  uint64_t port;
+  uint64_t payload;
+  uint64_t payload_size;
+  uint64_t output;
+  uint64_t output_size;
+  uint64_t out_size;
+} osai_syscall_net_external_session_request_t;
+
+typedef struct osai_syscall_thread_group_request {
+  uint64_t thread_count;
+  uint64_t iterations;
+  uint64_t out_threads;
+  uint64_t out_checksum;
+} osai_syscall_thread_group_request_t;
+
+typedef struct osai_syscall_ml_run_request {
+  uint64_t model_kind;
+  uint64_t input;
+  uint64_t input_size;
+  uint64_t output;
+  uint64_t output_size;
+  uint64_t out_size;
+} osai_syscall_ml_run_request_t;
 
 uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
                           uint64_t arg2);

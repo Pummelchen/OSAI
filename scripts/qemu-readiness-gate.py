@@ -94,7 +94,7 @@ REQUIRED_TELEMETRY_MINIMUMS = {
     "cpu_ai_model_loads": 5,
     "cpu_ai_model_load_failures": 3,
     "cpu_ai_tokenizer_calls": 5,
-    "cpu_ai_runtime_calls": 5,
+    "cpu_ai_runtime_calls": 8,
     "cpu_ai_kv_writes": 19,
     "cpu_ai_shared_weight_binds": 5,
     "cpu_ai_gpu_rejects": 1,
@@ -103,7 +103,7 @@ REQUIRED_TELEMETRY_MINIMUMS = {
     "cpu_ai_model_bytes_loaded": 1,
     "cpu_ai_manifest_validations": 10,
     "cpu_ai_tokenizer_binds": 5,
-    "cpu_ai_kernel_dispatches": 5,
+    "cpu_ai_kernel_dispatches": 8,
     "cpu_ai_admission_rejects": 5,
     "cpu_ai_checksum_failures": 1,
     "security_denied_ops": 22,
@@ -135,24 +135,24 @@ REQUIRED_TELEMETRY_MINIMUMS = {
     "update_records_persisted": 8,
     "update_rollback_points": 2,
     "update_rejects": 2,
-    "network_udp_tx": 4,
-    "network_udp_rx": 4,
+    "network_udp_tx": 5,
+    "network_udp_rx": 5,
     "network_udp_flows": 2,
-    "network_udp_flow_hits": 1,
+    "network_udp_flow_hits": 2,
     "network_udp_expired": 1,
     "network_tcp_connections": 1,
     "network_tcp_timeouts": 1,
     "network_tcp_retransmits": 1,
-    "network_tcp_resets": 1,
+    "network_tcp_resets": 2,
     "network_tcp_established": 2,
     "network_tcp_closed": 2,
-    "network_rx_packets": 10,
-    "network_tx_packets": 9,
-    "network_packet_drops": 3,
-    "network_packet_lifecycle": 29,
-    "network_queue_rx_enqueues": 10,
-    "network_queue_tx_enqueues": 9,
-    "network_queue_completions": 9,
+    "network_rx_packets": 12,
+    "network_tx_packets": 10,
+    "network_packet_drops": 4,
+    "network_packet_lifecycle": 34,
+    "network_queue_rx_enqueues": 12,
+    "network_queue_tx_enqueues": 10,
+    "network_queue_completions": 10,
     "service_child_descriptors": 1,
     "service_tree_edges": 1,
     "service_transitions": 21,
@@ -165,16 +165,16 @@ REQUIRED_TELEMETRY_MINIMUMS = {
     "admin_log_reads": 1,
     "admin_remote_safe_accepts": 1,
     "admin_remote_safe_rejects": 1,
-    "control_plane_syscalls": 81,
+    "control_plane_syscalls": 89,
     "control_plane_denials": 5,
     "service_descriptor_reads": 1,
-    "user_process_transitions": 39,
-    "user_process_loaded": 12,
+    "user_process_transitions": 45,
+    "user_process_loaded": 14,
     "user_process_runnable": 3,
-    "user_process_running": 12,
-    "user_process_exited": 12,
-    "user_process_reclaims": 12,
-    "user_process_scheduled": 12,
+    "user_process_running": 14,
+    "user_process_exited": 14,
+    "user_process_reclaims": 14,
+    "user_process_scheduled": 14,
     "mutable_fs_files": 8,
     "mutable_fs_directories": 13,
     "mutable_fs_writes": 33,
@@ -301,11 +301,11 @@ def validate_contract(contract: Dict[str, Any], failures: List[str]) -> Dict[str
     syscalls = syscall_abi.get("syscalls", [])
     capabilities = syscall_abi.get("capabilities", [])
     check_equal(syscall_abi.get("version"), 1, "contract.syscall_abi.version", failures)
-    if len(syscalls) != 24:
-        failures.append(f"contract.syscall_abi.syscalls expected 24 entries, got {len(syscalls)}")
-    if len(capabilities) != 13:
-        failures.append(f"contract.syscall_abi.capabilities expected 13 entries, got {len(capabilities)}")
-    expected_syscall_numbers = list(range(1, 25))
+    if len(syscalls) != 28:
+        failures.append(f"contract.syscall_abi.syscalls expected 28 entries, got {len(syscalls)}")
+    if len(capabilities) != 16:
+        failures.append(f"contract.syscall_abi.capabilities expected 16 entries, got {len(capabilities)}")
+    expected_syscall_numbers = list(range(1, 29))
     actual_syscall_numbers = [entry.get("number") for entry in syscalls]
     if actual_syscall_numbers != expected_syscall_numbers:
         failures.append(f"contract.syscall_abi numbers expected {expected_syscall_numbers}, got {actual_syscall_numbers}")
@@ -321,7 +321,7 @@ def validate_contract(contract: Dict[str, Any], failures: List[str]) -> Dict[str
     check_equal(filesystem.get("header_bytes"), 2048, "contract.filesystem.header_bytes", failures)
     check_equal(filesystem.get("manifest_path"), "/etc/osai-init.conf", "contract.filesystem.manifest_path", failures)
     required_paths = filesystem.get("required_paths", [])
-    for path in ["/init", "/bin/service-manager", "/bin/osai-worker", "/bin/osai-shell", "/bin/hello", "/bin/sysinfo", "/bin/systest", "/bin/smptest", "/bin/nettest", "/bin/lstm-xor", "/etc/osai-init.conf", "/etc/services/source-index.svc", "/models/cpu-ai-mvp.osaimodel"]:
+    for path in ["/init", "/bin/service-manager", "/bin/osai-worker", "/bin/osai-shell", "/bin/hello", "/bin/sysinfo", "/bin/systest", "/bin/smptest", "/bin/nettest", "/bin/lstm-xor", "/bin/sshtest", "/bin/mltest", "/etc/osai-init.conf", "/etc/services/source-index.svc", "/models/cpu-ai-mvp.osaimodel"]:
         if path not in required_paths:
             failures.append(f"contract.filesystem.required_paths missing {path}")
     check_equal(filesystem.get("max_files"), 16, "contract.filesystem.max_files", failures)
@@ -346,7 +346,7 @@ def validate_contract(contract: Dict[str, Any], failures: List[str]) -> Dict[str
     persistence = contract.get("persistence_format", {})
     check_equal(persistence.get("magic"), "OSAIPST1", "contract.persistence.magic", failures)
     check_equal(persistence.get("version"), 1, "contract.persistence.version", failures)
-    check_equal(persistence.get("sector"), 1536, "contract.persistence.sector", failures)
+    check_equal(persistence.get("sector"), 3000, "contract.persistence.sector", failures)
 
     descriptor = contract.get("service_descriptor_format", {})
     check_equal(descriptor.get("path"), "/etc/services/source-index.svc", "contract.service_descriptor.path", failures)

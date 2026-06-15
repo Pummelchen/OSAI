@@ -14,6 +14,7 @@
 #include <osai/mutable_fs.h>
 #include <osai/pmm.h>
 #include <osai/persistence.h>
+#include <osai/remote_login.h>
 #include <osai/sandbox.h>
 #include <osai/security.h>
 #include <osai/source_index.h>
@@ -85,6 +86,7 @@ void kmain(const osai_boot_info_t *boot) {
   arena_manager_init();
   arena_self_test();
   security_self_test();
+  remote_login_self_test();
   source_index_runtime_init();
   source_index_self_test();
   git_workspace_runtime_init();
@@ -200,7 +202,8 @@ void kmain(const osai_boot_info_t *boot) {
   const uint64_t app_caps = OSAI_CAP_LOG | OSAI_CAP_EXIT | OSAI_CAP_OSCTL |
                             OSAI_CAP_FS_READ | OSAI_CAP_FS_WRITE |
                             OSAI_CAP_TIME | OSAI_CAP_NET | OSAI_CAP_SMP |
-                            OSAI_CAP_CPU_AI;
+                            OSAI_CAP_CPU_AI | OSAI_CAP_REMOTE_LOGIN |
+                            OSAI_CAP_THREADS | OSAI_CAP_ML;
   run_user_app("/bin/osai-shell", 6, app_caps);
   run_user_app("/bin/hello", 7, app_caps);
   run_user_app("/bin/sysinfo", 8, app_caps);
@@ -208,6 +211,8 @@ void kmain(const osai_boot_info_t *boot) {
   run_user_app("/bin/smptest", 10, app_caps);
   run_user_app("/bin/nettest", 11, app_caps);
   run_user_app("/bin/lstm-xor", 12, app_caps);
+  run_user_app("/bin/sshtest", 13, app_caps);
+  run_user_app("/bin/mltest", 14, app_caps);
 
   telemetry_emit_boot_summary();
 
