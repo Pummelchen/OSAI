@@ -1,9 +1,13 @@
+#include <osai/arena.h>
 #include <osai/assert.h>
+#include <osai/cpu_ai_runtime.h>
 #include <osai/initramfs.h>
 #include <osai/klog.h>
 #include <osai/mutable_fs.h>
+#include <osai/network_stack.h>
 #include <osai/security.h>
 #include <osai/service.h>
+#include <osai/smp.h>
 #include <osai/syscall.h>
 #include <osai/timer.h>
 #include <osai/user.h>
@@ -40,11 +44,16 @@ static const osai_syscall_entry_t g_syscall_table[] = {
     {OSAI_SYSCALL_FS_RENAME, "fs_rename", OSAI_CAP_FS_WRITE},
     {OSAI_SYSCALL_FS_LIST, "fs_list", OSAI_CAP_FS_READ},
     {OSAI_SYSCALL_CLOCK_NANOS, "clock_nanos", OSAI_CAP_TIME},
+    {OSAI_SYSCALL_NET_UDP_ECHO, "net_udp_echo", OSAI_CAP_NET},
+    {OSAI_SYSCALL_NET_TCP_CONNECT, "net_tcp_connect", OSAI_CAP_NET},
+    {OSAI_SYSCALL_SMP_RUN, "smp_run", OSAI_CAP_SMP},
+    {OSAI_SYSCALL_CPU_AI_DECODE, "cpu_ai_decode", OSAI_CAP_CPU_AI},
 };
 
 static uint64_t g_control_plane_syscall_count;
 static uint64_t g_control_plane_denial_count;
 static uint64_t g_service_descriptor_read_count;
+static uint32_t g_cpu_ai_app_bound;
 
 static const osai_syscall_entry_t *lookup_syscall(uint64_t number) {
   for (uint32_t i = 0; i < sizeof(g_syscall_table) / sizeof(g_syscall_table[0]);
@@ -81,7 +90,7 @@ static void bytes_copy(void *dst, const void *src, uint64_t size) {
 static int is_control_plane_syscall(uint64_t syscall) {
   return syscall == OSAI_SYSCALL_OSCTL ||
          (syscall >= OSAI_SYSCALL_READ_SERVICE_DESCRIPTOR &&
-          syscall <= OSAI_SYSCALL_CLOCK_NANOS);
+          syscall <= OSAI_SYSCALL_CPU_AI_DECODE);
 }
 
 static uint64_t reject_syscall(uint64_t syscall, uint64_t arg0, uint64_t arg1,
@@ -99,6 +108,27 @@ static uint64_t complete_control_syscall(uint64_t value) {
   ++g_control_plane_syscall_count;
   user_process_note_syscall(0);
   return value;
+}
+
+static osai_status_t ensure_app_cpu_ai_binding(void) {
+  if (g_cpu_ai_app_bound != 0) {
+    return OSAI_OK;
+  }
+
+  const osai_arena_t *kv = 0;
+  osai_status_t status =
+      arena_create(30, OSAI_ARENA_KV_CACHE, 3, "cpu-ai-user-kv", 4096, 0,
+                   &kv);
+  if (status != OSAI_OK || kv == 0) {
+    return status;
+  }
+  status = cpu_ai_runtime_bind_model_with_kv(3, 2, kv->base, kv->size);
+  if (status != OSAI_OK) {
+    (void)arena_destroy(30);
+    return status;
+  }
+  g_cpu_ai_app_bound = 1;
+  return OSAI_OK;
 }
 
 uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
@@ -371,6 +401,111 @@ uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
     return complete_control_syscall(out_size);
   }
 
+  if (syscall == OSAI_SYSCALL_NET_UDP_ECHO) {
+    osai_syscall_net_request_t request;
+    uint8_t payload[64];
+    uint64_t echoed = 0;
+    if (arg1 != sizeof(request) ||
+        vmm_validate_user_buffer(arg0, sizeof(request), 0) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "bad-net-udp-request");
+    }
+    bytes_copy(&request, (const void *)(uintptr_t)arg0, sizeof(request));
+    if (request.payload_size == 0 || request.payload_size > sizeof(payload) ||
+        vmm_validate_user_buffer(request.payload, request.payload_size, 0) !=
+            OSAI_OK ||
+        vmm_validate_user_buffer(request.out_value, sizeof(echoed),
+                                 OSAI_VMM_WRITABLE) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "net-udp-denied");
+    }
+    bytes_copy(payload, (const void *)(uintptr_t)request.payload,
+               request.payload_size);
+    if (network_stack_app_udp_echo(payload, request.payload_size, &echoed) !=
+        OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "net-udp-failed");
+    }
+    bytes_copy((void *)(uintptr_t)request.out_value, &echoed, sizeof(echoed));
+    return complete_control_syscall(echoed);
+  }
+
+  if (syscall == OSAI_SYSCALL_NET_TCP_CONNECT) {
+    osai_syscall_net_request_t request;
+    uint64_t round_trips = 0;
+    if (arg1 != sizeof(request) ||
+        vmm_validate_user_buffer(arg0, sizeof(request), 0) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "bad-net-tcp-request");
+    }
+    bytes_copy(&request, (const void *)(uintptr_t)arg0, sizeof(request));
+    if (vmm_validate_user_buffer(request.out_value, sizeof(round_trips),
+                                 OSAI_VMM_WRITABLE) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "net-tcp-denied");
+    }
+    if (network_stack_app_tcp_connect(&round_trips) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "net-tcp-failed");
+    }
+    bytes_copy((void *)(uintptr_t)request.out_value, &round_trips,
+               sizeof(round_trips));
+    return complete_control_syscall(round_trips);
+  }
+
+  if (syscall == OSAI_SYSCALL_SMP_RUN) {
+    osai_syscall_smp_request_t request;
+    uint64_t ran_workers = 0;
+    uint64_t checksum = 0;
+    if (arg1 != sizeof(request) ||
+        vmm_validate_user_buffer(arg0, sizeof(request), 0) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "bad-smp-request");
+    }
+    bytes_copy(&request, (const void *)(uintptr_t)arg0, sizeof(request));
+    if (vmm_validate_user_buffer(request.out_workers, sizeof(ran_workers),
+                                 OSAI_VMM_WRITABLE) != OSAI_OK ||
+        vmm_validate_user_buffer(request.out_checksum, sizeof(checksum),
+                                 OSAI_VMM_WRITABLE) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "smp-run-denied");
+    }
+    if (smp_run_user_task_set(request.worker_count, request.iterations,
+                              &ran_workers, &checksum) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "smp-run-failed");
+    }
+    bytes_copy((void *)(uintptr_t)request.out_workers, &ran_workers,
+               sizeof(ran_workers));
+    bytes_copy((void *)(uintptr_t)request.out_checksum, &checksum,
+               sizeof(checksum));
+    return complete_control_syscall(ran_workers);
+  }
+
+  if (syscall == OSAI_SYSCALL_CPU_AI_DECODE) {
+    osai_syscall_cpu_ai_decode_request_t request;
+    uint8_t input[32];
+    uint64_t out_size = 0;
+    if (arg1 != sizeof(request) ||
+        vmm_validate_user_buffer(arg0, sizeof(request), 0) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "bad-cpu-ai-request");
+    }
+    bytes_copy(&request, (const void *)(uintptr_t)arg0, sizeof(request));
+    if (request.input_size == 0 || request.input_size > sizeof(input) ||
+        request.output_size == 0 ||
+        vmm_validate_user_buffer(request.input, request.input_size, 0) !=
+            OSAI_OK ||
+        vmm_validate_user_buffer(request.output, request.output_size,
+                                 OSAI_VMM_WRITABLE) != OSAI_OK ||
+        vmm_validate_user_buffer(request.out_size, sizeof(out_size),
+                                 OSAI_VMM_WRITABLE) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "cpu-ai-denied");
+    }
+    bytes_copy(input, (const void *)(uintptr_t)request.input,
+               request.input_size);
+    if (ensure_app_cpu_ai_binding() != OSAI_OK ||
+        cpu_ai_runtime_decode_piece(3, input, request.input_size,
+                                    (char *)(uintptr_t)request.output,
+                                    request.output_size, &out_size) !=
+            OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "cpu-ai-failed");
+    }
+    bytes_copy((void *)(uintptr_t)request.out_size, &out_size,
+               sizeof(out_size));
+    return complete_control_syscall(out_size);
+  }
+
   return reject_syscall(syscall, arg0, arg1, "unreachable");
 }
 
@@ -395,6 +530,10 @@ void syscall_self_test(void) {
   kassert(lookup_syscall(OSAI_SYSCALL_FS_RENAME) != 0);
   kassert(lookup_syscall(OSAI_SYSCALL_FS_LIST) != 0);
   kassert(lookup_syscall(OSAI_SYSCALL_CLOCK_NANOS) != 0);
+  kassert(lookup_syscall(OSAI_SYSCALL_NET_UDP_ECHO) != 0);
+  kassert(lookup_syscall(OSAI_SYSCALL_NET_TCP_CONNECT) != 0);
+  kassert(lookup_syscall(OSAI_SYSCALL_SMP_RUN) != 0);
+  kassert(lookup_syscall(OSAI_SYSCALL_CPU_AI_DECODE) != 0);
   kassert(lookup_syscall(99) == 0);
   klog("syscall: table self-test passed entries=%lu\n",
        (uint64_t)(sizeof(g_syscall_table) / sizeof(g_syscall_table[0])));

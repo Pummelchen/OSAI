@@ -24,6 +24,10 @@
 #define OSAI_SYSCALL_FS_RENAME UINT64_C(18)
 #define OSAI_SYSCALL_FS_LIST UINT64_C(19)
 #define OSAI_SYSCALL_CLOCK_NANOS UINT64_C(20)
+#define OSAI_SYSCALL_NET_UDP_ECHO UINT64_C(21)
+#define OSAI_SYSCALL_NET_TCP_CONNECT UINT64_C(22)
+#define OSAI_SYSCALL_SMP_RUN UINT64_C(23)
+#define OSAI_SYSCALL_CPU_AI_DECODE UINT64_C(24)
 
 #define OSAI_CAP_LOG UINT64_C(1)
 #define OSAI_CAP_EXIT UINT64_C(2)
@@ -35,6 +39,9 @@
 #define OSAI_CAP_ADMIN UINT64_C(128)
 #define OSAI_CAP_FS_WRITE UINT64_C(256)
 #define OSAI_CAP_TIME UINT64_C(512)
+#define OSAI_CAP_NET UINT64_C(1024)
+#define OSAI_CAP_SMP UINT64_C(2048)
+#define OSAI_CAP_CPU_AI UINT64_C(4096)
 
 typedef struct osai_syscall_rename_request {
   uint64_t old_path;
@@ -48,6 +55,27 @@ typedef struct osai_syscall_list_request {
   uint64_t buffer_size;
   uint64_t out_size;
 } osai_syscall_list_request_t;
+
+typedef struct osai_syscall_net_request {
+  uint64_t payload;
+  uint64_t payload_size;
+  uint64_t out_value;
+} osai_syscall_net_request_t;
+
+typedef struct osai_syscall_smp_request {
+  uint64_t worker_count;
+  uint64_t iterations;
+  uint64_t out_workers;
+  uint64_t out_checksum;
+} osai_syscall_smp_request_t;
+
+typedef struct osai_syscall_cpu_ai_decode_request {
+  uint64_t input;
+  uint64_t input_size;
+  uint64_t output;
+  uint64_t output_size;
+  uint64_t out_size;
+} osai_syscall_cpu_ai_decode_request_t;
 
 uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
                           uint64_t arg2);

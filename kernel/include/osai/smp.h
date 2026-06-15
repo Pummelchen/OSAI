@@ -34,6 +34,10 @@ uint64_t smp_total_involuntary_context_switch_count(void);
 uint32_t smp_irq_isolated_mask(void);
 osai_status_t smp_mark_core_leased(uint32_t cpu_id, uint32_t owner_id);
 osai_status_t smp_release_core_lease(uint32_t cpu_id, uint32_t owner_id);
+osai_status_t smp_run_user_task_set(uint64_t requested_workers,
+                                    uint64_t iterations,
+                                    uint64_t *ran_workers,
+                                    uint64_t *checksum);
 void smp_self_test(void);
 void smp_secondary_main(uint64_t cpu_id);
 

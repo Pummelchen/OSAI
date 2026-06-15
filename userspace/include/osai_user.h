@@ -18,6 +18,10 @@ typedef int s32;
 #define OSAI_SYSCALL_FS_RENAME 18ULL
 #define OSAI_SYSCALL_FS_LIST 19ULL
 #define OSAI_SYSCALL_CLOCK_NANOS 20ULL
+#define OSAI_SYSCALL_NET_UDP_ECHO 21ULL
+#define OSAI_SYSCALL_NET_TCP_CONNECT 22ULL
+#define OSAI_SYSCALL_SMP_RUN 23ULL
+#define OSAI_SYSCALL_CPU_AI_DECODE 24ULL
 
 #define OSAI_MFS_OPEN_READ 1U
 #define OSAI_MFS_OPEN_WRITE 2U
@@ -45,6 +49,27 @@ typedef struct osai_list_request {
   u64 out_size;
 } osai_list_request_t;
 
+typedef struct osai_net_request {
+  u64 payload;
+  u64 payload_size;
+  u64 out_value;
+} osai_net_request_t;
+
+typedef struct osai_smp_request {
+  u64 worker_count;
+  u64 iterations;
+  u64 out_workers;
+  u64 out_checksum;
+} osai_smp_request_t;
+
+typedef struct osai_cpu_ai_decode_request {
+  u64 input;
+  u64 input_size;
+  u64 output;
+  u64 output_size;
+  u64 out_size;
+} osai_cpu_ai_decode_request_t;
+
 u64 osai_syscall3(u64 number, u64 arg0, u64 arg1, u64 arg2);
 u64 osai_strlen(const char *text);
 void osai_log(const char *text);
@@ -61,6 +86,12 @@ int osai_fs_read(int fd, void *buffer, u64 size);
 int osai_fs_write(int fd, const void *buffer, u64 size);
 int osai_fs_close(int fd);
 int osai_fs_stat(const char *path, osai_mfs_stat_user_t *stat);
+int osai_net_udp_echo(const void *payload, u64 payload_size, u64 *echoed_bytes);
+int osai_net_tcp_connect(u64 *round_trips);
+int osai_smp_run(u64 worker_count, u64 iterations, u64 *ran_workers,
+                 u64 *checksum);
+int osai_cpu_ai_decode(const void *input, u64 input_size, char *output,
+                       u64 output_size, u64 *out_size);
 int osai_write_file(const char *path, const char *content);
 int osai_read_file(const char *path, char *buffer, u64 buffer_size);
 void osai_memzero(void *buffer, u64 size);

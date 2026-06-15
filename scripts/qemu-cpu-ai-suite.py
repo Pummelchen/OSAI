@@ -16,6 +16,7 @@ MARKERS = {
         "cpu-ai-runtime: tokenizer/runtime boundary self-test passed tokenizer_calls=2 runtime_calls=2",
         "cpu-ai-runtime: tokenizer binding and CPU dispatch self-test passed tokenizer_binds=2 kernel_dispatches=2",
         "cpu-ai-runtime: deterministic decode fixture input=ABCD output=1B1F2327",
+        "/bin/lstm-xor: cpu-ai runtime decode=",
     ],
     "shared_weights_private_kv": [
         "cpu-ai-runtime: multi-cell shared weights self-test passed loads=2 shared_binds=2 kv_writes=8",
@@ -52,9 +53,9 @@ def main() -> int:
         failures.extend(f"{name} missing marker: {marker}" for marker in missing)
 
     counters_ok = (
-        telemetry.get("cpu_ai_model_loads", 0) >= 4
-        and telemetry.get("cpu_ai_shared_weight_binds", 0) >= 4
-        and telemetry.get("cpu_ai_kv_writes", 0) >= 16
+        telemetry.get("cpu_ai_model_loads", 0) >= 5
+        and telemetry.get("cpu_ai_shared_weight_binds", 0) >= 5
+        and telemetry.get("cpu_ai_kv_writes", 0) >= 19
         and telemetry.get("cpu_ai_gpu_rejects", 0) >= 1
     )
     checks.append(result("telemetry_counters", counters_ok,

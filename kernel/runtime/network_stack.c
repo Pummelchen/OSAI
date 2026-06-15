@@ -1159,6 +1159,128 @@ static void emit_latency_snapshot(uint64_t *udp50, uint64_t *udp95,
   *tcp999 = network_stack_tcp_latency_p999_ns();
 }
 
+static void build_app_udp_frame(uint8_t *frame, uint64_t payload_len) {
+  bytes_zero(frame, NETWORK_BUFFER_SIZE);
+  frame[12U] = 0x08;
+  frame[13U] = 0x00;
+  frame[14U] = 0x45;
+  frame[15U] = 0x00;
+  const uint16_t total = (uint16_t)(20U + 8U + payload_len);
+  frame[16U] = (uint8_t)(total >> 8U);
+  frame[17U] = (uint8_t)total;
+  frame[22U] = 64;
+  frame[23U] = NETWORK_IP_PROTO_UDP;
+  frame[26U] = 10;
+  frame[27U] = 0;
+  frame[28U] = 2;
+  frame[29U] = 15;
+  frame[30U] = 10;
+  frame[31U] = 0;
+  frame[32U] = 2;
+  frame[33U] = 2;
+  frame[34U] = 0x60;
+  frame[35U] = 0x01;
+  frame[36U] = 0x22;
+  frame[37U] = 0xB8;
+  const uint16_t udp_len = (uint16_t)(8U + payload_len);
+  frame[38U] = (uint8_t)(udp_len >> 8U);
+  frame[39U] = (uint8_t)udp_len;
+}
+
+static void build_app_tcp_frame(uint8_t *frame, uint8_t flags,
+                                uint16_t remote_port) {
+  bytes_zero(frame, NETWORK_BUFFER_SIZE);
+  frame[12U] = 0x08;
+  frame[13U] = 0x00;
+  frame[14U] = 0x45;
+  frame[15U] = 0x00;
+  frame[16U] = 0x00;
+  frame[17U] = 0x2c;
+  frame[22U] = 64;
+  frame[23U] = NETWORK_IP_PROTO_TCP;
+  frame[26U] = 10;
+  frame[27U] = 0;
+  frame[28U] = 2;
+  frame[29U] = 15;
+  frame[30U] = 10;
+  frame[31U] = 0;
+  frame[32U] = 2;
+  frame[33U] = 2;
+  frame[34U] = (uint8_t)(remote_port >> 8U);
+  frame[35U] = (uint8_t)remote_port;
+  frame[36U] = 0x00;
+  frame[37U] = 0x16;
+  frame[41U] = 1;
+  frame[46U] = 0x60;
+  frame[47U] = flags;
+}
+
+osai_status_t network_stack_app_udp_echo(const uint8_t *payload,
+                                         uint64_t payload_len,
+                                         uint64_t *echoed_bytes) {
+  if (payload == 0 || echoed_bytes == 0 || payload_len == 0 ||
+      payload_len > 64U) {
+    return OSAI_ERR_INVALID;
+  }
+
+  uint8_t frame[NETWORK_BUFFER_SIZE];
+  build_app_udp_frame(frame, payload_len);
+  for (uint64_t i = 0; i < payload_len; ++i) {
+    frame[42U + i] = payload[i];
+  }
+
+  const uint32_t queue_id = 3U;
+  const uint32_t cell_id = 3U;
+  if (network_stack_bind_queue(cell_id, queue_id, 0x8U) != OSAI_OK) {
+    return OSAI_ERR_BUSY;
+  }
+  osai_status_t status = network_stack_process_udp_frame(frame, 42U + payload_len);
+  kassert(network_stack_release_queue(queue_id, cell_id) == OSAI_OK);
+  if (status != OSAI_OK) {
+    return status;
+  }
+  *echoed_bytes = payload_len;
+  klog("network: app udp echo payload=%lu queue=%u cell=%u\n",
+       payload_len, queue_id, cell_id);
+  return OSAI_OK;
+}
+
+osai_status_t network_stack_app_tcp_connect(uint64_t *round_trips) {
+  if (round_trips == 0) {
+    return OSAI_ERR_INVALID;
+  }
+
+  const uint32_t queue_id = 3U;
+  const uint32_t cell_id = 3U;
+  uint8_t syn[NETWORK_BUFFER_SIZE];
+  uint8_t ack[NETWORK_BUFFER_SIZE];
+  uint8_t rst[NETWORK_BUFFER_SIZE];
+  const uint16_t remote_port = 0x6010U;
+
+  if (network_stack_bind_queue(cell_id, queue_id, 0x8U) != OSAI_OK) {
+    return OSAI_ERR_BUSY;
+  }
+  build_app_tcp_frame(syn, NETWORK_TCP_FLAG_SYN, remote_port);
+  build_app_tcp_frame(ack, NETWORK_TCP_FLAG_ACK, remote_port);
+  build_app_tcp_frame(rst, NETWORK_TCP_FLAG_RST, remote_port);
+
+  osai_status_t status = network_stack_process_tcp_frame(syn, 58U);
+  if (status == OSAI_OK) {
+    status = network_stack_process_tcp_frame(ack, 58U);
+  }
+  if (status == OSAI_OK) {
+    status = network_stack_process_tcp_frame(rst, 58U);
+  }
+  kassert(network_stack_release_queue(queue_id, cell_id) == OSAI_OK);
+  if (status != OSAI_OK && status != OSAI_ERR_INVALID) {
+    return status;
+  }
+  *round_trips = 2U;
+  klog("network: app tcp connect-close queue=%u cell=%u round_trips=%lu\n",
+       queue_id, cell_id, *round_trips);
+  return OSAI_OK;
+}
+
 void network_stack_self_test(void) {
   uint8_t frame_udp[NETWORK_BUFFER_SIZE];
   uint8_t frame_udp_bad[NETWORK_BUFFER_SIZE];

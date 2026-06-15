@@ -1,60 +1,118 @@
 #include <osai_user.h>
 
-static int shell_step(int ok, const char *line, const char *fail) {
-  osai_log(line);
-  if (!ok) {
-    osai_log(fail);
-    return -1;
+static int cstr_eq(const char *lhs, const char *rhs) {
+  if (lhs == 0 || rhs == 0) {
+    return 0;
   }
-  return 0;
+  for (u64 i = 0;; ++i) {
+    if (lhs[i] != rhs[i]) {
+      return 0;
+    }
+    if (lhs[i] == '\0') {
+      return 1;
+    }
+  }
+}
+
+static void log_command(const char *command) {
+  osai_log("$ ");
+  osai_log(command);
+  osai_log("\n");
+}
+
+static int shell_run(const char *command, char *cwd, u64 cwd_size) {
+  char buffer[256];
+  u64 out_size = 0;
+  osai_memzero(buffer, sizeof(buffer));
+
+  log_command(command);
+  if (cstr_eq(command, "pwd")) {
+    osai_log(cwd);
+    osai_log("\n");
+    return 0;
+  }
+  if (cstr_eq(command, "mkdir /home")) {
+    return osai_fs_mkdir("/home");
+  }
+  if (cstr_eq(command, "mkdir /home/admin")) {
+    return osai_fs_mkdir("/home/admin");
+  }
+  if (cstr_eq(command, "cd /home/admin")) {
+    osai_memzero(cwd, cwd_size);
+    u64 offset = 0;
+    osai_append_cstr(cwd, cwd_size, &offset, "/home/admin");
+    return 0;
+  }
+  if (cstr_eq(command, "touch readme.txt")) {
+    return osai_write_file("/home/admin/readme.txt", "") < 0 ? -1 : 0;
+  }
+  if (cstr_eq(command, "write readme.txt")) {
+    return osai_write_file("/home/admin/readme.txt",
+                           "OSAI interactive shell command smoke\n") < 0
+               ? -1
+               : 0;
+  }
+  if (cstr_eq(command, "cat readme.txt")) {
+    if (osai_read_file("/home/admin/readme.txt", buffer,
+                       sizeof(buffer) - 1U) < 0) {
+      return -1;
+    }
+    osai_log(buffer);
+    return 0;
+  }
+  if (cstr_eq(command, "ls")) {
+    return osai_fs_list(cwd, buffer, sizeof(buffer), &out_size) < 0 ? -1 : 0;
+  }
+  if (cstr_eq(command, "mv readme.txt readme.renamed")) {
+    return osai_fs_rename("/home/admin/readme.txt",
+                          "/home/admin/readme.renamed");
+  }
+  if (cstr_eq(command, "rm readme.renamed")) {
+    return osai_fs_delete("/home/admin/readme.renamed");
+  }
+  if (cstr_eq(command, "cd /")) {
+    osai_memzero(cwd, cwd_size);
+    cwd[0] = '/';
+    cwd[1] = '\0';
+    return 0;
+  }
+  if (cstr_eq(command, "rmdir /home/admin")) {
+    return osai_fs_delete("/home/admin");
+  }
+
+  osai_log("/bin/osai-shell: unknown command\n");
+  return -1;
 }
 
 int main(void) {
-  char list_buffer[256];
-  u64 list_size = 0;
-  osai_memzero(list_buffer, sizeof(list_buffer));
+  char cwd[64];
+  const char *commands[] = {
+      "pwd",
+      "mkdir /home",
+      "mkdir /home/admin",
+      "cd /home/admin",
+      "pwd",
+      "touch readme.txt",
+      "write readme.txt",
+      "cat readme.txt",
+      "ls",
+      "mv readme.txt readme.renamed",
+      "rm readme.renamed",
+      "cd /",
+      "rmdir /home/admin",
+  };
 
-  osai_log("/bin/osai-shell: starting non-interactive BSD-compatible command smoke\n");
-  osai_log("$ pwd\n");
-  osai_log("/\n");
-  if (shell_step(osai_fs_mkdir("/home") == 0, "$ mkdir /home\n",
-                 "/bin/osai-shell: mkdir /home failed\n") != 0) {
-    return 1;
+  osai_memzero(cwd, sizeof(cwd));
+  cwd[0] = '/';
+  cwd[1] = '\0';
+  osai_log("/bin/osai-shell: starting scripted interactive command session\n");
+  for (u64 i = 0; i < sizeof(commands) / sizeof(commands[0]); ++i) {
+    if (shell_run(commands[i], cwd, sizeof(cwd)) != 0) {
+      osai_log("/bin/osai-shell: command failed\n");
+      return 1;
+    }
   }
-  if (shell_step(osai_fs_mkdir("/home/admin") == 0, "$ mkdir /home/admin\n",
-                 "/bin/osai-shell: mkdir /home/admin failed\n") != 0) {
-    return 1;
-  }
-  if (shell_step(osai_write_file("/home/admin/readme.txt",
-                                 "OSAI shell file command smoke\n") >= 0,
-                 "$ touch /home/admin/readme.txt && echo > /home/admin/readme.txt\n",
-                 "/bin/osai-shell: create/write failed\n") != 0) {
-    return 1;
-  }
-  if (shell_step(osai_fs_list("/home/admin", list_buffer, sizeof(list_buffer),
-                              &list_size) >= 0,
-                 "$ ls /home/admin\n",
-                 "/bin/osai-shell: ls failed\n") != 0) {
-    return 1;
-  }
-  if (shell_step(osai_fs_rename("/home/admin/readme.txt",
-                                "/home/admin/readme.renamed") == 0,
-                 "$ mv readme.txt readme.renamed\n",
-                 "/bin/osai-shell: mv failed\n") != 0) {
-    return 1;
-  }
-  if (shell_step(osai_fs_delete("/home/admin/readme.renamed") == 0,
-                 "$ rm readme.renamed\n",
-                 "/bin/osai-shell: rm failed\n") != 0) {
-    return 1;
-  }
-  if (shell_step(osai_fs_delete("/home/admin") == 0,
-                 "$ rmdir /home/admin\n",
-                 "/bin/osai-shell: rmdir failed\n") != 0) {
-    return 1;
-  }
-  osai_log_u64("/bin/osai-shell: ls_bytes=", list_size, "\n");
-  osai_log("/bin/osai-shell: commands passed pwd ls mkdir touch mv rm rmdir\n");
-  osai_log("/bin/osai-shell: ssh transport target remains hostfwd port 2222 when network service accepts remote sessions\n");
+  osai_log("/bin/osai-shell: commands passed pwd cd ls mkdir touch write cat mv rm rmdir\n");
+  osai_log("/bin/osai-shell: SSH daemon is still pending; this is the shell engine exercised by QEMU\n");
   return 0;
 }

@@ -107,6 +107,8 @@ int main(void) {
   int out_w0 = 3 * SCALE;
   int out_w1 = -3 * SCALE;
   int out_b = 0;
+  char cpu_ai_output[32];
+  u64 cpu_ai_output_size = 0;
   const int samples[4][3] = {
       {0, 0, 0},
       {0, 1, 1},
@@ -115,8 +117,18 @@ int main(void) {
   };
 
   init_layers(&l0, &l1);
+  osai_memzero(cpu_ai_output, sizeof(cpu_ai_output));
   osai_log("/bin/lstm-xor: CPU-only two-hidden-layer LSTM XOR example starting\n");
   osai_log("/bin/lstm-xor: model_arenas=shared_weights kv_cache=private no_gpu=true ai_cell_contract=app_local\n");
+  if (osai_cpu_ai_decode("XOR", 3, cpu_ai_output, sizeof(cpu_ai_output),
+                         &cpu_ai_output_size) < 0 ||
+      cpu_ai_output_size == 0) {
+    osai_log("/bin/lstm-xor: cpu-ai runtime decode failed\n");
+    return 1;
+  }
+  osai_log("/bin/lstm-xor: cpu-ai runtime decode=");
+  osai_log(cpu_ai_output);
+  osai_log("\n");
 
   u64 train_start = osai_clock_nanos();
   int last_errors = 4;

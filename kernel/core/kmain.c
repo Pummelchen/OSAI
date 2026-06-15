@@ -199,7 +199,8 @@ void kmain(const osai_boot_info_t *boot) {
 
   const uint64_t app_caps = OSAI_CAP_LOG | OSAI_CAP_EXIT | OSAI_CAP_OSCTL |
                             OSAI_CAP_FS_READ | OSAI_CAP_FS_WRITE |
-                            OSAI_CAP_TIME;
+                            OSAI_CAP_TIME | OSAI_CAP_NET | OSAI_CAP_SMP |
+                            OSAI_CAP_CPU_AI;
   run_user_app("/bin/osai-shell", 6, app_caps);
   run_user_app("/bin/hello", 7, app_caps);
   run_user_app("/bin/sysinfo", 8, app_caps);

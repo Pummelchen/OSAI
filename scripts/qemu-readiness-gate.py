@@ -91,19 +91,19 @@ REQUIRED_TELEMETRY_MINIMUMS = {
     "ai_cell_workspace_binds": 2,
     "ai_cell_workspace_releases": 2,
     "ai_cell_conflicts": 3,
-    "cpu_ai_model_loads": 4,
+    "cpu_ai_model_loads": 5,
     "cpu_ai_model_load_failures": 3,
-    "cpu_ai_tokenizer_calls": 4,
-    "cpu_ai_runtime_calls": 4,
-    "cpu_ai_kv_writes": 16,
-    "cpu_ai_shared_weight_binds": 4,
+    "cpu_ai_tokenizer_calls": 5,
+    "cpu_ai_runtime_calls": 5,
+    "cpu_ai_kv_writes": 19,
+    "cpu_ai_shared_weight_binds": 5,
     "cpu_ai_gpu_rejects": 1,
     "cpu_ai_model_file_loads": 1,
     "cpu_ai_model_file_rejects": 3,
     "cpu_ai_model_bytes_loaded": 1,
-    "cpu_ai_manifest_validations": 9,
-    "cpu_ai_tokenizer_binds": 4,
-    "cpu_ai_kernel_dispatches": 4,
+    "cpu_ai_manifest_validations": 10,
+    "cpu_ai_tokenizer_binds": 5,
+    "cpu_ai_kernel_dispatches": 5,
     "cpu_ai_admission_rejects": 5,
     "cpu_ai_checksum_failures": 1,
     "security_denied_ops": 22,
@@ -135,23 +135,24 @@ REQUIRED_TELEMETRY_MINIMUMS = {
     "update_records_persisted": 8,
     "update_rollback_points": 2,
     "update_rejects": 2,
-    "network_udp_tx": 3,
-    "network_udp_rx": 3,
-    "network_udp_flows": 1,
+    "network_udp_tx": 4,
+    "network_udp_rx": 4,
+    "network_udp_flows": 2,
     "network_udp_flow_hits": 1,
     "network_udp_expired": 1,
     "network_tcp_connections": 1,
     "network_tcp_timeouts": 1,
     "network_tcp_retransmits": 1,
-    "network_tcp_established": 1,
-    "network_tcp_closed": 1,
-    "network_rx_packets": 6,
-    "network_tx_packets": 6,
-    "network_packet_drops": 2,
-    "network_packet_lifecycle": 18,
-    "network_queue_rx_enqueues": 6,
-    "network_queue_tx_enqueues": 6,
-    "network_queue_completions": 6,
+    "network_tcp_resets": 1,
+    "network_tcp_established": 2,
+    "network_tcp_closed": 2,
+    "network_rx_packets": 10,
+    "network_tx_packets": 9,
+    "network_packet_drops": 3,
+    "network_packet_lifecycle": 29,
+    "network_queue_rx_enqueues": 10,
+    "network_queue_tx_enqueues": 9,
+    "network_queue_completions": 9,
     "service_child_descriptors": 1,
     "service_tree_edges": 1,
     "service_transitions": 21,
@@ -164,7 +165,7 @@ REQUIRED_TELEMETRY_MINIMUMS = {
     "admin_log_reads": 1,
     "admin_remote_safe_accepts": 1,
     "admin_remote_safe_rejects": 1,
-    "control_plane_syscalls": 72,
+    "control_plane_syscalls": 81,
     "control_plane_denials": 5,
     "service_descriptor_reads": 1,
     "user_process_transitions": 39,
@@ -176,13 +177,13 @@ REQUIRED_TELEMETRY_MINIMUMS = {
     "user_process_scheduled": 12,
     "mutable_fs_files": 8,
     "mutable_fs_directories": 13,
-    "mutable_fs_writes": 32,
-    "mutable_fs_reads": 11,
+    "mutable_fs_writes": 33,
+    "mutable_fs_reads": 12,
     "mutable_fs_renames": 3,
     "mutable_fs_lists": 3,
     "mutable_fs_stats": 5,
-    "mutable_fs_opens": 8,
-    "mutable_fs_closes": 8,
+    "mutable_fs_opens": 10,
+    "mutable_fs_closes": 10,
     "mutable_fs_rejects": 8,
 }
 
@@ -300,11 +301,11 @@ def validate_contract(contract: Dict[str, Any], failures: List[str]) -> Dict[str
     syscalls = syscall_abi.get("syscalls", [])
     capabilities = syscall_abi.get("capabilities", [])
     check_equal(syscall_abi.get("version"), 1, "contract.syscall_abi.version", failures)
-    if len(syscalls) != 15:
-        failures.append(f"contract.syscall_abi.syscalls expected 15 entries, got {len(syscalls)}")
-    if len(capabilities) != 9:
-        failures.append(f"contract.syscall_abi.capabilities expected 9 entries, got {len(capabilities)}")
-    expected_syscall_numbers = list(range(1, 16))
+    if len(syscalls) != 24:
+        failures.append(f"contract.syscall_abi.syscalls expected 24 entries, got {len(syscalls)}")
+    if len(capabilities) != 13:
+        failures.append(f"contract.syscall_abi.capabilities expected 13 entries, got {len(capabilities)}")
+    expected_syscall_numbers = list(range(1, 25))
     actual_syscall_numbers = [entry.get("number") for entry in syscalls]
     if actual_syscall_numbers != expected_syscall_numbers:
         failures.append(f"contract.syscall_abi numbers expected {expected_syscall_numbers}, got {actual_syscall_numbers}")

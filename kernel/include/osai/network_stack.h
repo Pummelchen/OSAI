@@ -22,6 +22,10 @@ osai_status_t network_stack_process_udp_frame(const uint8_t *frame,
                                             uint64_t frame_len);
 osai_status_t network_stack_process_tcp_frame(const uint8_t *frame,
                                             uint64_t frame_len);
+osai_status_t network_stack_app_udp_echo(const uint8_t *payload,
+                                         uint64_t payload_len,
+                                         uint64_t *echoed_bytes);
+osai_status_t network_stack_app_tcp_connect(uint64_t *round_trips);
 uint64_t network_stack_expire_udp_flows(uint64_t now_ns);
 uint64_t network_stack_retransmit_tcp_flows(uint64_t now_ns);
 uint64_t network_stack_expire_tcp_flows(uint64_t now_ns);

@@ -399,6 +399,8 @@ static osai_status_t write_metadata(void) {
     }
     if (virtio_block_write_sector(MFS_START_SECTOR + i, sector,
                                   sizeof(sector)) != OSAI_OK) {
+      klog("mutable-fs: metadata write failed sector=%lu capacity=%lu\n",
+           MFS_START_SECTOR + i, virtio_block_capacity_sectors());
       ++g_reject_count;
       return OSAI_ERR_IO;
     }

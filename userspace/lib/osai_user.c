@@ -127,13 +127,63 @@ int osai_fs_stat(const char *path, osai_mfs_stat_user_t *stat) {
   return rc == ~0ULL ? -1 : 0;
 }
 
+int osai_net_udp_echo(const void *payload, u64 payload_size,
+                      u64 *echoed_bytes) {
+  osai_net_request_t request;
+  request.payload = (u64)payload;
+  request.payload_size = payload_size;
+  request.out_value = (u64)echoed_bytes;
+  u64 rc = osai_syscall3(OSAI_SYSCALL_NET_UDP_ECHO, (u64)&request,
+                         sizeof(request), 0);
+  return rc == ~0ULL ? -1 : (int)rc;
+}
+
+int osai_net_tcp_connect(u64 *round_trips) {
+  osai_net_request_t request;
+  request.payload = 0;
+  request.payload_size = 0;
+  request.out_value = (u64)round_trips;
+  u64 rc = osai_syscall3(OSAI_SYSCALL_NET_TCP_CONNECT, (u64)&request,
+                         sizeof(request), 0);
+  return rc == ~0ULL ? -1 : (int)rc;
+}
+
+int osai_smp_run(u64 worker_count, u64 iterations, u64 *ran_workers,
+                 u64 *checksum) {
+  osai_smp_request_t request;
+  request.worker_count = worker_count;
+  request.iterations = iterations;
+  request.out_workers = (u64)ran_workers;
+  request.out_checksum = (u64)checksum;
+  u64 rc = osai_syscall3(OSAI_SYSCALL_SMP_RUN, (u64)&request,
+                         sizeof(request), 0);
+  return rc == ~0ULL ? -1 : (int)rc;
+}
+
+int osai_cpu_ai_decode(const void *input, u64 input_size, char *output,
+                       u64 output_size, u64 *out_size) {
+  osai_cpu_ai_decode_request_t request;
+  request.input = (u64)input;
+  request.input_size = input_size;
+  request.output = (u64)output;
+  request.output_size = output_size;
+  request.out_size = (u64)out_size;
+  u64 rc = osai_syscall3(OSAI_SYSCALL_CPU_AI_DECODE, (u64)&request,
+                         sizeof(request), 0);
+  return rc == ~0ULL ? -1 : (int)rc;
+}
+
 int osai_write_file(const char *path, const char *content) {
   int fd = osai_fs_open(path, OSAI_MFS_OPEN_WRITE | OSAI_MFS_OPEN_CREATE |
                                   OSAI_MFS_OPEN_TRUNCATE);
   if (fd < 0) {
     return -1;
   }
-  int written = osai_fs_write(fd, content, osai_strlen(content));
+  u64 content_len = osai_strlen(content);
+  int written = 0;
+  if (content_len != 0) {
+    written = osai_fs_write(fd, content, content_len);
+  }
   if (osai_fs_close(fd) != 0 || written < 0) {
     return -1;
   }
