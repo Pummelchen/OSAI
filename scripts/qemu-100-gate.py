@@ -15,6 +15,7 @@ COMMANDS = [
     (68, "update", ["python3", "./scripts/qemu-milestone-gate.py", "68"]),
     (69, "soak", ["python3", "./scripts/qemu-soak-gate.py"]),
     (70, "release", ["python3", "./scripts/qemu-release.py"]),
+    (71, "ssh", ["python3", "./scripts/qemu-ssh-smoke.py"]),
 ]
 
 

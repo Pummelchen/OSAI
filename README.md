@@ -67,6 +67,13 @@ make qemu-100-gate
 make qemu-readiness-gate
 ```
 
+For local SSH access to the current QEMU remote-login surface:
+
+```sh
+make osai-ssh-bridge
+ssh -p 2222 admin@localhost
+```
+
 ## Status
 
 OSAI is in design and QEMU bring-up. The macOS/QEMU correctness target now has a bootable AArch64 UEFI path, EL0 userspace, service management, mutable filesystem APIs, VirtIO block/network drivers, AI Cell resource checks, CPU-only runtime fixtures, update/rollback checks, telemetry, and aggregate QEMU gates.
