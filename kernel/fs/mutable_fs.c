@@ -126,6 +126,8 @@ static const char k_boot_log[] = "boot=ok\n";
 static const char k_replayed_state[] =
     "service=/svc/replayed\nstate=recovered\n";
 
+static osai_status_t restore_snapshot_node(osai_mfs_node_t *node);
+
 static void bytes_zero(void *buffer, uint64_t size) {
   uint8_t *bytes = (uint8_t *)buffer;
   for (uint64_t i = 0; i < size; ++i) {
@@ -178,6 +180,10 @@ static int str_eq(const char *a, const char *b) {
     ++b;
   }
   return *a == '\0' && *b == '\0';
+}
+
+static int node_is_visible(const osai_mfs_node_t *node) {
+  return node != 0 && (node->active != 0 || node->snapshot_active != 0);
 }
 
 static osai_status_t append_char(char *buffer, uint64_t capacity,
@@ -547,6 +553,7 @@ static osai_status_t format_volume(void) {
 
 static osai_status_t write_file(const char *path, const void *data,
                                 uint64_t size);
+static osai_status_t create_dir(const char *path);
 
 static osai_status_t replay_journal(void) {
   osai_mfs_journal_t journal;
@@ -625,6 +632,23 @@ static osai_status_t mount_volume(uint32_t mount_flags) {
   if (replay_journal() != OSAI_OK) {
     return OSAI_ERR_IO;
   }
+
+  if ((g_mount_flags & MFS_MOUNT_READ_WRITE) != 0U) {
+    osai_mfs_node_t *root = find_node("/", 1);
+    if (root == 0) {
+      if (create_dir("/") != OSAI_OK) {
+        return OSAI_ERR_IO;
+      }
+    } else if (root->active == 0) {
+      if (restore_snapshot_node(root) != OSAI_OK) {
+        return OSAI_ERR_IO;
+      }
+    } else if (root->type != MFS_NODE_DIR) {
+      ++g_reject_count;
+      return OSAI_ERR_INVALID;
+    }
+  }
+
   klog("mutable-fs: mounted start=%lu metadata=%lu journal=%lu data=%lu sectors=%u nodes=%u policy=%s\n",
        MFS_START_SECTOR, MFS_METADATA_SECTORS, MFS_JOURNAL_SECTORS,
        MFS_DATA_START_SECTOR, MFS_DATA_SECTORS, MFS_MAX_NODES,
@@ -894,8 +918,8 @@ static osai_status_t stat_node(const char *path, osai_mfs_stat_t *stat) {
     ++g_reject_count;
     return OSAI_ERR_INVALID;
   }
-  osai_mfs_node_t *node = find_node(normalized, 0);
-  if (node == 0 || node->active == 0) {
+  osai_mfs_node_t *node = find_node(normalized, 1);
+  if (!node_is_visible(node)) {
     ++g_reject_count;
     return OSAI_ERR_NOT_FOUND;
   }
@@ -946,30 +970,47 @@ static osai_status_t list_dir(const char *path, char *buffer,
                               uint64_t buffer_size, uint64_t *out_size) {
   char normalized[MFS_PATH_MAX];
   uint64_t offset = 0;
+  osai_status_t append_status = OSAI_OK;
   if (buffer == 0 || out_size == 0 || buffer_size == 0 ||
       normalize_path(path, normalized) != OSAI_OK) {
     ++g_reject_count;
     return OSAI_ERR_INVALID;
   }
-  osai_mfs_node_t *dir = find_node(normalized, 0);
-  if (dir == 0 || dir->active == 0 || dir->type != MFS_NODE_DIR) {
-    ++g_reject_count;
-    return OSAI_ERR_NOT_FOUND;
+
+  osai_mfs_node_t *dir = find_node(normalized, 1);
+  if (!node_is_visible(dir) || dir->type != MFS_NODE_DIR) {
+    if (!str_eq(normalized, "/")) {
+      ++g_reject_count;
+      return OSAI_ERR_NOT_FOUND;
+    }
   }
+
   buffer[0] = '\0';
   for (uint32_t i = 0; i < MFS_MAX_NODES; ++i) {
     osai_mfs_node_t *node = &g_mfs.nodes[i];
     const char *name = 0;
-    if (node->active == 0 || str_eq(node->path, normalized) ||
+    if (!node_is_visible(node) || str_eq(node->path, normalized) ||
         !direct_child_of(normalized, node->path, &name)) {
       continue;
     }
-    if (append_cstr(buffer, buffer_size, &offset, name) != OSAI_OK ||
-        append_char(buffer, buffer_size, &offset, '\n') != OSAI_OK) {
+    append_status = append_cstr(buffer, buffer_size, &offset, name);
+    if (append_status == OSAI_OK) {
+      append_status = append_char(buffer, buffer_size, &offset, '\n');
+    }
+    if (append_status != OSAI_OK) {
+      if (out_size != 0) {
+        *out_size = offset;
+      }
       ++g_reject_count;
-      return OSAI_ERR_NO_MEMORY;
+      return append_status;
     }
   }
+
+  if (str_eq(normalized, "/") && offset == 0U) {
+    ++g_reject_count;
+    return OSAI_ERR_NOT_FOUND;
+  }
+
   *out_size = offset;
   ++g_list_count;
   klog("mutable-fs: list path=%s bytes=%lu\n", normalized, offset);

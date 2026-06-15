@@ -1,118 +1,96 @@
 #include <osai_user.h>
 
-static int cstr_eq(const char *lhs, const char *rhs) {
-  if (lhs == 0 || rhs == 0) {
-    return 0;
-  }
-  for (u64 i = 0;; ++i) {
-    if (lhs[i] != rhs[i]) {
-      return 0;
-    }
-    if (lhs[i] == '\0') {
-      return 1;
-    }
-  }
-}
-
 static void log_command(const char *command) {
   osai_log("$ ");
   osai_log(command);
   osai_log("\n");
 }
 
-static int shell_run(const char *command, char *cwd, u64 cwd_size) {
-  char buffer[256];
-  u64 out_size = 0;
-  osai_memzero(buffer, sizeof(buffer));
-
+static int shell_run(const char *command, char *output, u64 output_capacity,
+                    u64 *out_size) {
+  u64 command_out_size = 0;
   log_command(command);
-  if (cstr_eq(command, "pwd")) {
-    osai_log(cwd);
-    osai_log("\n");
-    return 0;
+  if (osai_remote_login("admin", command, output, output_capacity,
+                        &command_out_size) < 0) {
+    return -1;
   }
-  if (cstr_eq(command, "mkdir /home")) {
-    return osai_fs_mkdir("/home");
+  if (out_size != 0) {
+    *out_size = command_out_size;
   }
-  if (cstr_eq(command, "mkdir /home/admin")) {
-    return osai_fs_mkdir("/home/admin");
-  }
-  if (cstr_eq(command, "cd /home/admin")) {
-    osai_memzero(cwd, cwd_size);
-    u64 offset = 0;
-    osai_append_cstr(cwd, cwd_size, &offset, "/home/admin");
-    return 0;
-  }
-  if (cstr_eq(command, "touch readme.txt")) {
-    return osai_write_file("/home/admin/readme.txt", "") < 0 ? -1 : 0;
-  }
-  if (cstr_eq(command, "write readme.txt")) {
-    return osai_write_file("/home/admin/readme.txt",
-                           "OSAI interactive shell command smoke\n") < 0
-               ? -1
-               : 0;
-  }
-  if (cstr_eq(command, "cat readme.txt")) {
-    if (osai_read_file("/home/admin/readme.txt", buffer,
-                       sizeof(buffer) - 1U) < 0) {
-      return -1;
+  if (output_capacity > 0U) {
+    u64 effective = command_out_size;
+    if (effective >= output_capacity) {
+      effective = output_capacity - 1U;
     }
-    osai_log(buffer);
-    return 0;
+    output[effective] = '\0';
   }
-  if (cstr_eq(command, "ls")) {
-    return osai_fs_list(cwd, buffer, sizeof(buffer), &out_size) < 0 ? -1 : 0;
+  if (command_out_size != 0U) {
+    osai_log(output);
   }
-  if (cstr_eq(command, "mv readme.txt readme.renamed")) {
-    return osai_fs_rename("/home/admin/readme.txt",
-                          "/home/admin/readme.renamed");
-  }
-  if (cstr_eq(command, "rm readme.renamed")) {
-    return osai_fs_delete("/home/admin/readme.renamed");
-  }
-  if (cstr_eq(command, "cd /")) {
-    osai_memzero(cwd, cwd_size);
-    cwd[0] = '/';
-    cwd[1] = '\0';
-    return 0;
-  }
-  if (cstr_eq(command, "rmdir /home/admin")) {
-    return osai_fs_delete("/home/admin");
-  }
+  return 0;
+}
 
-  osai_log("/bin/osai-shell: unknown command\n");
-  return -1;
+static int remote_login_check(const char *command, char *output, u64 output_capacity,
+                             u64 *out_size) {
+  return shell_run(command, output, output_capacity, out_size);
 }
 
 int main(void) {
-  char cwd[64];
+  char output[2048];
+  u64 out_size = 0;
+
   const char *commands[] = {
+      "help",
       "pwd",
-      "mkdir /home",
-      "mkdir /home/admin",
-      "cd /home/admin",
-      "pwd",
+      "ls /",
+      "ls -a /",
+      "ls -l /",
+      "ls -la /",
+      "ls -al /",
+      "ls -a -l /",
+      "l /",
+      "ll /",
+      "la /",
+      "mkdir /state/remote-shell-test",
+      "cd /state/remote-shell-test",
       "touch readme.txt",
-      "write readme.txt",
+      "write readme.txt hello world",
       "cat readme.txt",
-      "ls",
-      "mv readme.txt readme.renamed",
-      "rm readme.renamed",
+      "cp readme.txt readme.copy",
+      "grep hello readme.txt",
+      "find . -name *.txt",
+      "head readme.copy",
+      "head -n 1 readme.copy",
+      "tail readme.copy",
+      "tail -n 1 readme.copy",
+      "stat readme.copy",
+      "echo shell command surface check",
+      "cpio -o -O backup.cpio readme.txt readme.copy",
+      "tar -cf backup.tar readme.txt readme.copy",
+      "tar -tf backup.tar",
+      "mv readme.copy readme.renamed.txt",
+      "rm readme.renamed.txt",
+      "cpio -i -I backup.cpio",
+      "tar -xf backup.tar -C /state/remote-shell-test",
+      "rm readme.txt",
+      "rm readme.copy",
+      "rm backup.cpio",
+      "rm backup.tar",
+      "exit",
       "cd /",
-      "rmdir /home/admin",
+      "rmdir /state/remote-shell-test",
   };
 
-  osai_memzero(cwd, sizeof(cwd));
-  cwd[0] = '/';
-  cwd[1] = '\0';
-  osai_log("/bin/osai-shell: starting scripted interactive command session\n");
+  osai_log("/bin/osai-shell: starting scripted remote-login surface session\n");
   for (u64 i = 0; i < sizeof(commands) / sizeof(commands[0]); ++i) {
-    if (shell_run(commands[i], cwd, sizeof(cwd)) != 0) {
+    if (remote_login_check(commands[i], output, sizeof(output), &out_size) != 0) {
       osai_log("/bin/osai-shell: command failed\n");
       return 1;
     }
   }
-  osai_log("/bin/osai-shell: commands passed pwd cd ls mkdir touch write cat mv rm rmdir\n");
+  osai_log(
+      "/bin/osai-shell: command surface passed 1..15 + ls variants + tar/cpio archive "
+      "commands\n");
   osai_log("/bin/osai-shell: command engine ready for QEMU remote-login surface\n");
   return 0;
 }

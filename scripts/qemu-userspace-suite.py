@@ -16,7 +16,7 @@ COMMAND_MARKERS = {
         "ai-cell: multi-cell shared model/private kv self-test passed",
     ],
     "osctl_telemetry": [
-        "\"control_plane_syscalls\":89",
+        "\"control_plane_syscalls\":160",
         "\"user_process_loaded\":14",
         "\"user_process_scheduled\":14",
         "\"ai_cell_transitions\":14",
@@ -33,7 +33,7 @@ COMMAND_MARKERS = {
         "/service-manager: control plane complete",
         "/worker: scheduled child process ran",
         "kernel: /bin/osai-worker pid=5 returned to kernel exit_code=0",
-        "/bin/osai-shell: commands passed pwd cd ls mkdir touch write cat mv rm rmdir",
+        "/bin/osai-shell: command surface passed 1..15 + ls variants + tar/cpio archive",
         "/bin/hello: C toolchain and EL0 runtime integration passed",
         "/bin/sysinfo: complete",
         "/bin/systest: syscall and filesystem suite passed",
