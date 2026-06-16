@@ -12,20 +12,28 @@
 #include <osai/cpu_ai_runtime.h>
 #include <osai/ipv4.h>
 #include <osai/kheap.h>
+#include <osai/klog_ring.h>
 #include <osai/git_workspace.h>
 #include <osai/klog.h>
 #include <osai/model_arena.h>
 #include <osai/mutable_fs.h>
 #include <osai/pmm.h>
 #include <osai/persistence.h>
+#include <osai/rate_limit.h>
 #include <osai/remote_login.h>
+#include <osai/rtc.h>
 #include <osai/sandbox.h>
 #include <osai/scheduler.h>
 #include <osai/security.h>
+#include <osai/sha256.h>
 #include <osai/source_index.h>
 #include <osai/service.h>
 #include <osai/smp.h>
 #include <osai/network_stack.h>
+#include <osai/numa.h>
+#include <osai/pci.h>
+#include <osai/smmu.h>
+#include <osai/stack_canary.h>
 #include <osai/syscall.h>
 #include <osai/telemetry.h>
 #include <osai/timer.h>
@@ -34,6 +42,7 @@
 #include <osai/virtio_blk.h>
 #include <osai/virtio_net.h>
 #include <osai/vmm.h>
+#include <osai/watchdog.h>
 
 static const char g_vmm_rodata_probe[] = "vmm-rodata";
 static uint64_t g_vmm_data_probe;
@@ -77,19 +86,48 @@ void kmain(const osai_boot_info_t *boot) {
   exception_self_test();
   timer_init();
   timer_self_test();
+  stack_canary_init();
+  stack_canary_self_test();
   smp_init_qemu_virt();
   smp_self_test();
+
+  numa_init(boot);
+  numa_self_test();
 
   pmm_init(boot);
   vmm_init(boot);
   vmm_self_test();
+
+  /* Map SMMU MMIO and initialize */
+  map_mmio_range(OSAI_SMMU_MMIO_BASE, 0x10000);
+  map_mmio_range(OSAI_SMMU_MMIO_PAGE1, 0x10000);
+  smmu_init();
+  smmu_self_test();
+
   map_mmio_range(boot->uart_base, 4096);
   map_mmio_range(UINT64_C(0x08000000), UINT64_C(0x20000));
   map_mmio_range(UINT64_C(0x0a000000), UINT64_C(0x4000));
+
+  /* Map ECAM and enumerate PCIe */
+  pci_init();
+  pci_self_test();
+
+  /* Map RTC MMIO and initialize real-time clock */
+  map_mmio_range(OSAI_PL031_RTC_BASE, 4096);
+  rtc_init();
+  wall_time_calibrate();
+  rtc_self_test();
+
+  /* Initialize watchdog timer */
+  watchdog_init();
+  watchdog_self_test();
+
   klog("VMM MMIO device mappings installed\n");
   kheap_self_test();
   arena_manager_init();
   arena_self_test();
+  rate_limit_init();
+  rate_limit_self_test();
   security_self_test();
   remote_login_self_test();
   source_index_runtime_init();
@@ -129,10 +167,21 @@ void kmain(const osai_boot_info_t *boot) {
     osai_mfs_fsck_result_t fsck = mutable_fs_fsck();
     klog("kernel: persistent fsck valid=%u v%u files=%lu dirs=%lu\n",
          fsck.valid, fsck.version, fsck.files, fsck.directories);
+    /* Initialize persistent log ring buffer */
+    klog_ring_init();
+    klog_ring_self_test();
+    /* Increment boot counter for recovery detection */
+    boot_counter_increment();
+    if (boot_in_recovery_mode()) {
+      klog("boot: RECOVERY MODE -- attempting update recovery\n");
+      update_recover_boot();
+      boot_counter_reset();
+    }
   } else {
     klog("kernel: persistent mount skipped status=%d\n", (int)persistent_status);
   }
   update_self_test();
+  update_delivery_self_test();
   virtio_net_self_test();
   arp_self_test();
   ipv4_self_test();
@@ -151,6 +200,12 @@ void kmain(const osai_boot_info_t *boot) {
   cpu_ai_runtime_self_test();
   ai_cell_self_test();
   telemetry_emit_boot_summary();
+
+  /* Flush logs to persistent storage */
+  klog_flush();
+
+  /* Boot completed successfully -- reset boot counter */
+  boot_counter_reset();
 
 #if defined(OSAI_FAULT_TEST_PAGE)
   exception_trigger_page_fault_for_test();
@@ -251,6 +306,7 @@ void kmain(const osai_boot_info_t *boot) {
   run_user_app("/bin/lstm-xor", 12, app_caps);
   run_user_app("/bin/sshtest", 13, app_caps);
   run_user_app("/bin/mltest", 14, app_caps);
+  run_user_app("/bin/posix-shell", 15, app_caps);
 
   telemetry_emit_boot_summary();
 

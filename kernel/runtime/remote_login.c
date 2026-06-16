@@ -2068,6 +2068,158 @@ static osai_status_t handle_rm(const char *arg, char *output,
   return OSAI_OK;
 }
 
+static uint64_t find_unquoted_char(const char *text, uint64_t start,
+                                   char target) {
+  if (text == 0) {
+    return UINT64_MAX;
+  }
+  int in_single = 0;
+  int in_double = 0;
+  for (uint64_t i = start; text[i] != '\0'; ++i) {
+    char c = text[i];
+    if (c == '\'' && in_double == 0) {
+      in_single = in_single ? 0 : 1;
+    } else if (c == '"' && in_single == 0) {
+      in_double = in_double ? 0 : 1;
+    } else if (c == target && in_single == 0 && in_double == 0) {
+      return i;
+    }
+  }
+  return UINT64_MAX;
+}
+
+static osai_status_t handle_sed(const char *args, char *output,
+                               uint64_t output_capacity,
+                               uint64_t *output_bytes) {
+  char expr[OSAI_MFS_PATH_MAX];
+  char path_arg[OSAI_MFS_PATH_MAX];
+  uint64_t arg_index = 0;
+  char resolved[OSAI_MFS_PATH_MAX];
+  char data[OSAI_MFS_MAX_FILE_BYTES];
+  uint64_t data_size = 0;
+  char result[OSAI_MFS_MAX_FILE_BYTES];
+  uint64_t result_len = 0;
+
+  if (token_next(args, &arg_index, expr, sizeof(expr)) != OSAI_OK) {
+    return command_fail(output, output_capacity, output_bytes,
+                        "sed: missing expression");
+  }
+  if (token_next(args, &arg_index, path_arg, sizeof(path_arg)) != OSAI_OK) {
+    return command_fail(output, output_capacity, output_bytes,
+                        "sed: missing file");
+  }
+  if (expr[0] != 's' || expr[1] != '/') {
+    return command_fail(output, output_capacity, output_bytes,
+                        "sed: only s/// supported");
+  }
+  uint64_t expr_len = cstr_len(expr);
+  uint64_t slash2 = 0;
+  uint64_t slash3 = 0;
+  for (uint64_t i = 2; i < expr_len; ++i) {
+    if (expr[i] == '/') {
+      if (slash2 == 0) {
+        slash2 = i;
+      } else {
+        slash3 = i;
+        break;
+      }
+    }
+  }
+  if (slash2 == 0) {
+    return command_fail(output, output_capacity, output_bytes,
+                        "sed: malformed expression");
+  }
+  char old_pat[128];
+  char new_pat[128];
+  uint64_t old_len = slash2 - 2U;
+  uint64_t new_len =
+      (slash3 == 0) ? (expr_len - slash2 - 1U) : (slash3 - slash2 - 1U);
+  if (old_len >= sizeof(old_pat) || new_len >= sizeof(new_pat)) {
+    return command_fail(output, output_capacity, output_bytes,
+                        "sed: pattern too long");
+  }
+  for (uint64_t i = 0; i < old_len; ++i) {
+    old_pat[i] = expr[2U + i];
+  }
+  old_pat[old_len] = '\0';
+  for (uint64_t i = 0; i < new_len; ++i) {
+    new_pat[i] = expr[slash2 + 1U + i];
+  }
+  new_pat[new_len] = '\0';
+  int global = 0;
+  if (slash3 != 0 && slash3 + 1U < expr_len && expr[slash3 + 1U] == 'g') {
+    global = 1;
+  }
+  if (remote_path_resolve(g_remote_login_cwd, path_arg, resolved,
+                          sizeof(resolved)) != OSAI_OK) {
+    return command_fail(output, output_capacity, output_bytes,
+                        "sed: cannot open file");
+  }
+  if (mutable_fs_read(resolved, data, sizeof(data), &data_size) != OSAI_OK) {
+    return command_fail(output, output_capacity, output_bytes,
+                        "sed: read error");
+  }
+  if (data_size >= sizeof(data)) {
+    return command_fail(output, output_capacity, output_bytes,
+                        "sed: file too large");
+  }
+  data[data_size] = '\0';
+  uint64_t line_start = 0;
+  while (line_start <= data_size) {
+    uint64_t line_end = line_start;
+    while (line_end < data_size && data[line_end] != '\n') {
+      ++line_end;
+    }
+    uint64_t line_len = line_end - line_start;
+    uint64_t src = 0;
+    while (src <= line_len) {
+      int match = 1;
+      if (old_len == 0) {
+        match = 0;
+      }
+      for (uint64_t k = 0; match != 0 && k < old_len; ++k) {
+        if (src + k >= line_len ||
+            data[line_start + src + k] != old_pat[k]) {
+          match = 0;
+        }
+      }
+      if (match != 0) {
+        for (uint64_t k = 0; k < new_len && result_len + 1U < sizeof(result);
+             ++k) {
+          result[result_len++] = new_pat[k];
+        }
+        src += old_len;
+        if (global == 0) {
+          while (src < line_len && result_len + 1U < sizeof(result)) {
+            result[result_len++] = data[line_start + src];
+            ++src;
+          }
+          break;
+        }
+      } else {
+        if (src < line_len && result_len + 1U < sizeof(result)) {
+          result[result_len++] = data[line_start + src];
+        }
+        ++src;
+      }
+    }
+    if (result_len + 1U < sizeof(result)) {
+      result[result_len++] = '\n';
+    }
+    if (line_end >= data_size) {
+      break;
+    }
+    line_start = line_end + 1U;
+  }
+  result[result_len] = '\0';
+  if (mutable_fs_write(resolved, result, result_len) != OSAI_OK) {
+    return command_fail(output, output_capacity, output_bytes,
+                        "sed: write error");
+  }
+  output_append(output, output_capacity, output_bytes, result);
+  return OSAI_OK;
+}
+
 static osai_status_t parse_and_execute(const char *command, char *output,
                                       uint64_t output_capacity,
                                       uint64_t *output_bytes) {
@@ -2094,7 +2246,8 @@ static osai_status_t parse_and_execute(const char *command, char *output,
     output_append(
         output, output_capacity, output_bytes,
         "OSAI shell: pwd ls l la ll cd mkdir touch cp grep find head tail echo "
-        "tar cpio cat mv rm rmdir stat write status sysinfo exit quit logout help\n");
+        "tar cpio cat mv rm rmdir stat write sed status sysinfo exit quit "
+        "logout help\n");
     return OSAI_OK;
   }
   if (string_equal(cmd, "status") == 1U) {
@@ -2237,10 +2390,128 @@ static osai_status_t parse_and_execute(const char *command, char *output,
     return handle_write(arg1, payload[0] == '\0' ? 0 : payload, output,
                         output_capacity, output_bytes);
   }
+  if (string_equal(cmd, "sed") == 1U) {
+    return handle_sed(args, output, output_capacity, output_bytes);
+  }
 
   klog("remote-login: command '%s' not recognized with args='%s'\n", cmd, args);
   return command_fail(output, output_capacity, output_bytes,
                       "osai-ssh: command not allowlisted");
+}
+
+static osai_status_t parse_and_execute_pipeline(const char *command,
+                                                char *output,
+                                                uint64_t output_capacity,
+                                                uint64_t *output_bytes) {
+  uint64_t redirect_pos = find_unquoted_char(command, 0, '>');
+  if (redirect_pos != UINT64_MAX) {
+    char lhs[OSAI_REMOTE_LOGIN_LIST_BYTES];
+    char rhs[OSAI_MFS_PATH_MAX];
+    if (redirect_pos == 0U || redirect_pos >= sizeof(lhs)) {
+      return command_fail(output, output_capacity, output_bytes,
+                          "redirect: command too long");
+    }
+    uint64_t lhs_end = redirect_pos;
+    while (lhs_end > 0U && (command[lhs_end - 1U] == ' ' ||
+                            command[lhs_end - 1U] == '\t')) {
+      --lhs_end;
+    }
+    for (uint64_t i = 0; i < lhs_end; ++i) {
+      lhs[i] = command[i];
+    }
+    lhs[lhs_end] = '\0';
+    uint64_t rhs_start = redirect_pos + 1U;
+    while (command[rhs_start] == ' ' || command[rhs_start] == '\t') {
+      ++rhs_start;
+    }
+    uint64_t rhs_idx = 0;
+    while (command[rhs_start] != '\0' && command[rhs_start] != ' ' &&
+           command[rhs_start] != '\t' && rhs_idx + 1U < sizeof(rhs)) {
+      rhs[rhs_idx++] = command[rhs_start++];
+    }
+    rhs[rhs_idx] = '\0';
+    char lhs_output[OSAI_MFS_MAX_FILE_BYTES];
+    uint64_t lhs_bytes = 0;
+    lhs_output[0] = '\0';
+    osai_status_t rc =
+        parse_and_execute(lhs, lhs_output, sizeof(lhs_output), &lhs_bytes);
+    if (rc != OSAI_OK) {
+      return rc;
+    }
+    char resolved[OSAI_MFS_PATH_MAX];
+    if (remote_path_resolve(g_remote_login_cwd, rhs, resolved,
+                            sizeof(resolved)) != OSAI_OK ||
+        remote_ensure_parent(resolved) != OSAI_OK) {
+      return command_fail(output, output_capacity, output_bytes,
+                          "redirect: invalid path");
+    }
+    if (mutable_fs_write(resolved, lhs_output, lhs_bytes) != OSAI_OK) {
+      return command_fail(output, output_capacity, output_bytes,
+                          "redirect: write failed");
+    }
+    output[0] = '\0';
+    *output_bytes = 0;
+    return OSAI_OK;
+  }
+  uint64_t pipe_pos = find_unquoted_char(command, 0, '|');
+  if (pipe_pos != UINT64_MAX) {
+    char lhs[OSAI_REMOTE_LOGIN_LIST_BYTES];
+    char rhs[OSAI_REMOTE_LOGIN_LIST_BYTES];
+    if (pipe_pos == 0U || pipe_pos >= sizeof(lhs)) {
+      return command_fail(output, output_capacity, output_bytes,
+                          "pipe: command too long");
+    }
+    uint64_t lhs_end = pipe_pos;
+    while (lhs_end > 0U && (command[lhs_end - 1U] == ' ' ||
+                            command[lhs_end - 1U] == '\t')) {
+      --lhs_end;
+    }
+    for (uint64_t i = 0; i < lhs_end; ++i) {
+      lhs[i] = command[i];
+    }
+    lhs[lhs_end] = '\0';
+    uint64_t rhs_start = pipe_pos + 1U;
+    while (command[rhs_start] == ' ' || command[rhs_start] == '\t') {
+      ++rhs_start;
+    }
+    uint64_t rhs_idx = 0;
+    while (command[rhs_start] != '\0' && rhs_idx + 1U < sizeof(rhs)) {
+      rhs[rhs_idx++] = command[rhs_start++];
+    }
+    rhs[rhs_idx] = '\0';
+    char lhs_output[OSAI_MFS_MAX_FILE_BYTES];
+    uint64_t lhs_bytes = 0;
+    lhs_output[0] = '\0';
+    osai_status_t rc =
+        parse_and_execute(lhs, lhs_output, sizeof(lhs_output), &lhs_bytes);
+    if (rc != OSAI_OK) {
+      return rc;
+    }
+    if (mutable_fs_write("/tmp/_pipe_stage", lhs_output, lhs_bytes) !=
+        OSAI_OK) {
+      return command_fail(output, output_capacity, output_bytes,
+                          "pipe: temp write failed");
+    }
+    char rhs_with_input[OSAI_REMOTE_LOGIN_LIST_BYTES];
+    uint64_t rhs_len = cstr_len(rhs);
+    const char *tmp_path = "/tmp/_pipe_stage";
+    uint64_t tmp_len = cstr_len(tmp_path);
+    if (rhs_len + 1U + tmp_len + 1U >= sizeof(rhs_with_input)) {
+      return command_fail(output, output_capacity, output_bytes,
+                          "pipe: command too long");
+    }
+    for (uint64_t i = 0; i < rhs_len; ++i) {
+      rhs_with_input[i] = rhs[i];
+    }
+    rhs_with_input[rhs_len] = ' ';
+    for (uint64_t i = 0; i < tmp_len; ++i) {
+      rhs_with_input[rhs_len + 1U + i] = tmp_path[i];
+    }
+    rhs_with_input[rhs_len + 1U + tmp_len] = '\0';
+    return parse_and_execute(rhs_with_input, output, output_capacity,
+                             output_bytes);
+  }
+  return parse_and_execute(command, output, output_capacity, output_bytes);
 }
 
 osai_status_t remote_login_execute(const char *user, const char *command,
@@ -2269,7 +2540,8 @@ osai_status_t remote_login_execute(const char *user, const char *command,
   klog("remote-login: ssh-compatible session opened user=%s\n", user);
   klog("remote-login: command='%s'\n", command);
 
-  if (parse_and_execute(command, output, output_capacity, &offset) != OSAI_OK) {
+  if (parse_and_execute_pipeline(command, output, output_capacity, &offset) !=
+      OSAI_OK) {
     klog("remote-login: command='%s' parse-and-execute failed offset=%lu\n", command,
          offset);
     ++g_remote_login_denials;

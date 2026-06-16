@@ -302,6 +302,8 @@ TARGETS = [
     "kernel: /bin/sshtest returned to kernel exit_code=0",
     "/bin/mltest: multi-model CPU-only ML runtime passed",
     "kernel: /bin/mltest returned to kernel exit_code=0",
+    "/bin/posix-shell: pipe and redirect surface passed",
+    "kernel: /bin/posix-shell returned to kernel exit_code=0",
     "\"service_tree_edges\":1",
     "\"service_restarts\":1",
     "\"service_crashes\":1",

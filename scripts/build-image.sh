@@ -20,7 +20,7 @@ WORKER_OBJ="$INIT_BUILD_DIR/worker.o"
 WORKER_ELF="$INIT_BUILD_DIR/worker.elf"
 USER_START_OBJ="$INIT_BUILD_DIR/user-start.o"
 USER_LIB_OBJ="$INIT_BUILD_DIR/osai-user.o"
-USER_APPS="osai-shell hello sysinfo systest smptest nettest lstm-xor sshtest mltest"
+USER_APPS="osai-shell hello sysinfo systest smptest nettest lstm-xor sshtest mltest posix-shell"
 
 find_tool() {
   tool_name="$1"
@@ -141,11 +141,17 @@ KERNEL_OBJECTS="
   $KERNEL_BUILD_DIR/vectors.o
   $KERNEL_BUILD_DIR/kmain.o
   $KERNEL_BUILD_DIR/klog.o
+  $KERNEL_BUILD_DIR/klog_ring.o
   $KERNEL_BUILD_DIR/telemetry.o
   $KERNEL_BUILD_DIR/panic.o
   $KERNEL_BUILD_DIR/assert.o
+  $KERNEL_BUILD_DIR/stack_canary.o
   $KERNEL_BUILD_DIR/exception.o
   $KERNEL_BUILD_DIR/timer.o
+  $KERNEL_BUILD_DIR/rtc.o
+  $KERNEL_BUILD_DIR/watchdog.o
+  $KERNEL_BUILD_DIR/smmu.o
+  $KERNEL_BUILD_DIR/pci.o
   $KERNEL_BUILD_DIR/gic.o
   $KERNEL_BUILD_DIR/smp.o
   $KERNEL_BUILD_DIR/virtio_transport.o
@@ -165,10 +171,13 @@ KERNEL_OBJECTS="
   $KERNEL_BUILD_DIR/sandbox.o
   $KERNEL_BUILD_DIR/persistence.o
   $KERNEL_BUILD_DIR/update.o
+  $KERNEL_BUILD_DIR/sha256.o
+  $KERNEL_BUILD_DIR/rate_limit.o
   $KERNEL_BUILD_DIR/source_index.o
   $KERNEL_BUILD_DIR/network_stack.o
   $KERNEL_BUILD_DIR/git_workspace.o
   $KERNEL_BUILD_DIR/pmm.o
+  $KERNEL_BUILD_DIR/numa.o
   $KERNEL_BUILD_DIR/arena.o
   $KERNEL_BUILD_DIR/kheap.o
   $KERNEL_BUILD_DIR/mmu.o
@@ -185,11 +194,17 @@ KERNEL_OBJECTS="
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/vectors.S" -o "$KERNEL_BUILD_DIR/vectors.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/core/kmain.c" -o "$KERNEL_BUILD_DIR/kmain.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/core/klog.c" -o "$KERNEL_BUILD_DIR/klog.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/core/klog_ring.c" -o "$KERNEL_BUILD_DIR/klog_ring.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/core/telemetry.c" -o "$KERNEL_BUILD_DIR/telemetry.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/core/panic.c" -o "$KERNEL_BUILD_DIR/panic.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/core/assert.c" -o "$KERNEL_BUILD_DIR/assert.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/core/stack_canary.c" -o "$KERNEL_BUILD_DIR/stack_canary.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/exception.c" -o "$KERNEL_BUILD_DIR/exception.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/timer.c" -o "$KERNEL_BUILD_DIR/timer.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/rtc.c" -o "$KERNEL_BUILD_DIR/rtc.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/watchdog.c" -o "$KERNEL_BUILD_DIR/watchdog.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/smmu.c" -o "$KERNEL_BUILD_DIR/smmu.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/pci.c" -o "$KERNEL_BUILD_DIR/pci.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/gic.c" -o "$KERNEL_BUILD_DIR/gic.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/smp.c" -o "$KERNEL_BUILD_DIR/smp.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/dev/virtio/virtio_transport.c" -o "$KERNEL_BUILD_DIR/virtio_transport.o"
@@ -209,10 +224,13 @@ KERNEL_OBJECTS="
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/sandbox.c" -o "$KERNEL_BUILD_DIR/sandbox.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/persistence.c" -o "$KERNEL_BUILD_DIR/persistence.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/update.c" -o "$KERNEL_BUILD_DIR/update.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/sha256.c" -o "$KERNEL_BUILD_DIR/sha256.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/rate_limit.c" -o "$KERNEL_BUILD_DIR/rate_limit.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/source_index.c" -o "$KERNEL_BUILD_DIR/source_index.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/network_stack.c" -o "$KERNEL_BUILD_DIR/network_stack.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/git_workspace.c" -o "$KERNEL_BUILD_DIR/git_workspace.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/mm/pmm.c" -o "$KERNEL_BUILD_DIR/pmm.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/mm/numa.c" -o "$KERNEL_BUILD_DIR/numa.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/mm/arena.c" -o "$KERNEL_BUILD_DIR/arena.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/mm/kheap.c" -o "$KERNEL_BUILD_DIR/kheap.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/mmu.c" -o "$KERNEL_BUILD_DIR/mmu.o"
