@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: all bootstrap test image image-x86_64 qemu qemu-aarch64 qemu-x86_64 qemu-x86_64-smoke intel-desktop-gate qemu-dry-run qemu-smoke qemu-process-gate qemu-osctl-gate qemu-filesystem-gate qemu-app-agent-gate qemu-network-full-gate qemu-cpu-ai-runtime-gate qemu-ai-cell-gate qemu-security-gate qemu-update-gate qemu-soak-gate qemu-release qemu-100-gate qemu-preview qemu-matrix qemu-cpu-matrix qemu-benchmark qemu-persistence-reboot qemu-fault-matrix qemu-regression-suite qemu-fault-injection qemu-abi-contract qemu-boot-loop qemu-userspace-suite qemu-network-suite qemu-cpu-ai-suite qemu-ssh-smoke osai-ssh-bridge qemu-developer-ux qemu-post51-gate qemu-readiness-gate qemu-full-os-rc clean clean-persistent
+.PHONY: all bootstrap test image image-x86_64 qemu qemu-aarch64 qemu-x86_64 qemu-x86_64-smoke intel-desktop-gate qemu-dry-run qemu-smoke qemu-process-gate qemu-osctl-gate qemu-filesystem-gate qemu-app-agent-gate qemu-network-full-gate qemu-cpu-ai-runtime-gate qemu-ai-cell-gate qemu-security-gate qemu-update-gate qemu-soak-gate qemu-release qemu-100-gate qemu-preview qemu-matrix qemu-cpu-matrix qemu-benchmark qemu-persistence-reboot qemu-fault-matrix qemu-regression-suite qemu-fault-injection qemu-abi-contract qemu-boot-loop qemu-userspace-suite qemu-network-suite qemu-cpu-ai-suite qemu-ssh-smoke osai-ssh-bridge qemu-developer-ux qemu-post51-gate qemu-readiness-gate qemu-full-os-rc compile-check qemu-baseline clean clean-persistent
 
 all: bootstrap image
 
@@ -129,6 +129,29 @@ qemu-readiness-gate:
 
 qemu-full-os-rc:
 	python3 ./scripts/qemu-full-os-rc.py
+
+compile-check:
+	@failed=0; \
+	for f in $$(find kernel -name '*.c' ! -path '*/x86_64/*'); do \
+	  clang --target=aarch64-none-elf -std=c99 -ffreestanding \
+	    -fno-stack-protector -fno-builtin -fno-pic -fno-pie \
+	    -Wall -Wextra -Werror -Ikernel/include -fsyntax-only "$$f" \
+	    || failed=$$((failed + 1)); \
+	done; \
+	for f in $$(find userspace -name '*.c'); do \
+	  clang --target=aarch64-none-elf -std=c99 -ffreestanding \
+	    -fno-stack-protector -fno-builtin -fno-pic -fno-pie \
+	    -Wall -Wextra -Werror -Iuserspace/include -fsyntax-only "$$f" \
+	    || failed=$$((failed + 1)); \
+	done; \
+	if [ "$$failed" -ne 0 ]; then \
+	  printf '%s\n' "$$failed file(s) failed compilation" >&2; \
+	  exit 1; \
+	fi; \
+	printf '%s\n' "All C files compiled clean"
+
+qemu-baseline: image
+	python3 ./scripts/benchmark-baseline.py
 
 clean:
 	rm -rf build out dist
