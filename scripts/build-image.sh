@@ -8,6 +8,7 @@ KERNEL_BUILD_DIR="$BUILD_DIR/kernel"
 INIT_BUILD_DIR="$BUILD_DIR/init"
 IMAGE_PATH="${OSAI_AARCH64_IMAGE:-$BUILD_DIR/osai-aarch64.img}"
 TEST_BLOCK_IMAGE="${OSAI_TEST_BLOCK_IMAGE:-$BUILD_DIR/osai-virtio-test.img}"
+PERSISTENT_IMAGE="${OSAI_PERSISTENT_IMAGE:-$BUILD_DIR/osai-persistent.img}"
 LOADER_OBJ="$EFI_BUILD_DIR/loader_main.obj"
 LOADER_EFI="$EFI_BUILD_DIR/BOOTAA64.EFI"
 KERNEL_ELF="$KERNEL_BUILD_DIR/kernel.elf"
@@ -171,6 +172,12 @@ KERNEL_OBJECTS="
   $KERNEL_BUILD_DIR/arena.o
   $KERNEL_BUILD_DIR/kheap.o
   $KERNEL_BUILD_DIR/mmu.o
+  $KERNEL_BUILD_DIR/scheduler.o
+  $KERNEL_BUILD_DIR/context.o
+  $KERNEL_BUILD_DIR/arp.o
+  $KERNEL_BUILD_DIR/ipv4.o
+  $KERNEL_BUILD_DIR/icmp.o
+  $KERNEL_BUILD_DIR/elf_loader.o
 "
 
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/entry.S" -o "$KERNEL_BUILD_DIR/entry.o"
@@ -209,6 +216,12 @@ KERNEL_OBJECTS="
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/mm/arena.c" -o "$KERNEL_BUILD_DIR/arena.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/mm/kheap.c" -o "$KERNEL_BUILD_DIR/kheap.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/mmu.c" -o "$KERNEL_BUILD_DIR/mmu.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/sched/scheduler.c" -o "$KERNEL_BUILD_DIR/scheduler.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/sched/context.S" -o "$KERNEL_BUILD_DIR/context.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/net/arp.c" -o "$KERNEL_BUILD_DIR/arp.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/net/ipv4.c" -o "$KERNEL_BUILD_DIR/ipv4.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/net/icmp.c" -o "$KERNEL_BUILD_DIR/icmp.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/mm/elf_loader.c" -o "$KERNEL_BUILD_DIR/elf_loader.o"
 
 "$LD_LLD" \
   -nostdlib \
@@ -336,6 +349,36 @@ for app in $USER_APPS; do
   APP_INITFS_ARGS="$APP_INITFS_ARGS /bin/$app=$app_elf"
 done
 
+printf '%s\n' "Building userspace /bin/sshd ELF..."
+SSHD_OBJS=""
+for sshd_src in sshd.c ssh_crypto.c ssh_protocol.c ssh_channel.c ssh_host_key.c; do
+  sshd_obj="$INIT_BUILD_DIR/sshd-${sshd_src%.c}.o"
+  "$CLANG" \
+    --target=aarch64-none-elf \
+    -std=c99 \
+    -ffreestanding \
+    -fno-stack-protector \
+    -fno-builtin \
+    -fno-pic \
+    -fno-pie \
+    -Wall \
+    -Wextra \
+    -Werror \
+    -I"$ROOT_DIR/userspace/include" \
+    -I"$ROOT_DIR/userspace/sshd" \
+    -c "$ROOT_DIR/userspace/sshd/$sshd_src" \
+    -o "$sshd_obj"
+  SSHD_OBJS="$SSHD_OBJS $sshd_obj"
+done
+"$LD_LLD" \
+  -nostdlib \
+  -T "$ROOT_DIR/userspace/init/linker.ld" \
+  -o "$INIT_BUILD_DIR/sshd.elf" \
+  "$USER_START_OBJ" \
+  "$USER_LIB_OBJ" \
+  $SSHD_OBJS
+APP_INITFS_ARGS="$APP_INITFS_ARGS /bin/sshd=$INIT_BUILD_DIR/sshd.elf"
+
 rm -f "$IMAGE_PATH"
 mkdir -p "$(dirname -- "$IMAGE_PATH")"
 
@@ -363,3 +406,11 @@ printf 'OSAI-VIRTIO-BLOCK-TEST\n' | dd of="$TEST_BLOCK_IMAGE" bs=512 count=1 con
   "$ROOT_DIR/userspace/service-manager/source-index.svc" \
   $APP_INITFS_ARGS
 printf '%s\n' "Created $TEST_BLOCK_IMAGE"
+
+if [ ! -f "$PERSISTENT_IMAGE" ]; then
+  printf '%s\n' "Creating persistent disk image: $PERSISTENT_IMAGE"
+  dd if=/dev/zero of="$PERSISTENT_IMAGE" bs=512 count=8192 status=none
+  printf '%s\n' "Created $PERSISTENT_IMAGE (4 MB, 8192 sectors)"
+else
+  printf '%s\n' "Persistent image already exists: $PERSISTENT_IMAGE"
+fi

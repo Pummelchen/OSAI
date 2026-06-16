@@ -18,6 +18,7 @@
 #define PTE_AP_EL0 UINT64_C(1 << 6)
 #define PTE_SH_INNER UINT64_C(3 << 8)
 #define PTE_AF UINT64_C(1 << 10)
+#define PTE_NG UINT64_C(1 << 11)
 #define PTE_PXN UINT64_C(1) << 53
 #define PTE_UXN UINT64_C(1) << 54
 #define PTE_ADDR_MASK UINT64_C(0x0000fffffffff000)
@@ -190,6 +191,7 @@ static uint64_t attrs_from_flags(uint32_t flags) {
 
   if ((flags & OSAI_VMM_USER) != 0) {
     attrs |= PTE_AP_EL0;
+    attrs |= PTE_NG;
   }
   if ((flags & OSAI_VMM_WRITABLE) == 0) {
     attrs |= PTE_AP_RO;
@@ -448,4 +450,137 @@ void vmm_self_test(void) {
   kassert(vmm_translate(va, &translated, &flags) == OSAI_ERR_INVALID);
   pmm_free_page(page);
   klog("VMM map/unmap self-test passed\n");
+}
+
+/* --- Per-process address space APIs --- */
+
+#define USER_L2_INDEX UINT32_C(8)
+
+void vmm_create_user_aspace(uint64_t l3_tables[], uint32_t max_tables,
+                            uint32_t *out_count) {
+  kassert(l3_tables != 0 && out_count != 0 && max_tables >= 2);
+  for (uint32_t i = 0; i < max_tables; ++i) {
+    l3_tables[i] = 0;
+  }
+  /* Allocate 2 L3 tables: one for low user VA (code/data), one for stack */
+  for (uint32_t i = 0; i < 2; ++i) {
+    void *page = pmm_alloc_page();
+    kassert(page != 0);
+    uint64_t *table = (uint64_t *)page;
+    for (uint64_t j = 0; j < 512; ++j) {
+      table[j] = 0;
+    }
+    l3_tables[i] = (uint64_t)(uintptr_t)page;
+  }
+  *out_count = 2;
+  klog("vmm: created user aspace l3_count=%u\n", *out_count);
+}
+
+osai_status_t vmm_map_user_page(uint64_t virtual_address,
+                                uint64_t physical_address, uint32_t flags,
+                                uint64_t l3_tables[], uint32_t l3_count) {
+  if ((virtual_address & (PAGE_SIZE - 1)) != 0 ||
+      (physical_address & (PAGE_SIZE - 1)) != 0 ||
+      (flags & OSAI_VMM_PRESENT) == 0) {
+    return OSAI_ERR_INVALID;
+  }
+  if (virtual_address < OSAI_USER_BASE || virtual_address >= OSAI_USER_LIMIT) {
+    return OSAI_ERR_INVALID;
+  }
+
+  uint64_t l2_index = (virtual_address >> 21) & 0x1ffU;
+  uint64_t l3_index = (virtual_address >> 12) & 0x1ffU;
+
+  if (l2_index != USER_L2_INDEX) {
+    return OSAI_ERR_INVALID;
+  }
+
+  /* Determine which L3 table to use based on VA region */
+  uint64_t stack_region = OSAI_USER_STACK_TOP - (3U * PAGE_SIZE);
+  uint32_t l3_slot = (virtual_address >= stack_region) ? 1U : 0U;
+  if (l3_slot >= l3_count || l3_tables[l3_slot] == 0) {
+    return OSAI_ERR_INVALID;
+  }
+
+  uint64_t *l3 = (uint64_t *)(uintptr_t)l3_tables[l3_slot];
+  l3[l3_index] = page_descriptor(physical_address, attrs_from_flags(flags));
+
+  /* Also map into global tables for backward compatibility */
+  (void)l2_index;
+  vmm_map_page(virtual_address, physical_address, flags);
+  return OSAI_OK;
+}
+
+osai_status_t vmm_unmap_user_page(uint64_t virtual_address,
+                                  uint64_t l3_tables[], uint32_t l3_count) {
+  if ((virtual_address & (PAGE_SIZE - 1)) != 0) {
+    return OSAI_ERR_INVALID;
+  }
+
+  uint64_t l3_index = (virtual_address >> 12) & 0x1ffU;
+  uint64_t stack_region = OSAI_USER_STACK_TOP - (3U * PAGE_SIZE);
+  uint32_t l3_slot = (virtual_address >= stack_region) ? 1U : 0U;
+  if (l3_slot < l3_count && l3_tables[l3_slot] != 0) {
+    uint64_t *l3 = (uint64_t *)(uintptr_t)l3_tables[l3_slot];
+    l3[l3_index] = 0;
+  }
+
+  /* Also unmap from global tables */
+  vmm_unmap_page(virtual_address);
+  return OSAI_OK;
+}
+
+void vmm_switch_user_aspace(uint64_t l3_tables[], uint32_t l3_count) {
+  /* Get the L2 table that covers the user VA range */
+  uint64_t user_va = OSAI_USER_BASE;
+  uint64_t l0_index = (user_va >> 39) & 0x1ffU;
+  uint64_t l1_index = (user_va >> 30) & 0x1ffU;
+  uint64_t l2_index = (user_va >> 21) & 0x1ffU;
+
+  uint64_t l0_desc = g_l0_table[l0_index];
+  if ((l0_desc & (PTE_VALID | PTE_TABLE)) != (PTE_VALID | PTE_TABLE)) {
+    return;
+  }
+  uint64_t *l1 = (uint64_t *)(uintptr_t)(l0_desc & PTE_ADDR_MASK);
+
+  uint64_t l1_desc = l1[l1_index];
+  if ((l1_desc & (PTE_VALID | PTE_TABLE)) != (PTE_VALID | PTE_TABLE)) {
+    return;
+  }
+  uint64_t *l2 = (uint64_t *)(uintptr_t)(l1_desc & PTE_ADDR_MASK);
+
+  /* Install per-process L3 tables into the L2 */
+  if (l3_tables != 0 && l3_count > 0) {
+    for (uint32_t i = 0; i < l3_count && i < 2; ++i) {
+      if (l3_tables[i] != 0) {
+        l2[l2_index + i] =
+            table_descriptor((uint64_t *)(uintptr_t)l3_tables[i]);
+      }
+    }
+  } else {
+    /* No user process: clear user L2 entries (restore to identity block
+     * mappings if they existed, or zero) */
+    for (uint32_t i = 0; i < 2; ++i) {
+      l2[l2_index + i] = 0;
+    }
+  }
+
+  /* Full TLB invalidation */
+  __asm__ volatile(
+      "dsb ishst\n"
+      "tlbi vmalle1is\n"
+      "dsb ish\n"
+      "isb\n"
+      :
+      :
+      : "memory");
+}
+
+void vmm_destroy_user_aspace(uint64_t l3_tables[], uint32_t l3_count) {
+  for (uint32_t i = 0; i < l3_count; ++i) {
+    if (l3_tables[i] != 0) {
+      pmm_free_page((void *)(uintptr_t)l3_tables[i]);
+      l3_tables[i] = 0;
+    }
+  }
 }

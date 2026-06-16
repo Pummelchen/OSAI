@@ -1,0 +1,50 @@
+#ifndef SSH_CRYPTO_H
+#define SSH_CRYPTO_H
+
+#include <osai/types.h>
+
+/* SHA-256 (FIPS 180-4) */
+#define SHA256_DIGEST_SIZE 32U
+#define SHA256_BLOCK_SIZE 64U
+
+typedef struct sha256_ctx {
+  uint32_t state[8];
+  uint64_t count;
+  uint8_t buffer[64];
+} sha256_ctx_t;
+
+void sha256_init(sha256_ctx_t *ctx);
+void sha256_update(sha256_ctx_t *ctx, const uint8_t *data, uint64_t len);
+void sha256_final(sha256_ctx_t *ctx, uint8_t digest[32]);
+void sha256_hash(const uint8_t *data, uint64_t len, uint8_t digest[32]);
+
+/* HMAC-SHA-256 (RFC 2104) */
+void hmac_sha256(const uint8_t *key, uint64_t key_len, const uint8_t *data,
+                 uint64_t data_len, uint8_t mac[32]);
+
+/* AES-128-CTR (FIPS 197 + NIST SP 800-38A) */
+#define AES128_KEY_SIZE 16U
+#define AES_BLOCK_SIZE 16U
+
+typedef struct aes128_ctx {
+  uint32_t round_keys[44];
+} aes128_ctx_t;
+
+void aes128_init(aes128_ctx_t *ctx, const uint8_t key[16]);
+void aes128_encrypt_block(const aes128_ctx_t *ctx, const uint8_t in[16],
+                          uint8_t out[16]);
+void aes128_ctr(const aes128_ctx_t *ctx, const uint8_t iv[16],
+                const uint8_t *input, uint8_t *output, uint64_t len);
+
+/* Curve25519 (RFC 7748) */
+#define CURVE25519_SCALAR_SIZE 32U
+#define CURVE25519_POINT_SIZE 32U
+
+void curve25519_scalar_mult(uint8_t out[32], const uint8_t scalar[32],
+                            const uint8_t point[32]);
+void curve25519_base(uint8_t out[32], const uint8_t scalar[32]);
+
+/* Self-test against known vectors */
+void ssh_crypto_self_test(void);
+
+#endif

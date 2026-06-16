@@ -1,8 +1,11 @@
 #include <osai/assert.h>
+#include <osai/context.h>
 #include <osai/exception.h>
 #include <osai/klog.h>
 #include <osai/panic.h>
+#include <osai/scheduler.h>
 #include <osai/syscall.h>
+#include <osai/timer.h>
 #include <osai/user.h>
 
 #define ESR_EC_SHIFT 26U
@@ -17,6 +20,11 @@
 #define ESR_EC_INSN_ABORT_CURRENT UINT64_C(0x21)
 #define ESR_EC_DATA_ABORT_LOWER UINT64_C(0x24)
 #define ESR_EC_DATA_ABORT_CURRENT UINT64_C(0x25)
+
+/* GIC CPU interface system register encodings */
+#define ICC_IAR1_EL1  "S3_0_C12_C12_0"
+#define ICC_EOIR1_EL1 "S3_0_C12_C12_1"
+#define TIMER_PPI_INTID 30U
 
 extern char __exception_vectors[];
 
@@ -102,6 +110,27 @@ void exception_self_test(void) {
   if (vector_base != (uint64_t)(uintptr_t)__exception_vectors) {
     panic("exception vector install failed");
   }
+}
+
+osai_context_frame_t *aarch64_irq_handler(osai_context_frame_t *frame) {
+  /* Read interrupt ID from GIC CPU interface */
+  uint64_t iar = 0;
+  __asm__ volatile("mrs %[iar], " ICC_IAR1_EL1 : [iar] "=r"(iar));
+  uint32_t intid = (uint32_t)(iar & 0xffffffU);
+
+  if (intid == TIMER_PPI_INTID) {
+    /* Timer interrupt: rearm and call scheduler tick */
+    timer_rearm();
+    scheduler_tick(frame);
+  } else if (intid < 1020U) {
+    klog("irq: spurious intid=%u\n", intid);
+  }
+  /* else: spurious interrupt (1023) */
+
+  /* Signal end of interrupt to GIC */
+  __asm__ volatile("msr " ICC_EOIR1_EL1 ", %[iar]" : : [iar] "r"(iar));
+
+  return frame;
 }
 
 void exception_trigger_page_fault_for_test(void) {

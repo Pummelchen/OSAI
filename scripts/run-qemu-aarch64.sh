@@ -115,6 +115,7 @@ memory="${OSAI_QEMU_MEMORY:-2G}"
 smp="${OSAI_QEMU_SMP:-4}"
 image="${OSAI_AARCH64_IMAGE:-build/osai-aarch64.img}"
 test_block_image="${OSAI_TEST_BLOCK_IMAGE:-build/osai-virtio-test.img}"
+persistent_image="${OSAI_PERSISTENT_IMAGE:-build/osai-persistent.img}"
 hostfwd_port="${OSAI_QEMU_HOSTFWD_PORT:-2222}"
 
 if [ "$dry_run" -eq 0 ] && [ ! -f "$image" ]; then
@@ -129,6 +130,11 @@ if [ "$dry_run" -eq 0 ] && [ ! -f "$test_block_image" ]; then
   exit 1
 fi
 
+if [ "$dry_run" -eq 0 ] && [ ! -f "$persistent_image" ]; then
+  printf '%s\n' "note: persistent image not found, creating: $persistent_image"
+  dd if=/dev/zero of="$persistent_image" bs=512 count=8192 status=none
+fi
+
 set -- "$qemu" \
   -machine "$machine,accel=$accel,gic-version=3" \
   -cpu "$cpu" \
@@ -140,7 +146,9 @@ set -- "$qemu" \
   -drive "if=pflash,format=raw,readonly=on,file=$firmware" \
   -drive "if=virtio,format=raw,file=$image" \
   -drive "if=none,format=raw,id=osai_test_block,file=$test_block_image" \
-  -device virtio-blk-device,drive=osai_test_block
+  -device virtio-blk-device,drive=osai_test_block \
+  -drive "if=none,format=raw,id=osai_persistent,file=$persistent_image" \
+  -device virtio-blk-device,drive=osai_persistent
 
 if [ "$hostfwd_port" = "none" ]; then
   set -- "$@" -netdev user,id=net0

@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: all bootstrap test image image-x86_64 qemu qemu-aarch64 qemu-x86_64 qemu-x86_64-smoke intel-desktop-gate qemu-dry-run qemu-smoke qemu-process-gate qemu-osctl-gate qemu-filesystem-gate qemu-app-agent-gate qemu-network-full-gate qemu-cpu-ai-runtime-gate qemu-ai-cell-gate qemu-security-gate qemu-update-gate qemu-soak-gate qemu-release qemu-100-gate qemu-preview qemu-matrix qemu-cpu-matrix qemu-benchmark qemu-persistence-reboot qemu-fault-matrix qemu-regression-suite qemu-fault-injection qemu-abi-contract qemu-boot-loop qemu-userspace-suite qemu-network-suite qemu-cpu-ai-suite qemu-ssh-smoke osai-ssh-bridge qemu-developer-ux qemu-post51-gate qemu-readiness-gate qemu-full-os-rc clean
+.PHONY: all bootstrap test image image-x86_64 qemu qemu-aarch64 qemu-x86_64 qemu-x86_64-smoke intel-desktop-gate qemu-dry-run qemu-smoke qemu-process-gate qemu-osctl-gate qemu-filesystem-gate qemu-app-agent-gate qemu-network-full-gate qemu-cpu-ai-runtime-gate qemu-ai-cell-gate qemu-security-gate qemu-update-gate qemu-soak-gate qemu-release qemu-100-gate qemu-preview qemu-matrix qemu-cpu-matrix qemu-benchmark qemu-persistence-reboot qemu-fault-matrix qemu-regression-suite qemu-fault-injection qemu-abi-contract qemu-boot-loop qemu-userspace-suite qemu-network-suite qemu-cpu-ai-suite qemu-ssh-smoke osai-ssh-bridge qemu-developer-ux qemu-post51-gate qemu-readiness-gate qemu-full-os-rc clean clean-persistent
 
 all: bootstrap image
 
@@ -132,3 +132,6 @@ qemu-full-os-rc:
 
 clean:
 	rm -rf build out dist
+
+clean-persistent:
+	rm -f build/osai-persistent.img

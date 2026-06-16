@@ -12,6 +12,8 @@ typedef struct osai_gic_info {
 } osai_gic_info_t;
 
 void gic_init_qemu_virt(void);
+void gic_enable_full(void);
+void gic_disable_full(void);
 const osai_gic_info_t *gic_info(void);
 void gic_self_test(void);
 

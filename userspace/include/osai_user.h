@@ -26,6 +26,11 @@ typedef int s32;
 #define OSAI_SYSCALL_NET_EXTERNAL_SESSION 26ULL
 #define OSAI_SYSCALL_THREAD_GROUP_RUN 27ULL
 #define OSAI_SYSCALL_ML_RUN 28ULL
+#define OSAI_SYSCALL_NET_LISTEN 29ULL
+#define OSAI_SYSCALL_NET_ACCEPT 30ULL
+#define OSAI_SYSCALL_NET_RECV 31ULL
+#define OSAI_SYSCALL_NET_SEND 32ULL
+#define OSAI_SYSCALL_NET_CLOSE 33ULL
 
 #define OSAI_NET_PROTOCOL_UDP 17ULL
 #define OSAI_NET_PROTOCOL_TCP 6ULL
@@ -117,6 +122,15 @@ typedef struct osai_ml_run_request {
   u64 out_size;
 } osai_ml_run_request_t;
 
+typedef struct osai_socket_request {
+  u64 sockfd;
+  u64 port;
+  u64 buffer;
+  u64 buffer_size;
+  u64 out_bytes;
+  u64 out_sockfd;
+} osai_socket_request_t;
+
 u64 osai_syscall3(u64 number, u64 arg0, u64 arg1, u64 arg2);
 u64 osai_strlen(const char *text);
 void osai_log(const char *text);
@@ -148,6 +162,12 @@ int osai_thread_group_run(u64 thread_count, u64 iterations, u64 *ran_threads,
                           u64 *checksum);
 int osai_ml_run(u64 model_kind, const void *input, u64 input_size,
                 char *output, u64 output_size, u64 *out_size);
+int osai_net_listen(u64 port, u64 *out_sockfd);
+int osai_net_accept(u64 sockfd, u64 *out_sockfd);
+int osai_net_recv(u64 sockfd, void *buffer, u64 buffer_size, u64 *out_bytes);
+int osai_net_send(u64 sockfd, const void *buffer, u64 buffer_size,
+                  u64 *out_bytes);
+int osai_net_close(u64 sockfd);
 int osai_write_file(const char *path, const char *content);
 int osai_read_file(const char *path, char *buffer, u64 buffer_size);
 void osai_memzero(void *buffer, u64 size);

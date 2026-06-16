@@ -7,6 +7,9 @@ void timer_init(void);
 uint64_t timer_counter(void);
 uint64_t timer_frequency_hz(void);
 uint64_t timer_now_ns(void);
+void timer_enable_periodic(uint32_t hz);
+void timer_disable(void);
+void timer_rearm(void);
 void timer_self_test(void);
 
 #endif

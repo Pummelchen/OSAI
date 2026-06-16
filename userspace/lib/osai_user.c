@@ -230,6 +230,64 @@ int osai_ml_run(u64 model_kind, const void *input, u64 input_size,
   return rc == ~0ULL ? -1 : (int)rc;
 }
 
+int osai_net_listen(u64 port, u64 *out_sockfd) {
+  osai_socket_request_t request;
+  request.sockfd = 0;
+  request.port = port;
+  request.buffer = 0;
+  request.buffer_size = 0;
+  request.out_bytes = 0;
+  request.out_sockfd = (u64)out_sockfd;
+  u64 rc = osai_syscall3(OSAI_SYSCALL_NET_LISTEN, (u64)&request,
+                         sizeof(request), 0);
+  return rc == ~0ULL ? -1 : (int)rc;
+}
+
+int osai_net_accept(u64 sockfd, u64 *out_sockfd) {
+  osai_socket_request_t request;
+  request.sockfd = sockfd;
+  request.port = 0;
+  request.buffer = 0;
+  request.buffer_size = 0;
+  request.out_bytes = 0;
+  request.out_sockfd = (u64)out_sockfd;
+  u64 rc = osai_syscall3(OSAI_SYSCALL_NET_ACCEPT, (u64)&request,
+                         sizeof(request), 0);
+  return rc == ~0ULL ? -1 : (int)rc;
+}
+
+int osai_net_recv(u64 sockfd, void *buffer, u64 buffer_size, u64 *out_bytes) {
+  osai_socket_request_t request;
+  request.sockfd = sockfd;
+  request.port = 0;
+  request.buffer = (u64)buffer;
+  request.buffer_size = buffer_size;
+  request.out_bytes = (u64)out_bytes;
+  request.out_sockfd = 0;
+  u64 rc = osai_syscall3(OSAI_SYSCALL_NET_RECV, (u64)&request,
+                         sizeof(request), 0);
+  return rc == ~0ULL ? -1 : (int)rc;
+}
+
+int osai_net_send(u64 sockfd, const void *buffer, u64 buffer_size,
+                  u64 *out_bytes) {
+  osai_socket_request_t request;
+  request.sockfd = sockfd;
+  request.port = 0;
+  request.buffer = (u64)buffer;
+  request.buffer_size = buffer_size;
+  request.out_bytes = (u64)out_bytes;
+  request.out_sockfd = 0;
+  u64 rc = osai_syscall3(OSAI_SYSCALL_NET_SEND, (u64)&request,
+                         sizeof(request), 0);
+  return rc == ~0ULL ? -1 : (int)rc;
+}
+
+int osai_net_close(u64 sockfd) {
+  u64 rc = osai_syscall3(OSAI_SYSCALL_NET_CLOSE, sockfd, 0, 0);
+  return rc == ~0ULL ? -1 : 0;
+}
+
 int osai_write_file(const char *path, const char *content) {
   int fd = osai_fs_open(path, OSAI_MFS_OPEN_WRITE | OSAI_MFS_OPEN_CREATE |
                                   OSAI_MFS_OPEN_TRUNCATE);

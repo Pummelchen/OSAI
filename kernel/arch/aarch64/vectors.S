@@ -5,6 +5,9 @@
 
 .macro vector_entry kind
   .balign 128
+  .if \kind == 5 || \kind == 9
+  b irq_entry_full
+  .else
   msr daifset, #0xf
   mov x4, x0
   mov x5, x1
@@ -25,6 +28,7 @@
   cmp x9, x10
   b.eq aarch64_return_from_user_exit
   eret
+  .endif
 .endm
 
 __exception_vectors:

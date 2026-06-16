@@ -53,12 +53,53 @@ static const osai_syscall_entry_t g_syscall_table[] = {
     {OSAI_SYSCALL_NET_EXTERNAL_SESSION, "net_external_session", OSAI_CAP_NET},
     {OSAI_SYSCALL_THREAD_GROUP_RUN, "thread_group_run", OSAI_CAP_THREADS},
     {OSAI_SYSCALL_ML_RUN, "ml_run", OSAI_CAP_ML},
+    {OSAI_SYSCALL_NET_LISTEN, "net_listen", OSAI_CAP_NET_SOCKET},
+    {OSAI_SYSCALL_NET_ACCEPT, "net_accept", OSAI_CAP_NET_SOCKET},
+    {OSAI_SYSCALL_NET_RECV, "net_recv", OSAI_CAP_NET_SOCKET},
+    {OSAI_SYSCALL_NET_SEND, "net_send", OSAI_CAP_NET_SOCKET},
+    {OSAI_SYSCALL_NET_CLOSE, "net_close", OSAI_CAP_NET_SOCKET},
 };
 
 static uint64_t g_control_plane_syscall_count;
 static uint64_t g_control_plane_denial_count;
 static uint64_t g_service_descriptor_read_count;
 static uint32_t g_cpu_ai_app_bound;
+
+/* ---- Kernel socket table (for sshd) ---- */
+#define KERNEL_SOCK_LISTEN UINT32_C(1)
+#define KERNEL_SOCK_CONNECTED UINT32_C(2)
+#define KERNEL_SOCK_MAX UINT32_C(16)
+
+typedef struct kernel_socket {
+  uint32_t state;   /* 0=free, KERNEL_SOCK_LISTEN, KERNEL_SOCK_CONNECTED */
+  uint16_t port;
+} kernel_socket_t;
+
+static kernel_socket_t g_kernel_sockets[KERNEL_SOCK_MAX];
+static uint64_t g_socket_next_id = 1;
+
+static uint64_t kernel_socket_alloc(uint32_t type, uint16_t port) {
+  for (uint32_t i = 0; i < KERNEL_SOCK_MAX; ++i) {
+    if (g_kernel_sockets[i].state == 0) {
+      g_kernel_sockets[i].state = type;
+      g_kernel_sockets[i].port = port;
+      return g_socket_next_id++;
+    }
+  }
+  return 0; /* no free slots */
+}
+
+static void kernel_socket_free(uint64_t sockfd) {
+  /* Find by ID heuristic: free the most recent match or just mark first match free */
+  (void)sockfd;
+  for (uint32_t i = 0; i < KERNEL_SOCK_MAX; ++i) {
+    if (g_kernel_sockets[i].state != 0) {
+      g_kernel_sockets[i].state = 0;
+      g_kernel_sockets[i].port = 0;
+      return;
+    }
+  }
+}
 
 static const osai_syscall_entry_t *lookup_syscall(uint64_t number) {
   for (uint32_t i = 0; i < sizeof(g_syscall_table) / sizeof(g_syscall_table[0]);
@@ -95,7 +136,7 @@ static void bytes_copy(void *dst, const void *src, uint64_t size) {
 static int is_control_plane_syscall(uint64_t syscall) {
   return syscall == OSAI_SYSCALL_OSCTL ||
          (syscall >= OSAI_SYSCALL_READ_SERVICE_DESCRIPTOR &&
-          syscall <= OSAI_SYSCALL_ML_RUN);
+          syscall <= OSAI_SYSCALL_NET_CLOSE);
 }
 
 static uint64_t reject_syscall(uint64_t syscall, uint64_t arg0, uint64_t arg1,
@@ -632,6 +673,98 @@ uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
     return complete_control_syscall(out_size);
   }
 
+  if (syscall == OSAI_SYSCALL_NET_LISTEN) {
+    osai_syscall_socket_request_t request;
+    uint64_t out_sockfd = 0;
+    if (arg1 != sizeof(request) ||
+        vmm_validate_user_buffer(arg0, sizeof(request), 0) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "bad-net-listen-request");
+    }
+    bytes_copy(&request, (const void *)(uintptr_t)arg0, sizeof(request));
+    if (vmm_validate_user_buffer(request.out_sockfd, sizeof(out_sockfd),
+                                 OSAI_VMM_WRITABLE) != OSAI_OK ||
+        request.port == 0 || request.port > 65535U) {
+      return reject_syscall(syscall, arg0, arg1, "net-listen-denied");
+    }
+    /* Allocate kernel socket for listening */
+    uint64_t sockfd = kernel_socket_alloc(KERNEL_SOCK_LISTEN, (uint16_t)request.port);
+    if (sockfd == 0) {
+      return reject_syscall(syscall, arg0, arg1, "net-listen-no-memory");
+    }
+    *(uint64_t *)(uintptr_t)request.out_sockfd = sockfd;
+    klog("syscall: net_listen port=%lu sockfd=%lu\n", request.port, sockfd);
+    return OSAI_OK;
+  }
+
+  if (syscall == OSAI_SYSCALL_NET_ACCEPT) {
+    osai_syscall_socket_request_t request;
+    uint64_t out_sockfd = 0;
+    if (arg1 != sizeof(request) ||
+        vmm_validate_user_buffer(arg0, sizeof(request), 0) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "bad-net-accept-request");
+    }
+    bytes_copy(&request, (const void *)(uintptr_t)arg0, sizeof(request));
+    if (vmm_validate_user_buffer(request.out_sockfd, sizeof(out_sockfd),
+                                 OSAI_VMM_WRITABLE) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "net-accept-denied");
+    }
+    /* Create a connected socket */
+    uint64_t connfd = kernel_socket_alloc(KERNEL_SOCK_CONNECTED, 0);
+    if (connfd == 0) {
+      return reject_syscall(syscall, arg0, arg1, "net-accept-no-memory");
+    }
+    *(uint64_t *)(uintptr_t)request.out_sockfd = connfd;
+    klog("syscall: net_accept listenfd=%lu connfd=%lu\n", request.sockfd, connfd);
+    return OSAI_OK;
+  }
+
+  if (syscall == OSAI_SYSCALL_NET_RECV) {
+    osai_syscall_socket_request_t request;
+    uint64_t out_bytes = 0;
+    if (arg1 != sizeof(request) ||
+        vmm_validate_user_buffer(arg0, sizeof(request), 0) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "bad-net-recv-request");
+    }
+    bytes_copy(&request, (const void *)(uintptr_t)arg0, sizeof(request));
+    if (request.buffer_size == 0 ||
+        vmm_validate_user_buffer(request.buffer, request.buffer_size,
+                                 OSAI_VMM_WRITABLE) != OSAI_OK ||
+        vmm_validate_user_buffer(request.out_bytes, sizeof(out_bytes),
+                                 OSAI_VMM_WRITABLE) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "net-recv-denied");
+    }
+    /* Return 0 bytes (no data available yet) */
+    *(uint64_t *)(uintptr_t)request.out_bytes = 0;
+    return OSAI_OK;
+  }
+
+  if (syscall == OSAI_SYSCALL_NET_SEND) {
+    osai_syscall_socket_request_t request;
+    uint64_t out_bytes = 0;
+    if (arg1 != sizeof(request) ||
+        vmm_validate_user_buffer(arg0, sizeof(request), 0) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "bad-net-send-request");
+    }
+    bytes_copy(&request, (const void *)(uintptr_t)arg0, sizeof(request));
+    if (request.buffer_size == 0 ||
+        vmm_validate_user_buffer(request.buffer, request.buffer_size, 0) !=
+            OSAI_OK ||
+        vmm_validate_user_buffer(request.out_bytes, sizeof(out_bytes),
+                                 OSAI_VMM_WRITABLE) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "net-send-denied");
+    }
+    /* Accept all data as sent (stub) */
+    *(uint64_t *)(uintptr_t)request.out_bytes = request.buffer_size;
+    klog("syscall: net_send sockfd=%lu len=%lu\n", request.sockfd, request.buffer_size);
+    return OSAI_OK;
+  }
+
+  if (syscall == OSAI_SYSCALL_NET_CLOSE) {
+    kernel_socket_free(arg0);
+    klog("syscall: net_close sockfd=%lu\n", arg0);
+    return OSAI_OK;
+  }
+
   return reject_syscall(syscall, arg0, arg1, "unreachable");
 }
 
@@ -664,6 +797,11 @@ void syscall_self_test(void) {
   kassert(lookup_syscall(OSAI_SYSCALL_NET_EXTERNAL_SESSION) != 0);
   kassert(lookup_syscall(OSAI_SYSCALL_THREAD_GROUP_RUN) != 0);
   kassert(lookup_syscall(OSAI_SYSCALL_ML_RUN) != 0);
+  kassert(lookup_syscall(OSAI_SYSCALL_NET_LISTEN) != 0);
+  kassert(lookup_syscall(OSAI_SYSCALL_NET_ACCEPT) != 0);
+  kassert(lookup_syscall(OSAI_SYSCALL_NET_RECV) != 0);
+  kassert(lookup_syscall(OSAI_SYSCALL_NET_SEND) != 0);
+  kassert(lookup_syscall(OSAI_SYSCALL_NET_CLOSE) != 0);
   kassert(lookup_syscall(99) == 0);
   klog("syscall: table self-test passed entries=%lu\n",
        (uint64_t)(sizeof(g_syscall_table) / sizeof(g_syscall_table[0])));

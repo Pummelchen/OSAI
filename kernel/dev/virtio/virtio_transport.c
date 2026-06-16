@@ -74,11 +74,17 @@ static void set_status(const virtio_mmio_device_t *device, uint32_t status) {
 
 osai_status_t virtio_transport_find(uint32_t device_id, const char *name,
                                     virtio_mmio_device_t *device) {
+  return virtio_transport_find_from(device_id, name, 0, device);
+}
+
+osai_status_t virtio_transport_find_from(uint32_t device_id, const char *name,
+                                         uint32_t start_slot,
+                                         virtio_mmio_device_t *device) {
   if (device == 0 || name == 0) {
     return OSAI_ERR_INVALID;
   }
 
-  for (uint32_t slot = 0; slot < VIRTIO_MMIO_SLOTS; ++slot) {
+  for (uint32_t slot = start_slot; slot < VIRTIO_MMIO_SLOTS; ++slot) {
     uint64_t base = VIRTIO_MMIO_BASE + (slot * VIRTIO_MMIO_STRIDE);
     uint32_t magic = virtio_mmio_read32(base, VIRTIO_MMIO_MAGIC);
     uint32_t version = virtio_mmio_read32(base, VIRTIO_MMIO_VERSION);

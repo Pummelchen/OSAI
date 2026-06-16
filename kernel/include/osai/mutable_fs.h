@@ -6,6 +6,7 @@
 
 #define OSAI_MFS_PATH_MAX 96U
 #define OSAI_MFS_MAX_FILE_BYTES UINT64_C(3072)
+#define OSAI_MFS_MAX_FILE_BYTES_V3 UINT64_C(8192)
 #define OSAI_MFS_MAX_LIST_BYTES UINT64_C(512)
 #define OSAI_MFS_OPEN_READ UINT32_C(1)
 #define OSAI_MFS_OPEN_WRITE UINT32_C(2)
@@ -20,7 +21,19 @@ typedef struct osai_mfs_stat {
   uint64_t content_hash;
 } osai_mfs_stat_t;
 
+typedef struct osai_mfs_fsck_result {
+  uint32_t valid;
+  uint32_t version;
+  uint64_t files;
+  uint64_t directories;
+  uint64_t blocks_used;
+  uint64_t errors;
+} osai_mfs_fsck_result_t;
+
 void mutable_fs_self_test(void);
+osai_status_t mutable_fs_mount_persistent(uint32_t slot);
+osai_mfs_fsck_result_t mutable_fs_fsck(void);
+uint64_t mutable_fs_persistent_mount_count(void);
 
 uint64_t mutable_fs_mount_count(void);
 uint64_t mutable_fs_format_count(void);

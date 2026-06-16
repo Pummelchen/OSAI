@@ -72,4 +72,11 @@ uint64_t network_stack_tcp_latency_p99_ns(void);
 uint64_t network_stack_tcp_latency_p999_ns(void);
 void network_stack_self_test(void);
 
+/* Persistent network mode: real TX/RX via VirtIO-net */
+void network_init_persistent(void);
+void network_poll_tick(void);
+uint64_t network_poll_tick_count(void);
+uint64_t network_icmp_reply_count(void);
+uint64_t network_arp_reply_sent_count(void);
+
 #endif

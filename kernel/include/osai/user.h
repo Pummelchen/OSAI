@@ -1,6 +1,7 @@
 #ifndef OSAI_USER_H
 #define OSAI_USER_H
 
+#include <osai/elf_loader.h>
 #include <osai/initramfs.h>
 #include <osai/status.h>
 #include <osai/syscall.h>
@@ -36,6 +37,7 @@ typedef struct osai_user_process {
   uint64_t mapped_low;
   uint64_t mapped_high;
   uint64_t scheduler_ticks;
+  osai_process_aspace_t aspace;
 } osai_user_process_t;
 
 void user_process_table_init(void);
@@ -55,7 +57,9 @@ osai_status_t user_process_make_runnable(uint32_t pid, uint32_t parent_pid);
 osai_status_t user_process_wait(uint32_t pid);
 osai_status_t user_process_wake(uint32_t pid);
 int user_process_run(const osai_user_process_t *process);
+int user_process_run_concurrent(const osai_user_process_t *process);
 void user_process_reclaim_address_space(const osai_user_process_t *process);
+void user_switch_address_space(uint32_t pid);
 uint64_t user_process_transition_count(void);
 uint64_t user_process_loaded_count(void);
 uint64_t user_process_runnable_count(void);

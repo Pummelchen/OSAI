@@ -1,12 +1,16 @@
 #include <osai/assert.h>
 #include <osai/ai_cell.h>
 #include <osai/arena.h>
+#include <osai/arp.h>
 #include <osai/boot_info.h>
 #include <osai/core_lease.h>
+#include <osai/elf_loader.h>
 #include <osai/exception.h>
 #include <osai/gic.h>
+#include <osai/icmp.h>
 #include <osai/initramfs.h>
 #include <osai/cpu_ai_runtime.h>
+#include <osai/ipv4.h>
 #include <osai/kheap.h>
 #include <osai/git_workspace.h>
 #include <osai/klog.h>
@@ -16,6 +20,7 @@
 #include <osai/persistence.h>
 #include <osai/remote_login.h>
 #include <osai/sandbox.h>
+#include <osai/scheduler.h>
 #include <osai/security.h>
 #include <osai/source_index.h>
 #include <osai/service.h>
@@ -118,14 +123,29 @@ void kmain(const osai_boot_info_t *boot) {
   virtio_block_self_test();
   persistence_self_test();
   mutable_fs_self_test();
+  /* mount persistent filesystem on 3rd VirtIO block device (slot 2) */
+  osai_status_t persistent_status = mutable_fs_mount_persistent(2);
+  if (persistent_status == OSAI_OK) {
+    osai_mfs_fsck_result_t fsck = mutable_fs_fsck();
+    klog("kernel: persistent fsck valid=%u v%u files=%lu dirs=%lu\n",
+         fsck.valid, fsck.version, fsck.files, fsck.directories);
+  } else {
+    klog("kernel: persistent mount skipped status=%d\n", (int)persistent_status);
+  }
   update_self_test();
   virtio_net_self_test();
+  arp_self_test();
+  ipv4_self_test();
+  icmp_self_test();
   network_stack_self_test();
   initramfs_self_test();
   syscall_self_test();
   user_process_table_init();
   user_process_lifecycle_self_test();
   user_scheduler_self_test();
+  scheduler_init();
+  scheduler_self_test();
+  elf_loader_self_test();
   service_supervisor_init();
   model_arena_self_test();
   cpu_ai_runtime_self_test();
@@ -185,6 +205,19 @@ void kmain(const osai_boot_info_t *boot) {
        (unsigned)manager_exit_code);
   user_process_reclaim_address_space(&manager_process);
 
+  /* Initialize persistent network for real TX/RX */
+  if (virtio_net_init_persistent() == OSAI_OK) {
+    network_init_persistent();
+    klog("kernel: persistent network stack enabled\n");
+  } else {
+    klog("kernel: persistent network init skipped\n");
+  }
+
+  /* Initialize preemptive scheduler infrastructure */
+  gic_enable_full();
+  timer_enable_periodic(OSAI_SCHEDULER_DEFAULT_TICK_HZ);
+  klog("kernel: preemptive scheduler infrastructure enabled\n");
+
   for (uint32_t pid = 3; pid <= 5; ++pid) {
     osai_user_process_t worker_process;
     kassert(user_load_process(worker_file, pid, OSAI_CAP_LOG | OSAI_CAP_EXIT,
@@ -199,11 +232,16 @@ void kmain(const osai_boot_info_t *boot) {
     user_process_reclaim_address_space(&worker_process);
   }
 
+  /* Disable preemptive infrastructure after concurrent workers */
+  timer_disable();
+  gic_disable_full();
+
   const uint64_t app_caps = OSAI_CAP_LOG | OSAI_CAP_EXIT | OSAI_CAP_OSCTL |
                             OSAI_CAP_FS_READ | OSAI_CAP_FS_WRITE |
                             OSAI_CAP_TIME | OSAI_CAP_NET | OSAI_CAP_SMP |
                             OSAI_CAP_CPU_AI | OSAI_CAP_REMOTE_LOGIN |
-                            OSAI_CAP_THREADS | OSAI_CAP_ML;
+                            OSAI_CAP_THREADS | OSAI_CAP_ML |
+                            OSAI_CAP_NET_SOCKET;
   run_user_app("/bin/osai-shell", 6, app_caps);
   run_user_app("/bin/hello", 7, app_caps);
   run_user_app("/bin/sysinfo", 8, app_caps);

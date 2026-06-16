@@ -1,7 +1,11 @@
+#include <osai/arp.h>
 #include <osai/assert.h>
+#include <osai/icmp.h>
+#include <osai/ipv4.h>
 #include <osai/klog.h>
 #include <osai/network_stack.h>
 #include <osai/timer.h>
+#include <osai/virtio_net.h>
 
 #define NETWORK_ETHERTYPE_IPV4 UINT16_C(0x0800)
 #define NETWORK_IP_PROTO_UDP UINT8_C(17)
@@ -128,6 +132,12 @@ static uint64_t g_next_flow_id = 1U;
 static network_packet_desc_t g_packet_descs[NETWORK_PACKET_DESCRIPTORS];
 static network_udp_flow_t g_udp_flows[NETWORK_UDP_FLOWS];
 static network_tcp_flow_t g_tcp_flows[NETWORK_TCP_CONNECTIONS];
+
+static uint8_t g_local_mac[6];
+static uint32_t g_persistent_initialized;
+static uint64_t g_poll_tick_count;
+static uint64_t g_icmp_reply_count;
+static uint64_t g_arp_reply_count;
 
 static uint64_t g_udp_tx_count;
 static uint64_t g_udp_rx_count;
@@ -1567,4 +1577,93 @@ void network_stack_self_test(void) {
       network_stack_queue_backpressure_drop_count(),
       network_stack_flow_core_mismatch_count(),
       udp50, udp95, udp99, udp999, tcp50, tcp95, tcp99, tcp999);
+}
+
+void network_init_persistent(void) {
+  if (g_persistent_initialized != 0) {
+    return;
+  }
+  if (virtio_net_get_mac(g_local_mac) == OSAI_OK) {
+    klog("network: local mac=%02x:%02x:%02x:%02x:%02x:%02x\n",
+         g_local_mac[0], g_local_mac[1], g_local_mac[2],
+         g_local_mac[3], g_local_mac[4], g_local_mac[5]);
+  }
+  arp_init();
+  g_persistent_initialized = 1;
+  g_poll_tick_count = 0;
+  g_icmp_reply_count = 0;
+  g_arp_reply_count = 0;
+  klog("network: persistent mode initialized\n");
+}
+
+void network_poll_tick(void) {
+  if (g_persistent_initialized == 0) {
+    return;
+  }
+  uint8_t rx_buf[NETWORK_BUFFER_SIZE];
+  uint32_t frame_len = virtio_net_rx_poll(rx_buf, sizeof(rx_buf));
+  if (frame_len == 0) {
+    ++g_poll_tick_count;
+    return;
+  }
+  ++g_poll_tick_count;
+  if (frame_len < 14U) {
+    return;
+  }
+  uint16_t ethertype = read_u16_be(rx_buf + 12U);
+  if (ethertype == 0x0806U) {
+    if (frame_len >= 42U && read_u16_be(rx_buf + 20U) == OSAI_ARP_OP_REPLY) {
+      arp_process_reply(rx_buf, frame_len);
+    } else if (frame_len >= 42U &&
+               read_u16_be(rx_buf + 20U) == OSAI_ARP_OP_REQUEST) {
+      uint32_t target_ip = read_u32_be(rx_buf + 38U);
+      if (target_ip == OSAI_IPV4_GUEST_IP) {
+        uint8_t reply_frame[64];
+        uint64_t reply_len = 0;
+        if (arp_build_reply(reply_frame, &reply_len, g_local_mac,
+                            OSAI_IPV4_GUEST_IP, rx_buf + 6,
+                            read_u32_be(rx_buf + 28U)) == OSAI_OK) {
+          virtio_net_tx(reply_frame, reply_len);
+          ++g_arp_reply_count;
+        }
+      }
+    }
+  } else if (ethertype == NETWORK_ETHERTYPE_IPV4) {
+    if (frame_len < 34U) {
+      return;
+    }
+    uint8_t protocol = rx_buf[23U];
+    if (protocol == OSAI_IPV4_PROTO_ICMP) {
+      uint16_t identifier = 0;
+      uint16_t sequence = 0;
+      if (icmp_process_echo_request(rx_buf, frame_len, &identifier,
+                                     &sequence) == OSAI_OK) {
+        uint8_t reply_buf[NETWORK_BUFFER_SIZE];
+        uint64_t reply_len = 0;
+        if (icmp_build_echo_reply(reply_buf, &reply_len, g_local_mac,
+                                   rx_buf + 6, OSAI_IPV4_GUEST_IP,
+                                   read_u32_be(rx_buf + 26U), rx_buf,
+                                   frame_len) == OSAI_OK) {
+          virtio_net_tx(reply_buf, reply_len);
+          ++g_icmp_reply_count;
+        }
+      }
+    } else if (protocol == NETWORK_IP_PROTO_UDP) {
+      network_stack_process_udp_frame(rx_buf, frame_len);
+    } else if (protocol == NETWORK_IP_PROTO_TCP) {
+      network_stack_process_tcp_frame(rx_buf, frame_len);
+    }
+  }
+}
+
+uint64_t network_poll_tick_count(void) {
+  return g_poll_tick_count;
+}
+
+uint64_t network_icmp_reply_count(void) {
+  return g_icmp_reply_count;
+}
+
+uint64_t network_arp_reply_sent_count(void) {
+  return g_arp_reply_count;
 }

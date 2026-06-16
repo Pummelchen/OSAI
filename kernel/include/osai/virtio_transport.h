@@ -44,6 +44,9 @@ void virtio_mmio_write32(uint64_t base, uint32_t offset, uint32_t value);
 void virtio_mmio_barrier(void);
 osai_status_t virtio_transport_find(uint32_t device_id, const char *name,
                                     virtio_mmio_device_t *device);
+osai_status_t virtio_transport_find_from(uint32_t device_id, const char *name,
+                                         uint32_t start_slot,
+                                         virtio_mmio_device_t *device);
 void virtio_transport_reset(const virtio_mmio_device_t *device);
 osai_status_t virtio_transport_negotiate_no_features(
     const virtio_mmio_device_t *device);

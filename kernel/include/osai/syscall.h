@@ -32,6 +32,11 @@
 #define OSAI_SYSCALL_NET_EXTERNAL_SESSION UINT64_C(26)
 #define OSAI_SYSCALL_THREAD_GROUP_RUN UINT64_C(27)
 #define OSAI_SYSCALL_ML_RUN UINT64_C(28)
+#define OSAI_SYSCALL_NET_LISTEN UINT64_C(29)
+#define OSAI_SYSCALL_NET_ACCEPT UINT64_C(30)
+#define OSAI_SYSCALL_NET_RECV UINT64_C(31)
+#define OSAI_SYSCALL_NET_SEND UINT64_C(32)
+#define OSAI_SYSCALL_NET_CLOSE UINT64_C(33)
 
 #define OSAI_CAP_LOG UINT64_C(1)
 #define OSAI_CAP_EXIT UINT64_C(2)
@@ -49,6 +54,7 @@
 #define OSAI_CAP_REMOTE_LOGIN UINT64_C(8192)
 #define OSAI_CAP_THREADS UINT64_C(16384)
 #define OSAI_CAP_ML UINT64_C(32768)
+#define OSAI_CAP_NET_SOCKET UINT64_C(65536)
 
 typedef struct osai_syscall_rename_request {
   uint64_t old_path;
@@ -119,6 +125,15 @@ typedef struct osai_syscall_ml_run_request {
   uint64_t output_size;
   uint64_t out_size;
 } osai_syscall_ml_run_request_t;
+
+typedef struct osai_syscall_socket_request {
+  uint64_t sockfd;
+  uint64_t port;
+  uint64_t buffer;
+  uint64_t buffer_size;
+  uint64_t out_bytes;
+  uint64_t out_sockfd;
+} osai_syscall_socket_request_t;
 
 uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
                           uint64_t arg2);
