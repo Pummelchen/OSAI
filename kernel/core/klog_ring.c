@@ -1,0 +1,196 @@
+#include <osai/assert.h>
+#include <osai/klog.h>
+#include <osai/klog_ring.h>
+#include <osai/mutable_fs.h>
+#include <osai/timer.h>
+
+#define KLOG_PATH "/var/log/kern.log"
+#define KLOG_ROTATED_PATH "/var/log/kern.log.1"
+
+typedef struct osai_klog_ring {
+  char buffer[OSAI_KLOG_RING_SIZE];
+  uint32_t write_pos;
+  uint32_t read_pos;
+  uint32_t count;
+  uint32_t overflow;
+} osai_klog_ring_t;
+
+static osai_klog_ring_t g_ring;
+static uint32_t g_ring_initialized;
+static uint64_t g_persist_count;
+static uint64_t g_rotate_count;
+
+void klog_ring_init(void) {
+  for (uint32_t i = 0; i < OSAI_KLOG_RING_SIZE; ++i) {
+    g_ring.buffer[i] = 0;
+  }
+  g_ring.write_pos = 0;
+  g_ring.read_pos = 0;
+  g_ring.count = 0;
+  g_ring.overflow = 0;
+  g_persist_count = 0;
+  g_rotate_count = 0;
+
+  /* Ensure /var/log directory exists */
+  mutable_fs_mkdir("/var/log");
+
+  g_ring_initialized = 1;
+  klog("klog_ring: initialized size=%u\n", OSAI_KLOG_RING_SIZE);
+}
+
+void klog_ring_write(const char *data, uint32_t length) {
+  if (g_ring_initialized == 0 || data == 0 || length == 0) {
+    return;
+  }
+
+  for (uint32_t i = 0; i < length; ++i) {
+    if (g_ring.count >= OSAI_KLOG_RING_SIZE) {
+      /* Buffer full: drop oldest byte */
+      g_ring.read_pos = (g_ring.read_pos + 1U) % OSAI_KLOG_RING_SIZE;
+      --g_ring.count;
+      ++g_ring.overflow;
+    }
+    g_ring.buffer[g_ring.write_pos] = data[i];
+    g_ring.write_pos = (g_ring.write_pos + 1U) % OSAI_KLOG_RING_SIZE;
+    ++g_ring.count;
+  }
+}
+
+uint32_t klog_ring_read(char *out, uint32_t max_len) {
+  if (g_ring_initialized == 0 || out == 0 || max_len == 0) {
+    return 0;
+  }
+
+  uint32_t to_read = g_ring.count < max_len ? g_ring.count : max_len;
+  for (uint32_t i = 0; i < to_read; ++i) {
+    out[i] = g_ring.buffer[g_ring.read_pos];
+    g_ring.read_pos = (g_ring.read_pos + 1U) % OSAI_KLOG_RING_SIZE;
+  }
+  g_ring.count -= to_read;
+  return to_read;
+}
+
+void klog_ring_clear(void) {
+  g_ring.write_pos = 0;
+  g_ring.read_pos = 0;
+  g_ring.count = 0;
+}
+
+uint32_t klog_ring_count(void) {
+  return g_ring.count;
+}
+
+uint32_t klog_ring_overflow_count(void) {
+  return g_ring.overflow;
+}
+
+osai_status_t klog_rotate(void) {
+  if (g_ring_initialized == 0) {
+    return OSAI_ERR_INVALID;
+  }
+
+  /* Delete old rotated log (ignore error) */
+  mutable_fs_delete(KLOG_ROTATED_PATH);
+
+  /* Rename current log to .1 */
+  osai_status_t status = mutable_fs_rename(KLOG_PATH, KLOG_ROTATED_PATH);
+  if (status != OSAI_OK) {
+    return status;
+  }
+
+  ++g_rotate_count;
+  klog("klog_ring: rotated log rotates=%lu\n", g_rotate_count);
+  return OSAI_OK;
+}
+
+osai_status_t klog_flush(void) {
+  if (g_ring_initialized == 0 || g_ring.count == 0) {
+    return OSAI_OK;
+  }
+
+  /* Check if rotation is needed */
+  osai_mfs_stat_t stat;
+  if (mutable_fs_stat(KLOG_PATH, &stat) == OSAI_OK) {
+    if (stat.size + OSAI_KLOG_FLUSH_MAX > OSAI_MFS_MAX_FILE_BYTES_V3) {
+      if (klog_rotate() != OSAI_OK) {
+        return OSAI_ERR_IO;
+      }
+    }
+  }
+
+  /* Read a chunk from the ring buffer */
+  char flush_buf[OSAI_KLOG_FLUSH_MAX];
+  uint32_t bytes = klog_ring_read(flush_buf, OSAI_KLOG_FLUSH_MAX);
+  if (bytes == 0) {
+    return OSAI_OK;
+  }
+
+  /* Open or create the log file */
+  int64_t fd = mutable_fs_open(KLOG_PATH,
+                                OSAI_MFS_OPEN_WRITE | OSAI_MFS_OPEN_CREATE);
+  if (fd < 0) {
+    return OSAI_ERR_IO;
+  }
+
+  int64_t written = mutable_fs_write_fd((uint32_t)fd, flush_buf, bytes);
+  mutable_fs_close((uint32_t)fd);
+
+  if (written < 0 || (uint32_t)written != bytes) {
+    return OSAI_ERR_IO;
+  }
+
+  ++g_persist_count;
+  return OSAI_OK;
+}
+
+uint64_t klog_persist_count(void) {
+  return g_persist_count;
+}
+
+uint64_t klog_rotate_count(void) {
+  return g_rotate_count;
+}
+
+void klog_ring_self_test(void) {
+  kassert(g_ring_initialized != 0);
+
+  /* Test ring buffer write/read */
+  klog_ring_clear();
+  const char test_msg[] = "self-test-ring-buffer\n";
+  uint32_t test_len = 0;
+  for (uint32_t i = 0; test_msg[i] != '\0'; ++i) {
+    ++test_len;
+  }
+  klog_ring_write(test_msg, test_len);
+  kassert(klog_ring_count() == test_len);
+
+  char read_buf[64];
+  uint32_t read_bytes = klog_ring_read(read_buf, sizeof(read_buf));
+  kassert(read_bytes == test_len);
+  for (uint32_t i = 0; i < test_len; ++i) {
+    kassert(read_buf[i] == test_msg[i]);
+  }
+  kassert(klog_ring_count() == 0);
+
+  /* Test overflow */
+  klog_ring_clear();
+  char fill_buf[128];
+  for (uint32_t i = 0; i < sizeof(fill_buf); ++i) {
+    fill_buf[i] = 'A';
+  }
+  /* Fill the entire ring buffer + some extra */
+  uint32_t total_fill = OSAI_KLOG_RING_SIZE + 64U;
+  for (uint32_t i = 0; i < total_fill / (uint32_t)sizeof(fill_buf); ++i) {
+    klog_ring_write(fill_buf, (uint32_t)sizeof(fill_buf));
+  }
+  kassert(klog_ring_count() <= OSAI_KLOG_RING_SIZE);
+  kassert(klog_ring_overflow_count() > 0);
+
+  /* Test flush (should succeed even if MFS not fully ready) */
+  klog_ring_clear();
+  klog_ring_write("flush-test\n", 11);
+  klog_flush();
+
+  klog("klog_ring: self-test passed overflow=%u persists=%lu rotates=%lu\n",
+       g_ring.overflow, g_persist_count, g_rotate_count);
+}

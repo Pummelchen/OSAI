@@ -10,6 +10,8 @@ uint64_t timer_now_ns(void);
 void timer_enable_periodic(uint32_t hz);
 void timer_disable(void);
 void timer_rearm(void);
+void wall_time_calibrate(void);
+uint64_t wall_time_now_ns(void);
 void timer_self_test(void);
 
 #endif

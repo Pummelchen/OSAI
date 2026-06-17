@@ -54,6 +54,29 @@ int main(void) {
   osai_log("/bin/mltest: parity output=");
   osai_log(output);
   osai_log("\n");
+
+  /* Q8.8 matmul test: I_2x2 * I_2x2 = I_2x2 */
+  osai_memzero(output, sizeof(output));
+  {
+    unsigned char mm[20];
+    mm[0] = 2; mm[1] = 2; mm[2] = 2;
+    for (u64 i = 3; i < 12; ++i) { mm[i] = 0; }
+    /* Q8.8 identity: 256=1.0 */
+    short *ma = (short *)&mm[12];
+    ma[0] = 256; ma[1] = 0; ma[2] = 0; ma[3] = 256;
+    if (osai_ml_run(OSAI_ML_MODEL_MATMUL, mm, sizeof(mm), output,
+                    sizeof(output), &out) < 0) {
+      osai_log("/bin/mltest: matmul model failed\n");
+      return 1;
+    }
+    short *mr = (short *)output;
+    if (mr[0] != 256 || mr[1] != 0 || mr[2] != 0 || mr[3] != 256) {
+      osai_log("/bin/mltest: matmul result mismatch\n");
+      return 1;
+    }
+  }
+  osai_log("/bin/mltest: matmul I*I=I passed\n");
+
   osai_log("/bin/mltest: multi-model CPU-only ML runtime passed\n");
   osai_log("/bin/mltest: complete\n");
   return 0;

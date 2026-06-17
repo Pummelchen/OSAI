@@ -88,6 +88,7 @@ static uint64_t g_tokenizer_bind_count;
 static uint64_t g_kernel_dispatch_count;
 static uint64_t g_admission_reject_count;
 static uint64_t g_checksum_failure_count;
+static uint64_t g_inference_count;
 
 static int validate_cell_id(uint32_t cell_id) {
   return cell_id < OSAI_CPU_AI_RUNTIME_MAX_CELLS;
@@ -313,6 +314,40 @@ static osai_status_t deterministic_cpu_kernel(osai_cpu_ai_runtime_cell_t *cell,
   return OSAI_OK;
 }
 
+static void matmul_q88(const int16_t *mat_a, const int16_t *mat_b,
+                        int16_t *result, uint32_t rows_a, uint32_t cols_a,
+                        uint32_t cols_b) {
+  for (uint32_t i = 0; i < rows_a; ++i) {
+    for (uint32_t j = 0; j < cols_b; ++j) {
+      int32_t acc = 0;
+      for (uint32_t k = 0; k < cols_a; ++k) {
+        acc += (int32_t)mat_a[i * cols_a + k] *
+               (int32_t)mat_b[k * cols_b + j];
+      }
+      result[i * cols_b + j] = (int16_t)(acc >> 8);
+    }
+  }
+}
+
+static void forward_pass_q88(const int16_t *input, const int16_t *weights,
+                              const int16_t *bias, int16_t *output,
+                              uint32_t batch, uint32_t in_dim,
+                              uint32_t out_dim, uint32_t activation) {
+  matmul_q88(input, weights, output, batch, in_dim, out_dim);
+  for (uint32_t i = 0; i < batch; ++i) {
+    for (uint32_t j = 0; j < out_dim; ++j) {
+      if (bias != 0) {
+        int32_t val = (int32_t)output[i * out_dim + j] +
+                      (int32_t)bias[j];
+        output[i * out_dim + j] = (int16_t)val;
+      }
+      if (activation == 1U && output[i * out_dim + j] < 0) {
+        output[i * out_dim + j] = 0;
+      }
+    }
+  }
+}
+
 static osai_status_t runtime_decode_tokens(osai_cpu_ai_runtime_cell_t *cell,
                                            const cpu_ai_token_t *tokens,
                                            uint64_t token_count, char *output,
@@ -350,6 +385,7 @@ void cpu_ai_runtime_init(void) {
   g_kernel_dispatch_count = 0;
   g_admission_reject_count = 0;
   g_checksum_failure_count = 0;
+  g_inference_count = 0;
   klog("cpu-ai-runtime: initialized cells=%u\n",
        OSAI_CPU_AI_RUNTIME_MAX_CELLS);
 }
@@ -595,6 +631,73 @@ osai_status_t cpu_ai_runtime_run_model(uint32_t cell_id, uint64_t model_kind,
     }
     runtime_append(output, output_capacity, &offset,
                    parity != 0U ? "odd" : "even");
+  } else if (model_kind == OSAI_ML_MODEL_MATMUL) {
+    if (input_bytes < 12U) {
+      return OSAI_ERR_INVALID;
+    }
+    uint32_t rows_a = (uint32_t)input[0];
+    uint32_t cols_a = (uint32_t)input[1];
+    uint32_t cols_b = (uint32_t)input[2];
+    if (rows_a == 0 || cols_a == 0 || cols_b == 0 ||
+        rows_a > OSAI_CPU_AI_MAX_MATRIX_DIM ||
+        cols_a > OSAI_CPU_AI_MAX_MATRIX_DIM ||
+        cols_b > OSAI_CPU_AI_MAX_MATRIX_DIM) {
+      return OSAI_ERR_INVALID;
+    }
+    uint64_t mat_bytes =
+        (uint64_t)(rows_a * cols_a + cols_a * cols_b) * sizeof(int16_t);
+    if (12U + mat_bytes > input_bytes) {
+      return OSAI_ERR_INVALID;
+    }
+    uint64_t out_bytes = (uint64_t)(rows_a * cols_b) * sizeof(int16_t);
+    if (out_bytes > output_capacity) {
+      return OSAI_ERR_NO_MEMORY;
+    }
+    const int16_t *mat_a = (const int16_t *)(input + 12U);
+    const int16_t *mat_b =
+        (const int16_t *)(input + 12U +
+                           (uint64_t)(rows_a * cols_a) * sizeof(int16_t));
+    matmul_q88(mat_a, mat_b, (int16_t *)output, rows_a, cols_a, cols_b);
+    offset = out_bytes;
+    ++g_inference_count;
+  } else if (model_kind == OSAI_ML_MODEL_FORWARD) {
+    if (input_bytes < 12U) {
+      return OSAI_ERR_INVALID;
+    }
+    uint32_t batch = (uint32_t)input[0];
+    uint32_t in_dim = (uint32_t)input[1];
+    uint32_t out_dim = (uint32_t)input[2];
+    if (batch == 0 || in_dim == 0 || out_dim == 0 ||
+        batch > OSAI_CPU_AI_MAX_MATRIX_DIM ||
+        in_dim > OSAI_CPU_AI_MAX_MATRIX_DIM ||
+        out_dim > OSAI_CPU_AI_MAX_MATRIX_DIM) {
+      return OSAI_ERR_INVALID;
+    }
+    uint64_t input_mat_bytes =
+        (uint64_t)(batch * in_dim) * sizeof(int16_t);
+    if (12U + input_mat_bytes > input_bytes) {
+      return OSAI_ERR_INVALID;
+    }
+    uint64_t out_bytes = (uint64_t)(batch * out_dim) * sizeof(int16_t);
+    if (out_bytes > output_capacity) {
+      return OSAI_ERR_NO_MEMORY;
+    }
+    const int16_t *input_mat = (const int16_t *)(input + 12U);
+    const osai_cpu_ai_runtime_cell_t *fwd_cell = 0;
+    if (validate_cell_id(cell_id) &&
+        g_cells[cell_id].state == OSAI_CPU_AI_RUNTIME_STATE_BOUND) {
+      fwd_cell = &g_cells[cell_id];
+    }
+    const int16_t *layer_weights =
+        (fwd_cell != 0 && fwd_cell->weights_base != 0 &&
+         fwd_cell->weights_size >=
+             (uint64_t)(in_dim * out_dim) * sizeof(int16_t) + 2U)
+            ? (const int16_t *)(fwd_cell->weights_base + 2U)
+            : (const int16_t *)(input + 12U + input_mat_bytes);
+    forward_pass_q88(input_mat, layer_weights, 0, (int16_t *)output,
+                     batch, in_dim, out_dim, 1U);
+    offset = out_bytes;
+    ++g_inference_count;
   } else {
     return OSAI_ERR_INVALID;
   }
@@ -670,6 +773,10 @@ uint64_t cpu_ai_runtime_admission_reject_count(void) {
 
 uint64_t cpu_ai_runtime_checksum_failure_count(void) {
   return g_checksum_failure_count;
+}
+
+uint64_t cpu_ai_runtime_inference_count(void) {
+  return g_inference_count;
 }
 
 typedef struct {
@@ -819,5 +926,40 @@ void cpu_ai_runtime_self_test(void) {
   klog("cpu-ai-runtime: tokenizer binding and CPU dispatch self-test passed tokenizer_binds=%lu kernel_dispatches=%lu\n",
        cpu_ai_runtime_tokenizer_bind_count(),
        cpu_ai_runtime_kernel_dispatch_count());
+
+  /* Q8.8 matmul test: I_2x2 * I_2x2 = I_2x2 */
+  {
+    uint8_t mm[12 + 8];
+    mm[0] = 2; mm[1] = 2; mm[2] = 2;
+    for (uint32_t i = 3; i < 12; ++i) { mm[i] = 0; }
+    int16_t *ma = (int16_t *)&mm[12];
+    ma[0] = 256; ma[1] = 0; ma[2] = 0; ma[3] = 256;
+    char mo[64];
+    uint64_t mout = 0;
+    kassert(cpu_ai_runtime_run_model(0, OSAI_ML_MODEL_MATMUL, mm,
+                                     sizeof(mm), mo, sizeof(mo),
+                                     &mout) == OSAI_OK);
+    kassert(mout == 8);
+    int16_t *mr = (int16_t *)mo;
+    kassert(mr[0] == 256 && mr[1] == 0 && mr[2] == 0 && mr[3] == 256);
+  }
+
+  /* Q8.8 forward pass test: I_2x2 with ReLU */
+  {
+    uint8_t fp[12 + 8];
+    fp[0] = 1; fp[1] = 2; fp[2] = 2;
+    for (uint32_t i = 3; i < 12; ++i) { fp[i] = 0; }
+    int16_t *fi = (int16_t *)&fp[12];
+    fi[0] = 256; fi[1] = 256; fi[2] = 0; fi[3] = 256;
+    char fo[64];
+    uint64_t fout = 0;
+    kassert(cpu_ai_runtime_run_model(0, OSAI_ML_MODEL_FORWARD, fp,
+                                     sizeof(fp), fo, sizeof(fo),
+                                     &fout) == OSAI_OK);
+    kassert(fout == 4);
+  }
+
+  klog("cpu-ai-runtime: Q8.8 matmul inference self-test passed inferences=%lu\n",
+       cpu_ai_runtime_inference_count());
   klog("cpu-ai-runtime: self-test passed\n");
 }

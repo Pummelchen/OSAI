@@ -20,7 +20,7 @@ WORKER_OBJ="$INIT_BUILD_DIR/worker.o"
 WORKER_ELF="$INIT_BUILD_DIR/worker.elf"
 USER_START_OBJ="$INIT_BUILD_DIR/user-start.o"
 USER_LIB_OBJ="$INIT_BUILD_DIR/osai-user.o"
-USER_APPS="osai-shell hello sysinfo systest smptest nettest lstm-xor sshtest mltest posix-shell"
+USER_APPS="osai-shell hello sysinfo systest smptest nettest lstm-xor sshtest mltest posix-shell agenttest"
 
 find_tool() {
   tool_name="$1"
@@ -176,6 +176,7 @@ KERNEL_OBJECTS="
   $KERNEL_BUILD_DIR/source_index.o
   $KERNEL_BUILD_DIR/network_stack.o
   $KERNEL_BUILD_DIR/git_workspace.o
+  $KERNEL_BUILD_DIR/agent_protocol.o
   $KERNEL_BUILD_DIR/pmm.o
   $KERNEL_BUILD_DIR/numa.o
   $KERNEL_BUILD_DIR/arena.o
@@ -229,6 +230,7 @@ KERNEL_OBJECTS="
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/source_index.c" -o "$KERNEL_BUILD_DIR/source_index.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/network_stack.c" -o "$KERNEL_BUILD_DIR/network_stack.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/git_workspace.c" -o "$KERNEL_BUILD_DIR/git_workspace.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/agent_protocol.c" -o "$KERNEL_BUILD_DIR/agent_protocol.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/mm/pmm.c" -o "$KERNEL_BUILD_DIR/pmm.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/mm/numa.c" -o "$KERNEL_BUILD_DIR/numa.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/mm/arena.c" -o "$KERNEL_BUILD_DIR/arena.o"

@@ -1,4 +1,5 @@
 #include <osai/assert.h>
+#include <osai/agent_protocol.h>
 #include <osai/ai_cell.h>
 #include <osai/arena.h>
 #include <osai/arp.h>
@@ -199,6 +200,7 @@ void kmain(const osai_boot_info_t *boot) {
   model_arena_self_test();
   cpu_ai_runtime_self_test();
   ai_cell_self_test();
+  agent_protocol_self_test();
   telemetry_emit_boot_summary();
 
   /* Flush logs to persistent storage */
@@ -296,7 +298,7 @@ void kmain(const osai_boot_info_t *boot) {
                             OSAI_CAP_TIME | OSAI_CAP_NET | OSAI_CAP_SMP |
                             OSAI_CAP_CPU_AI | OSAI_CAP_REMOTE_LOGIN |
                             OSAI_CAP_THREADS | OSAI_CAP_ML |
-                            OSAI_CAP_NET_SOCKET;
+                            OSAI_CAP_NET_SOCKET | OSAI_CAP_AGENT;
   run_user_app("/bin/osai-shell", 6, app_caps);
   run_user_app("/bin/hello", 7, app_caps);
   run_user_app("/bin/sysinfo", 8, app_caps);
@@ -307,6 +309,7 @@ void kmain(const osai_boot_info_t *boot) {
   run_user_app("/bin/sshtest", 13, app_caps);
   run_user_app("/bin/mltest", 14, app_caps);
   run_user_app("/bin/posix-shell", 15, app_caps);
+  run_user_app("/bin/agenttest", 16, app_caps);
 
   telemetry_emit_boot_summary();
 

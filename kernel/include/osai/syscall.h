@@ -37,6 +37,7 @@
 #define OSAI_SYSCALL_NET_RECV UINT64_C(31)
 #define OSAI_SYSCALL_NET_SEND UINT64_C(32)
 #define OSAI_SYSCALL_NET_CLOSE UINT64_C(33)
+#define OSAI_SYSCALL_AGENT_DISPATCH UINT64_C(34)
 
 #define OSAI_CAP_LOG UINT64_C(1)
 #define OSAI_CAP_EXIT UINT64_C(2)
@@ -55,6 +56,7 @@
 #define OSAI_CAP_THREADS UINT64_C(16384)
 #define OSAI_CAP_ML UINT64_C(32768)
 #define OSAI_CAP_NET_SOCKET UINT64_C(65536)
+#define OSAI_CAP_AGENT UINT64_C(131072)
 
 typedef struct osai_syscall_rename_request {
   uint64_t old_path;
@@ -134,6 +136,18 @@ typedef struct osai_syscall_socket_request {
   uint64_t out_bytes;
   uint64_t out_sockfd;
 } osai_syscall_socket_request_t;
+
+typedef struct osai_syscall_agent_dispatch_request {
+  uint64_t request;
+  uint64_t request_size;
+  uint64_t response;
+  uint64_t response_size;
+  uint64_t payload;
+  uint64_t payload_size;
+  uint64_t output;
+  uint64_t output_size;
+  uint64_t out_size;
+} osai_syscall_agent_dispatch_request_t;
 
 uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
                           uint64_t arg2);

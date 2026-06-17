@@ -1,6 +1,7 @@
 #include <stdarg.h>
 #include <osai/klog.h>
 #include <osai/panic.h>
+#include <osai/watchdog.h>
 
 void panic_at(const char *file, int line, const char *fmt, ...) {
   va_list args;
@@ -22,6 +23,10 @@ void panic_at(const char *file, int line, const char *fmt, ...) {
   va_end(args);
   klog("\n");
 
+  /* Trigger watchdog system reset instead of infinite halt */
+  watchdog_trigger_reset();
+
+  /* Fallback if watchdog_trigger_reset returns (should not) */
   for (;;) {
     __asm__ volatile("wfe");
   }

@@ -31,6 +31,7 @@ typedef int s32;
 #define OSAI_SYSCALL_NET_RECV 31ULL
 #define OSAI_SYSCALL_NET_SEND 32ULL
 #define OSAI_SYSCALL_NET_CLOSE 33ULL
+#define OSAI_SYSCALL_AGENT_DISPATCH 34ULL
 
 #define OSAI_NET_PROTOCOL_UDP 17ULL
 #define OSAI_NET_PROTOCOL_TCP 6ULL
@@ -38,6 +39,21 @@ typedef int s32;
 #define OSAI_ML_MODEL_XOR 2ULL
 #define OSAI_ML_MODEL_SUM 3ULL
 #define OSAI_ML_MODEL_PARITY 4ULL
+#define OSAI_ML_MODEL_MATMUL 5ULL
+#define OSAI_ML_MODEL_FORWARD 6ULL
+
+#define OSAI_AGENT_CMD_INFERENCE 1U
+#define OSAI_AGENT_CMD_INDEX_QUERY 2U
+#define OSAI_AGENT_CMD_GIT_STATUS 3U
+#define OSAI_AGENT_CMD_GIT_DIFF 4U
+#define OSAI_AGENT_CMD_BUILD 5U
+#define OSAI_AGENT_CMD_PING 6U
+
+#define OSAI_AGENT_STATUS_OK 0U
+#define OSAI_AGENT_STATUS_INVALID 1U
+#define OSAI_AGENT_STATUS_DENIED 2U
+#define OSAI_AGENT_STATUS_NOT_FOUND 3U
+#define OSAI_AGENT_STATUS_INTERNAL_ERROR 4U
 
 #define OSAI_MFS_OPEN_READ 1U
 #define OSAI_MFS_OPEN_WRITE 2U
@@ -131,6 +147,36 @@ typedef struct osai_socket_request {
   u64 out_sockfd;
 } osai_socket_request_t;
 
+typedef struct osai_agent_request {
+  u32 magic;
+  u32 version;
+  u32 command;
+  u32 cell_id;
+  u64 payload_size;
+  unsigned char reserved[104];
+} osai_agent_request_t;
+
+typedef struct osai_agent_response {
+  u32 magic;
+  u32 version;
+  u32 status;
+  u32 command;
+  u64 payload_size;
+  unsigned char reserved[104];
+} osai_agent_response_t;
+
+typedef struct osai_agent_dispatch_request {
+  u64 request;
+  u64 request_size;
+  u64 response;
+  u64 response_size;
+  u64 payload;
+  u64 payload_size;
+  u64 output;
+  u64 output_size;
+  u64 out_size;
+} osai_agent_dispatch_request_t;
+
 u64 osai_syscall3(u64 number, u64 arg0, u64 arg1, u64 arg2);
 u64 osai_strlen(const char *text);
 void osai_log(const char *text);
@@ -173,5 +219,9 @@ int osai_read_file(const char *path, char *buffer, u64 buffer_size);
 void osai_memzero(void *buffer, u64 size);
 void osai_append_u64(char *buffer, u64 capacity, u64 *offset, u64 value);
 void osai_append_cstr(char *buffer, u64 capacity, u64 *offset, const char *text);
+int osai_agent_dispatch(const osai_agent_request_t *request,
+                        osai_agent_response_t *response,
+                        const void *payload, u64 payload_size,
+                        char *output, u64 output_size, u64 *out_size);
 
 #endif

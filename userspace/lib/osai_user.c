@@ -352,6 +352,25 @@ void osai_append_u64(char *buffer, u64 capacity, u64 *offset, u64 value) {
   }
 }
 
+int osai_agent_dispatch(const osai_agent_request_t *request,
+                        osai_agent_response_t *response,
+                        const void *payload, u64 payload_size,
+                        char *output, u64 output_size, u64 *out_size) {
+  osai_agent_dispatch_request_t req;
+  req.request = (u64)request;
+  req.request_size = sizeof(osai_agent_request_t);
+  req.response = (u64)response;
+  req.response_size = sizeof(osai_agent_response_t);
+  req.payload = (u64)payload;
+  req.payload_size = payload_size;
+  req.output = (u64)output;
+  req.output_size = output_size;
+  req.out_size = (u64)out_size;
+  u64 rc = osai_syscall3(OSAI_SYSCALL_AGENT_DISPATCH, (u64)&req,
+                         sizeof(req), 0);
+  return rc == ~0ULL ? -1 : (int)rc;
+}
+
 void osai_log_u64(const char *prefix, u64 value, const char *suffix) {
   char line[160];
   u64 offset = 0;

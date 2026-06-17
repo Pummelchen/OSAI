@@ -8,6 +8,7 @@
 #include <osai/security.h>
 #include <osai/service.h>
 #include <osai/syscall.h>
+#include <osai/timer.h>
 #include <osai/update.h>
 #include <osai/user.h>
 
@@ -17,6 +18,7 @@
 
 static const char k_policy_never[] = "never";
 static const char k_policy_always[] = "always";
+static const char k_policy_on_failure[] = "on-failure";
 static const char k_policy_default[] = "unset";
 static const char k_log_serial[] = "serial";
 static const char k_log_off[] = "off";
@@ -43,6 +45,10 @@ static uint64_t g_admin_log_read_count;
 static uint64_t g_admin_remote_safe_accept_count;
 static uint64_t g_admin_remote_safe_reject_count;
 static uint64_t g_admin_command_denial_count;
+
+/* Crash dump ring buffer */
+static osai_crash_record_t g_crash_dumps[OSAI_CRASH_DUMP_MAX];
+static uint32_t g_crash_dump_count;
 
 static int str_eq(const char *lhs, const char *rhs) {
   if (lhs == 0 || rhs == 0) {
@@ -170,6 +176,10 @@ static void reset_service(osai_service_t *service, const char *name) {
   service->update_attempts = 0;
   service->update_rejections = 0;
   service->rollback_count = 0;
+  service->backoff_ns = 0;
+  service->last_start_ns = 0;
+  service->last_heartbeat_ns = 0;
+  service->watchdog_enabled = 0;
   copy_str(service->restart_policy_snapshot, k_policy_default);
   copy_str(service->log_policy_snapshot, k_log_off);
   service->max_restarts_snapshot = service->max_restarts;
@@ -278,7 +288,8 @@ static osai_status_t parse_restart_token(const char *token, service_config_t *co
     klog("service-manager: invalid restart field='%s'\n", token);
     return OSAI_ERR_INVALID;
   }
-  if (!str_eq(value, k_policy_never) && !str_eq(value, k_policy_always)) {
+  if (!str_eq(value, k_policy_never) && !str_eq(value, k_policy_always) &&
+      !str_eq(value, k_policy_on_failure)) {
     return OSAI_ERR_INVALID;
   }
   config->restart_policy = value;
@@ -332,6 +343,8 @@ static osai_status_t apply_service_config(osai_service_t *service,
     service->restart_policy = k_policy_never;
   } else if (str_eq(config->restart_policy, k_policy_always)) {
     service->restart_policy = k_policy_always;
+  } else if (str_eq(config->restart_policy, k_policy_on_failure)) {
+    service->restart_policy = k_policy_on_failure;
   } else {
     return OSAI_ERR_INVALID;
   }
@@ -502,6 +515,10 @@ static osai_status_t start_service(osai_service_t *service) {
   service->state = OSAI_SERVICE_STARTING;
   ++service->starts;
   ++g_service_transition_count;
+  service->last_start_ns = wall_time_now_ns();
+  service->last_heartbeat_ns = service->last_start_ns;
+  service->watchdog_enabled = 1;
+  service->backoff_ns = 0;
   klog("service: %s state=starting parent=%s\n", service->name,
        service->parent_name != 0 ? service->parent_name : "(root)");
   service->state = OSAI_SERVICE_RUNNING;
@@ -527,7 +544,8 @@ static osai_status_t supervisor_restart_failed_child(osai_service_t *service) {
   if (service == 0) {
     return OSAI_ERR_INVALID;
   }
-  if (!str_eq(service->restart_policy, k_policy_always)) {
+  if (!str_eq(service->restart_policy, k_policy_always) &&
+      !str_eq(service->restart_policy, k_policy_on_failure)) {
     klog("service-supervisor: restart skipped %s policy=%s\n",
          service->name, service->restart_policy);
     return OSAI_ERR_INVALID;
@@ -540,6 +558,18 @@ static osai_status_t supervisor_restart_failed_child(osai_service_t *service) {
          service->restart_attempts);
     return OSAI_ERR_INVALID;
   }
+
+  /* Exponential backoff */
+  if (service->backoff_ns == 0) {
+    service->backoff_ns = OSAI_BACKOFF_BASE_NS;
+  } else {
+    service->backoff_ns *= 2U;
+    if (service->backoff_ns > OSAI_BACKOFF_CAP_NS) {
+      service->backoff_ns = OSAI_BACKOFF_CAP_NS;
+    }
+  }
+  klog("service-supervisor: backoff %s delay=%lu ns\n",
+       service->name, service->backoff_ns);
 
   cleanup_service_runtime(service, "crash");
   service->state = OSAI_SERVICE_STOPPED;
@@ -571,6 +601,23 @@ static osai_status_t mark_service_exit(osai_service_t *service, int exit_code,
   klog("service: %s state=%s exit_code=%u\n", service->name,
        service_state_name(service->state), (unsigned)exit_code);
   persist_service_state(service);
+
+  /* Capture crash dump on non-zero exit */
+  if (exit_code != 0) {
+    uint32_t idx = g_crash_dump_count % OSAI_CRASH_DUMP_MAX;
+    osai_crash_record_t *rec = &g_crash_dumps[idx];
+    rec->service_name = service->name;
+    rec->exit_code = exit_code;
+    rec->crash_timestamp_ns = wall_time_now_ns();
+    rec->restart_count = service->restart_attempts;
+    rec->uptime_ns = service->last_start_ns > 0
+                         ? (rec->crash_timestamp_ns - service->last_start_ns)
+                         : 0;
+    ++g_crash_dump_count;
+    klog("service-supervisor: crash-dump %s code=%u uptime=%lu ns dumps=%u\n",
+         service->name, (unsigned)exit_code, rec->uptime_ns,
+         g_crash_dump_count);
+  }
 
   if (supervise != 0 && exit_code != 0) {
     return supervisor_restart_failed_child(service);
@@ -793,6 +840,14 @@ void service_supervisor_init(void) {
   g_admin_remote_safe_accept_count = 0;
   g_admin_remote_safe_reject_count = 0;
   g_admin_command_denial_count = 0;
+  g_crash_dump_count = 0;
+  for (uint32_t i = 0; i < OSAI_CRASH_DUMP_MAX; ++i) {
+    g_crash_dumps[i].service_name = 0;
+    g_crash_dumps[i].exit_code = 0;
+    g_crash_dumps[i].crash_timestamp_ns = 0;
+    g_crash_dumps[i].restart_count = 0;
+    g_crash_dumps[i].uptime_ns = 0;
+  }
   service_snapshot_capture(&g_init_service);
   klog("service: supervisor initialized\n");
 }
@@ -832,6 +887,47 @@ osai_status_t service_update(const char *signature) {
 osai_status_t service_exit(const char *name, int exit_code) {
   osai_service_t *service = find_service(name);
   return mark_service_exit(service, exit_code, 0);
+}
+
+osai_status_t service_heartbeat(const char *name) {
+  osai_service_t *service = find_service(name);
+  if (service == 0 || service->state != OSAI_SERVICE_RUNNING) {
+    return OSAI_ERR_INVALID;
+  }
+  service->last_heartbeat_ns = wall_time_now_ns();
+  return OSAI_OK;
+}
+
+void service_watchdog_check(void) {
+  uint64_t now = wall_time_now_ns();
+  osai_service_t *services[] = {&g_init_service, &g_manager_service,
+                                &g_worker_service, &g_child_service};
+  for (uint32_t i = 0; i < 4; ++i) {
+    osai_service_t *svc = services[i];
+    if (svc->state != OSAI_SERVICE_RUNNING || svc->watchdog_enabled == 0) {
+      continue;
+    }
+    if (svc->last_heartbeat_ns == 0) {
+      continue;
+    }
+    uint64_t elapsed = now - svc->last_heartbeat_ns;
+    if (elapsed > OSAI_WATCHDOG_TIMEOUT_NS) {
+      klog("service-watchdog: %s heartbeat timeout elapsed=%lu ns\n",
+           svc->name, elapsed);
+      mark_service_exit(svc, -1, 1);
+    }
+  }
+}
+
+uint32_t service_crash_dump_count(void) {
+  return g_crash_dump_count;
+}
+
+const osai_crash_record_t *service_crash_dump_get(uint32_t index) {
+  if (index >= OSAI_CRASH_DUMP_MAX) {
+    return 0;
+  }
+  return &g_crash_dumps[index];
 }
 
 static osai_status_t handle_osctl_command(const char *action,
@@ -1069,6 +1165,29 @@ void service_supervisor_self_test(void) {
   kassert(service_crash_count() == 1);
   kassert(service_cleanup_count() >= 1);
   kassert(service_log_record_count() >= 2);
+
+  /* Test on-failure policy */
+  reset_service(&g_child_service, 0);
+  kassert(osctl_execute(
+              "service define /svc/source-index parent=/init restart=on-failure") ==
+          OSAI_OK);
+  kassert(osctl_execute(
+              "service configure /svc/source-index restart=on-failure log=serial max_restarts=5") ==
+          OSAI_OK);
+  kassert(osctl_execute("service start /svc/source-index") == OSAI_OK);
+  /* Clean exit should NOT restart under on-failure */
+  kassert(service_exit("/svc/source-index", 0) == OSAI_OK);
+  kassert(g_child_service.state == OSAI_SERVICE_EXITED);
+
+  /* Crash should produce crash dump */
+  kassert(osctl_execute("service start /svc/source-index") == OSAI_OK);
+  kassert(osctl_execute("service crash /svc/source-index code=11") == OSAI_OK);
+  kassert(g_crash_dump_count >= 2);
+  kassert(g_crash_dumps[(g_crash_dump_count - 1U) % OSAI_CRASH_DUMP_MAX].exit_code == 11);
+
+  /* Verify backoff increased */
+  kassert(g_child_service.backoff_ns >= OSAI_BACKOFF_BASE_NS);
+
   klog("service: supervisor self-test passed\n");
 }
 

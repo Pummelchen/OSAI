@@ -1,3 +1,4 @@
+#include <osai/agent_protocol.h>
 #include <osai/arena.h>
 #include <osai/assert.h>
 #include <osai/cpu_ai_runtime.h>
@@ -58,6 +59,7 @@ static const osai_syscall_entry_t g_syscall_table[] = {
     {OSAI_SYSCALL_NET_RECV, "net_recv", OSAI_CAP_NET_SOCKET},
     {OSAI_SYSCALL_NET_SEND, "net_send", OSAI_CAP_NET_SOCKET},
     {OSAI_SYSCALL_NET_CLOSE, "net_close", OSAI_CAP_NET_SOCKET},
+    {OSAI_SYSCALL_AGENT_DISPATCH, "agent_dispatch", OSAI_CAP_AGENT},
 };
 
 static uint64_t g_control_plane_syscall_count;
@@ -136,7 +138,7 @@ static void bytes_copy(void *dst, const void *src, uint64_t size) {
 static int is_control_plane_syscall(uint64_t syscall) {
   return syscall == OSAI_SYSCALL_OSCTL ||
          (syscall >= OSAI_SYSCALL_READ_SERVICE_DESCRIPTOR &&
-          syscall <= OSAI_SYSCALL_NET_CLOSE);
+          syscall <= OSAI_SYSCALL_AGENT_DISPATCH);
 }
 
 static uint64_t reject_syscall(uint64_t syscall, uint64_t arg0, uint64_t arg1,
@@ -765,6 +767,59 @@ uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
     return OSAI_OK;
   }
 
+  if (syscall == OSAI_SYSCALL_AGENT_DISPATCH) {
+    osai_syscall_agent_dispatch_request_t request;
+    osai_agent_request_t agent_req;
+    osai_agent_response_t agent_resp;
+    uint8_t agent_payload[4096];
+    uint64_t out_size = 0;
+    if (arg1 != sizeof(request) ||
+        vmm_validate_user_buffer(arg0, sizeof(request), 0) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "bad-agent-request");
+    }
+    bytes_copy(&request, (const void *)(uintptr_t)arg0, sizeof(request));
+    if (request.request_size != sizeof(agent_req) ||
+        vmm_validate_user_buffer(request.request, sizeof(agent_req), 0) !=
+            OSAI_OK ||
+        request.response_size != sizeof(agent_resp) ||
+        vmm_validate_user_buffer(request.response, sizeof(agent_resp),
+                                 OSAI_VMM_WRITABLE) != OSAI_OK ||
+        request.output_size == 0 ||
+        vmm_validate_user_buffer(request.output, request.output_size,
+                                 OSAI_VMM_WRITABLE) != OSAI_OK ||
+        vmm_validate_user_buffer(request.out_size, sizeof(out_size),
+                                 OSAI_VMM_WRITABLE) != OSAI_OK) {
+      return reject_syscall(syscall, arg0, arg1, "agent-dispatch-denied");
+    }
+    bytes_copy(&agent_req, (const void *)(uintptr_t)request.request,
+               sizeof(agent_req));
+    if (request.payload_size > 0) {
+      if (request.payload_size > sizeof(agent_payload) ||
+          vmm_validate_user_buffer(request.payload, request.payload_size, 0) !=
+              OSAI_OK) {
+        return reject_syscall(syscall, arg0, arg1, "agent-payload-denied");
+      }
+      bytes_copy(agent_payload, (const void *)(uintptr_t)request.payload,
+                 request.payload_size);
+    }
+    if (agent_protocol_dispatch(&agent_req, &agent_resp,
+                                request.payload_size > 0 ? agent_payload : 0,
+                                request.payload_size,
+                                (char *)(uintptr_t)request.output,
+                                request.output_size, &out_size) != OSAI_OK) {
+      bytes_copy((void *)(uintptr_t)request.response, &agent_resp,
+                 sizeof(agent_resp));
+      return reject_syscall(syscall, arg0, arg1, "agent-dispatch-failed");
+    }
+    bytes_copy((void *)(uintptr_t)request.response, &agent_resp,
+               sizeof(agent_resp));
+    bytes_copy((void *)(uintptr_t)request.out_size, &out_size,
+               sizeof(out_size));
+    klog("syscall: agent_dispatch cmd=%u cell=%u out=%lu\n",
+         agent_req.command, agent_req.cell_id, out_size);
+    return complete_control_syscall(out_size);
+  }
+
   return reject_syscall(syscall, arg0, arg1, "unreachable");
 }
 
@@ -802,6 +857,7 @@ void syscall_self_test(void) {
   kassert(lookup_syscall(OSAI_SYSCALL_NET_RECV) != 0);
   kassert(lookup_syscall(OSAI_SYSCALL_NET_SEND) != 0);
   kassert(lookup_syscall(OSAI_SYSCALL_NET_CLOSE) != 0);
+  kassert(lookup_syscall(OSAI_SYSCALL_AGENT_DISPATCH) != 0);
   kassert(lookup_syscall(99) == 0);
   klog("syscall: table self-test passed entries=%lu\n",
        (uint64_t)(sizeof(g_syscall_table) / sizeof(g_syscall_table[0])));

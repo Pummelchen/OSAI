@@ -1,6 +1,11 @@
 #include <osai/assert.h>
 #include <osai/klog.h>
+#include <osai/rtc.h>
 #include <osai/timer.h>
+
+static uint64_t g_wall_epoch;
+static uint64_t g_wall_monotonic_base;
+static uint32_t g_wall_calibrated;
 
 static uint64_t g_timer_frequency_hz;
 static uint64_t g_timer_interval;
@@ -78,6 +83,22 @@ void timer_rearm(void) {
   /* Set next compare value = now + interval */
   uint64_t now = timer_counter();
   write_cntp_cval_el0(now + g_timer_interval);
+}
+
+void wall_time_calibrate(void) {
+  g_wall_epoch = (uint64_t)rtc_read_epoch();
+  g_wall_monotonic_base = timer_now_ns();
+  g_wall_calibrated = 1;
+  klog("timer: wall time calibrated epoch=%lu mono_base=%lu\n",
+       g_wall_epoch, g_wall_monotonic_base);
+}
+
+uint64_t wall_time_now_ns(void) {
+  if (g_wall_calibrated == 0) {
+    return timer_now_ns();
+  }
+  uint64_t mono = timer_now_ns();
+  return g_wall_epoch * UINT64_C(1000000000) + (mono - g_wall_monotonic_base);
 }
 
 void timer_self_test(void) {

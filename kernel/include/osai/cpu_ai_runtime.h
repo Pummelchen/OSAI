@@ -9,6 +9,9 @@
 #define OSAI_ML_MODEL_XOR UINT64_C(2)
 #define OSAI_ML_MODEL_SUM UINT64_C(3)
 #define OSAI_ML_MODEL_PARITY UINT64_C(4)
+#define OSAI_ML_MODEL_MATMUL UINT64_C(5)
+#define OSAI_ML_MODEL_FORWARD UINT64_C(6)
+#define OSAI_CPU_AI_MAX_MATRIX_DIM 16U
 
 void cpu_ai_runtime_init(void);
 osai_status_t cpu_ai_runtime_load_model_file(uint32_t model_arena_id,
@@ -45,6 +48,7 @@ uint64_t cpu_ai_runtime_tokenizer_bind_count(void);
 uint64_t cpu_ai_runtime_kernel_dispatch_count(void);
 uint64_t cpu_ai_runtime_admission_reject_count(void);
 uint64_t cpu_ai_runtime_checksum_failure_count(void);
+uint64_t cpu_ai_runtime_inference_count(void);
 void cpu_ai_runtime_self_test(void);
 
 #endif

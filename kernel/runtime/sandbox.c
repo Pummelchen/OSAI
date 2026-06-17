@@ -23,6 +23,7 @@ static osai_sandbox_t g_sandboxes[MAX_SANDBOXES];
 static uint8_t g_workspace_owner[MAX_SANDBOXES + 1U];
 static uint64_t g_transition_count;
 static uint64_t g_active_count;
+static uint64_t g_vm_exec_count;
 
 static int str_nonempty(const char *value) {
   return value != 0 && value[0] != '\0';
@@ -110,6 +111,7 @@ void sandbox_runtime_init(void) {
   }
   g_transition_count = 0;
   g_active_count = 0;
+  g_vm_exec_count = 0;
   klog("sandbox: runtime initialized\n");
 }
 
@@ -238,6 +240,109 @@ uint64_t sandbox_active_count(void) {
   return g_active_count;
 }
 
+uint64_t sandbox_vm_exec_count(void) {
+  return g_vm_exec_count;
+}
+
+osai_status_t sandbox_execute_build(uint32_t sandbox_id,
+                                    const osai_sandbox_vm_insn_t *program,
+                                    uint32_t insn_count,
+                                    uint64_t *output_bytes) {
+  if (sandbox_id >= MAX_SANDBOXES || program == 0 || insn_count == 0 ||
+      insn_count > OSAI_SANDBOX_VM_MAX_INSTRUCTIONS || output_bytes == 0) {
+    return OSAI_ERR_INVALID;
+  }
+  osai_sandbox_t *sb = &g_sandboxes[sandbox_id];
+  if (sb->state != OSAI_SANDBOX_BUILDING) {
+    return OSAI_ERR_INVALID;
+  }
+
+  int64_t regs[OSAI_SANDBOX_VM_REGISTERS];
+  for (uint32_t i = 0; i < OSAI_SANDBOX_VM_REGISTERS; ++i) {
+    regs[i] = 0;
+  }
+
+  uint8_t *arena_out = 0;
+  uint64_t arena_cap = 0;
+  if (sb->build_arena_base != 0) {
+    arena_out = (uint8_t *)(uintptr_t)sb->build_arena_base;
+    arena_cap = sb->manifest.max_artifact_bytes;
+  }
+  uint64_t out_pos = 0;
+  uint32_t pc = 0;
+  uint32_t cycles = 0;
+  const uint32_t max_cycles = insn_count * 64U;
+
+  while (pc < insn_count && cycles < max_cycles) {
+    const osai_sandbox_vm_insn_t *insn = &program[pc];
+    uint8_t dst = insn->dst % OSAI_SANDBOX_VM_REGISTERS;
+    uint8_t s1 = insn->src1 % OSAI_SANDBOX_VM_REGISTERS;
+    uint8_t s2 = insn->src2 % OSAI_SANDBOX_VM_REGISTERS;
+    ++cycles;
+
+    switch (insn->op) {
+      case OSAI_SANDBOX_VM_OP_NOP:
+        ++pc;
+        break;
+      case OSAI_SANDBOX_VM_OP_LOAD_IMM:
+        regs[dst] = (int64_t)(int32_t)insn->imm;
+        ++pc;
+        break;
+      case OSAI_SANDBOX_VM_OP_ADD:
+        regs[dst] = regs[s1] + regs[s2];
+        ++pc;
+        break;
+      case OSAI_SANDBOX_VM_OP_MUL:
+        regs[dst] = regs[s1] * regs[s2];
+        ++pc;
+        break;
+      case OSAI_SANDBOX_VM_OP_EMIT:
+        if (arena_out != 0 && out_pos < arena_cap) {
+          arena_out[out_pos++] = (uint8_t)(regs[dst] & 0xFF);
+        }
+        ++pc;
+        break;
+      case OSAI_SANDBOX_VM_OP_CMP:
+        regs[dst] = (regs[s1] == regs[s2]) ? 0 : 1;
+        ++pc;
+        break;
+      case OSAI_SANDBOX_VM_OP_JNZ:
+        if (regs[dst] != 0) {
+          pc = insn->imm;
+        } else {
+          ++pc;
+        }
+        break;
+      case OSAI_SANDBOX_VM_OP_HALT:
+        pc = insn_count;
+        break;
+      case OSAI_SANDBOX_VM_OP_EMIT_STR: {
+        uint32_t remaining = insn->imm;
+        uint32_t ri = 0;
+        while (ri < remaining && arena_out != 0 && out_pos < arena_cap) {
+          /* emit low bytes of registers in sequence */
+          uint8_t reg_idx = (uint8_t)((insn->src1 + ri) %
+                              OSAI_SANDBOX_VM_REGISTERS);
+          arena_out[out_pos++] = (uint8_t)(regs[reg_idx] & 0xFF);
+          ++ri;
+        }
+        ++pc;
+        break;
+      }
+      default:
+        ++g_vm_exec_count;
+        *output_bytes = out_pos;
+        return OSAI_ERR_INVALID;
+    }
+  }
+
+  ++g_vm_exec_count;
+  *output_bytes = out_pos;
+  klog("sandbox: %u vm-build executed cycles=%u output=%lu\n",
+       sandbox_id, cycles, out_pos);
+  return OSAI_OK;
+}
+
 void sandbox_self_test(void) {
   sandbox_runtime_init();
 
@@ -265,4 +370,40 @@ void sandbox_self_test(void) {
 
   klog("sandbox: lifecycle self-test passed active=%lu transitions=%lu\n",
        sandbox_active_count(), sandbox_transition_count());
+
+  /* bytecode VM test: emit "OK" (0x4F, 0x4B) */
+  {
+    osai_sandbox_manifest_t vm_manifest;
+    fill_manifest(&vm_manifest, 1, 2, "/repo/vm-test", 0);
+    kassert(sandbox_create(&vm_manifest) == OSAI_OK);
+    kassert(sandbox_start_build(1) == OSAI_OK);
+
+    osai_sandbox_vm_insn_t prog[5];
+    prog[0].op = OSAI_SANDBOX_VM_OP_LOAD_IMM;
+    prog[0].dst = 0; prog[0].src1 = 0; prog[0].src2 = 0;
+    prog[0].imm = 0x4F;
+    prog[1].op = OSAI_SANDBOX_VM_OP_EMIT;
+    prog[1].dst = 0; prog[1].src1 = 0; prog[1].src2 = 0;
+    prog[1].imm = 0;
+    prog[2].op = OSAI_SANDBOX_VM_OP_LOAD_IMM;
+    prog[2].dst = 0; prog[2].src1 = 0; prog[2].src2 = 0;
+    prog[2].imm = 0x4B;
+    prog[3].op = OSAI_SANDBOX_VM_OP_EMIT;
+    prog[3].dst = 0; prog[3].src1 = 0; prog[3].src2 = 0;
+    prog[3].imm = 0;
+    prog[4].op = OSAI_SANDBOX_VM_OP_HALT;
+    prog[4].dst = 0; prog[4].src1 = 0; prog[4].src2 = 0;
+    prog[4].imm = 0;
+
+    uint64_t vm_out = 0;
+    kassert(sandbox_execute_build(1, prog, 5, &vm_out) == OSAI_OK);
+    kassert(vm_out == 2);
+    uint8_t *arena = (uint8_t *)(uintptr_t)g_sandboxes[1].build_arena_base;
+    kassert(arena[0] == 0x4F && arena[1] == 0x4B);
+    kassert(sandbox_finish_build(1, "vm-build-ok") == OSAI_OK);
+    kassert(sandbox_vm_exec_count() == 1);
+  }
+
+  klog("sandbox: VM build self-test passed execs=%lu\n",
+       sandbox_vm_exec_count());
 }

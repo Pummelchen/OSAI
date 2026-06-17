@@ -45,6 +45,12 @@ osai_status_t source_index_add_symbol(uint32_t index_id, uint32_t file_id,
                                      uint32_t line);
 osai_status_t source_index_incremental_update(uint32_t index_id,
                                             const char *revision);
+osai_status_t source_index_scan_source(uint32_t index_id, uint32_t file_id,
+                                       const char *source,
+                                       uint64_t source_bytes);
+uint64_t source_index_query_symbol_count(uint32_t index_id, uint32_t file_id,
+                                         uint32_t kind);
+uint64_t source_index_scan_count(void);
 uint64_t source_index_active_count(void);
 uint64_t source_index_total_file_records(void);
 uint64_t source_index_total_symbol_records(void);

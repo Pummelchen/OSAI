@@ -12,6 +12,19 @@ typedef enum osai_service_state {
   OSAI_SERVICE_FAILED = 4,
 } osai_service_state_t;
 
+#define OSAI_CRASH_DUMP_MAX 8U
+#define OSAI_BACKOFF_BASE_NS UINT64_C(1000000000)
+#define OSAI_BACKOFF_CAP_NS UINT64_C(60000000000)
+#define OSAI_WATCHDOG_TIMEOUT_NS UINT64_C(30000000000)
+
+typedef struct osai_crash_record {
+  const char *service_name;
+  int exit_code;
+  uint64_t crash_timestamp_ns;
+  uint64_t restart_count;
+  uint64_t uptime_ns;
+} osai_crash_record_t;
+
 typedef struct osai_service {
   const char *name;
   const char *parent_name;
@@ -29,6 +42,12 @@ typedef struct osai_service {
   uint64_t update_attempts;
   uint64_t update_rejections;
   uint64_t rollback_count;
+
+  /* Tier 2: backoff, heartbeat, watchdog */
+  uint64_t backoff_ns;
+  uint64_t last_start_ns;
+  uint64_t last_heartbeat_ns;
+  uint32_t watchdog_enabled;
 
   char restart_policy_snapshot[16];
   char log_policy_snapshot[16];
@@ -49,6 +68,10 @@ osai_status_t service_update(const char *signature);
 osai_status_t service_exit(const char *name, int exit_code);
 osai_status_t osctl_execute(const char *command);
 void service_supervisor_self_test(void);
+osai_status_t service_heartbeat(const char *name);
+void service_watchdog_check(void);
+uint32_t service_crash_dump_count(void);
+const osai_crash_record_t *service_crash_dump_get(uint32_t index);
 uint64_t service_child_descriptor_count(void);
 uint64_t service_tree_edge_count(void);
 uint64_t service_transition_count(void);
