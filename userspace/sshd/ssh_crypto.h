@@ -18,6 +18,12 @@ void sha256_update(sha256_ctx_t *ctx, const uint8_t *data, uint64_t len);
 void sha256_final(sha256_ctx_t *ctx, uint8_t digest[32]);
 void sha256_hash(const uint8_t *data, uint64_t len, uint8_t digest[32]);
 
+/* SHA-512 (FIPS 180-4) */
+#define SHA512_DIGEST_SIZE 64U
+#define SHA512_BLOCK_SIZE 128U
+
+void sha512_hash(const uint8_t *data, uint64_t len, uint8_t digest[64]);
+
 /* HMAC-SHA-256 (RFC 2104) */
 void hmac_sha256(const uint8_t *key, uint64_t key_len, const uint8_t *data,
                  uint64_t data_len, uint8_t mac[32]);
