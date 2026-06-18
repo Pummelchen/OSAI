@@ -134,4 +134,54 @@ static inline void ai_prefetch_next_layer(const void *current_weights,
   }
 }
 
+/*
+ * Heterogeneous Scheduling Utilities
+ *
+ * Routes work to appropriate CPU cores based on workload type.
+ * Performance cores for compute-heavy, efficiency cores for light work.
+ */
+
+/* Core types */
+typedef enum xaios_core_type {
+  XAIOS_CORE_EFFICIENCY = 0,  /* Low-power, high-efficiency */
+  XAIOS_CORE_PERFORMANCE = 1, /* High-performance, power-hungry */
+} xaios_core_type_t;
+
+/* Determine best core type for workload */
+static inline xaios_core_type_t ai_select_core_type(uint64_t compute_intensity,
+                                                    uint64_t memory_bytes) {
+  /* Heuristic: high compute + large memory = performance core */
+  if (compute_intensity > 1000 && memory_bytes > 65536) {
+    return XAIOS_CORE_PERFORMANCE;
+  }
+  return XAIOS_CORE_EFFICIENCY;
+}
+
+/*
+ * Model Compilation Stub (Future: TVM/XLA-style)
+ *
+ * Placeholder for future kernel generation system.
+ * Would compile model graphs to optimized NEON kernels at load time.
+ */
+
+/* Compiled kernel descriptor */
+typedef struct xaios_compiled_kernel {
+  uint32_t kernel_id;
+  uint32_t input_dims[4];
+  uint32_t output_dims[4];
+  xaios_quantization_t quant;
+  void (*execute)(const void *input, void *output);  /* Generated function */
+} xaios_compiled_kernel_t;
+
+/* Compile model to optimized kernel (stub) */
+xaios_status_t ai_compile_model(const char *model_graph,
+                                xaios_compiled_kernel_t *kernel_out);
+
+/* Execute compiled kernel */
+xaios_status_t ai_execute_compiled(const xaios_compiled_kernel_t *kernel,
+                                   const void *input,
+                                   void *output,
+                                   uint64_t input_bytes,
+                                   uint64_t output_bytes);
+
 #endif

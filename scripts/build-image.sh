@@ -169,6 +169,10 @@ KERNEL_OBJECTS="
   $KERNEL_BUILD_DIR/paged_kv_cache.o
   $KERNEL_BUILD_DIR/inference_batcher.o
   $KERNEL_BUILD_DIR/inference_preempt.o
+  $KERNEL_BUILD_DIR/model_parallel.o
+  $KERNEL_BUILD_DIR/speculative_decoding.o
+  $KERNEL_BUILD_DIR/flash_attention.o
+  $KERNEL_BUILD_DIR/model_compilation.o
   $KERNEL_BUILD_DIR/user.o
   $KERNEL_BUILD_DIR/model_arena.o
   $KERNEL_BUILD_DIR/ai_cell.o
@@ -232,6 +236,10 @@ KERNEL_OBJECTS="
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/paged_kv_cache.c" -o "$KERNEL_BUILD_DIR/paged_kv_cache.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/inference_batcher.c" -o "$KERNEL_BUILD_DIR/inference_batcher.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/inference_preempt.c" -o "$KERNEL_BUILD_DIR/inference_preempt.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/model_parallel.c" -o "$KERNEL_BUILD_DIR/model_parallel.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/speculative_decoding.c" -o "$KERNEL_BUILD_DIR/speculative_decoding.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/flash_attention.c" -o "$KERNEL_BUILD_DIR/flash_attention.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/model_compilation.c" -o "$KERNEL_BUILD_DIR/model_compilation.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/sandbox.c" -o "$KERNEL_BUILD_DIR/sandbox.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/persistence.c" -o "$KERNEL_BUILD_DIR/persistence.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/update.c" -o "$KERNEL_BUILD_DIR/update.o"
