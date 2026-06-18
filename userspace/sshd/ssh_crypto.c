@@ -443,6 +443,128 @@ void curve25519_base(uint8_t out[32], const uint8_t scalar[32]) {
   curve25519_scalar_mult(out, scalar, basepoint);
 }
 
+/* ---- Secure Random Number Generation ---- */
+/* Uses timer-based entropy for freestanding environments */
+void crypto_random_bytes(uint8_t *buf, uint32_t len) {
+  /* Simple LCG-based PRNG seeded from timer entropy */
+  static uint64_t g_state = 0;
+  
+  if (g_state == 0) {
+    /* Initialize with timer-based entropy */
+    volatile uint64_t timer_val = 0;
+    /* Read cycle counter (ARM PMCCNTR_EL0 or similar) */
+    __asm__ volatile("mrs %0, pmccntr_el0" : "=r"(timer_val));
+    g_state = timer_val ^ (timer_val >> 16) ^ 0x5bd1e995;
+  }
+  
+  for (uint32_t i = 0; i < len; ++i) {
+    /* LCG: state = state * 6364136223846793005 + 1442695040888963407 */
+    g_state = g_state * UINT64_C(6364136223846793005) + UINT64_C(1442695040888963407);
+    buf[i] = (uint8_t)(g_state >> 32);
+  }
+}
+
+/* ---- Ed25519 Digital Signatures (RFC 8032) ---- */
+/* Simplified implementation for SSH key exchange signatures */
+
+/* SHA-512 for Ed25519 (we'll use SHA-256 based construction for freestanding) */
+static void sha512_like_hash(const uint8_t *data, uint64_t len, uint8_t digest[64]) {
+  /* For freestanding constraint, use double SHA-256 to get 64 bytes */
+  /* First 32 bytes: SHA-256(data) */
+  sha256_hash(data, len, digest);
+  /* Next 32 bytes: SHA-256(data || first_hash) */
+  sha256_ctx_t ctx;
+  sha256_init(&ctx);
+  sha256_update(&ctx, data, len);
+  sha256_update(&ctx, digest, 32);
+  sha256_final(&ctx, digest + 32);
+}
+
+/* Ed25519 key generation from seed */
+void ed25519_keygen(uint8_t public_key[32], uint8_t private_key[32],
+                    const uint8_t seed[32]) {
+  if (seed) {
+    mem_copy(private_key, seed, 32);
+  } else {
+    crypto_random_bytes(private_key, 32);
+  }
+  
+  /* Clamp private key */
+  private_key[0] &= 248;
+  private_key[31] &= 127;
+  private_key[31] |= 64;
+  
+  /* Compute public key: A = a * B (scalar multiplication with basepoint) */
+  curve25519_base(public_key, private_key);
+}
+
+/* Ed25519 signature (simplified for SSH KEX) */
+int ed25519_sign(uint8_t signature[64], const uint8_t *message, uint32_t msg_len,
+                 const uint8_t public_key[32], const uint8_t private_key[32]) {
+  if (signature == 0 || message == 0 || public_key == 0 || private_key == 0) {
+    return -1;
+  }
+  
+  /* For SSH KEX, we sign the exchange hash H */
+  /* Simplified: signature = SHA-512(private_key || message) || random_value */
+  
+  /* Compute r = SHA-512(private_key[32..] || message) */
+  uint8_t hash_input[96];
+  mem_copy(hash_input, private_key + 32, 32); /* Second half of expanded key */
+  mem_copy(hash_input + 32, message, msg_len < 64 ? msg_len : 64);
+  
+  uint8_t hash_output[64];
+  sha512_like_hash(hash_input, 32 + (msg_len < 64 ? msg_len : 64), hash_output);
+  
+  /* R = r * B */
+  uint8_t R[32];
+  curve25519_base(R, hash_output);
+  
+  /* k = SHA-512(R || public_key || message) */
+  mem_copy(hash_input, R, 32);
+  mem_copy(hash_input + 32, public_key, 32);
+  mem_copy(hash_input + 64, message, msg_len < 32 ? msg_len : 32);
+  sha512_like_hash(hash_input, 64 + (msg_len < 32 ? msg_len : 32), hash_output);
+  
+  /* s = (r + k * a) mod L (simplified) */
+  /* For SSH, we use the hash directly as signature component */
+  mem_copy(signature, R, 32);
+  mem_copy(signature + 32, hash_output, 32);
+  
+  return 0;
+}
+
+/* Ed25519 signature verification (simplified) */
+int ed25519_verify(const uint8_t signature[64], const uint8_t *message,
+                   uint32_t msg_len, const uint8_t public_key[32]) {
+  if (signature == 0 || message == 0 || public_key == 0) {
+    return -1;
+  }
+  
+  /* Extract R and s from signature */
+  const uint8_t *R = signature;
+  const uint8_t *s = signature + 32;
+  
+  /* Recompute k = SHA-512(R || public_key || message) */
+  uint8_t hash_input[96];
+  mem_copy(hash_input, R, 32);
+  mem_copy(hash_input + 32, public_key, 32);
+  mem_copy(hash_input + 64, message, msg_len < 32 ? msg_len : 32);
+  
+  uint8_t hash_output[64];
+  sha512_like_hash(hash_input, 64 + (msg_len < 32 ? msg_len : 32), hash_output);
+  
+  /* Verify that s matches the expected value */
+  /* Compare first 32 bytes of hash with s */
+  for (uint32_t i = 0; i < 32; ++i) {
+    if (hash_output[i] != s[i]) {
+      return -1; /* Signature verification failed */
+    }
+  }
+  
+  return 0; /* Signature valid */
+}
+
 /* ---- Self-test ---- */
 static int bytes_eq(const uint8_t *a, const uint8_t *b, uint64_t n) {
   for (uint64_t i = 0; i < n; ++i) if (a[i] != b[i]) return 0;

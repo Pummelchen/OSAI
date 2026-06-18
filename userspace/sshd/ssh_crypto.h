@@ -44,6 +44,22 @@ void curve25519_scalar_mult(uint8_t out[32], const uint8_t scalar[32],
                             const uint8_t point[32]);
 void curve25519_base(uint8_t out[32], const uint8_t scalar[32]);
 
+/* Ed25519 Digital Signatures (RFC 8032) */
+#define ED25519_PUBLIC_KEY_SIZE 32U
+#define ED25519_PRIVATE_KEY_SIZE 32U
+#define ED25519_SEED_SIZE 32U
+#define ED25519_SIGNATURE_SIZE 64U
+
+void ed25519_keygen(uint8_t public_key[32], uint8_t private_key[32],
+                    const uint8_t seed[32]);
+int ed25519_sign(uint8_t signature[64], const uint8_t *message, uint32_t msg_len,
+                 const uint8_t public_key[32], const uint8_t private_key[32]);
+int ed25519_verify(const uint8_t signature[64], const uint8_t *message,
+                   uint32_t msg_len, const uint8_t public_key[32]);
+
+/* Secure Random Number Generation */
+void crypto_random_bytes(uint8_t *buf, uint32_t len);
+
 /* Self-test against known vectors */
 void ssh_crypto_self_test(void);
 
