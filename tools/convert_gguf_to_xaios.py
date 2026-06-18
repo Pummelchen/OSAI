@@ -171,17 +171,55 @@ def convert_gguf_to_xaios(input_path: str, output_path: str, quant_type: str,
     
     # Extract metadata
     arch = reader.architecture
-    param_count = 0
     tensor_count = len(reader.tensors)
     
-    print(f"Architecture: {arch}")
-    print(f"Tensor count: {tensor_count}")
-    
     # Calculate parameter count
+    param_count = 0
     for tensor in reader.tensors:
         param_count += np.prod(tensor.shape)
     
+    # Extract architecture-specific metadata
+    num_layers = 0
+    hidden_size = 0
+    num_attention_heads = 0
+    
+    # Count layers from tensor names (blk.0, blk.1, etc.)
+    layer_nums = set()
+    for tensor in reader.tensors:
+        if 'blk.' in tensor.name:
+            # Extract layer number from 'blk.N.'
+            parts = tensor.name.split('.')
+            for idx, part in enumerate(parts):
+                if part == 'blk' and idx + 1 < len(parts):
+                    try:
+                        layer_num = int(parts[idx + 1])
+                        layer_nums.add(layer_num)
+                    except ValueError:
+                        pass
+    num_layers = max(layer_nums) + 1 if layer_nums else 0
+    
+    # Extract hidden size from attention weights
+    for tensor in reader.tensors:
+        if 'attn_q.weight' in tensor.name or 'attn_k.weight' in tensor.name:
+            if len(tensor.shape) > 0:
+                hidden_size = tensor.shape[0]
+                break
+    
+    # Estimate attention heads (hidden_size / 128 is typical for most models)
+    if hidden_size > 0:
+        num_attention_heads = hidden_size // 128
+    
+    # Detect model type from architecture name
+    model_type = 0  # unknown
+    if 'qwen3.5' in arch.lower() or 'qwen3_5' in arch.lower():
+        model_type = 1
+    elif 'qwen3' in arch.lower() or 'qwen3.' in arch.lower():
+        model_type = 2
+    
+    print(f"Architecture: {arch}")
+    print(f"Model type: {model_type} (1=Qwen3.5, 2=Qwen3.6, 0=unknown)")
     print(f"Parameter count: {param_count:,}")
+    print(f"Layers: {num_layers}, Hidden: {hidden_size}, Heads: {num_attention_heads}")
     print(f"Target quantization: {quant_type}")
     
     # Extract and quantize weights
@@ -219,24 +257,24 @@ def convert_gguf_to_xaios(input_path: str, output_path: str, quant_type: str,
     print(f"Tokenizer size: {tokenizer_size:,} bytes")
     print(f"Tokenizer type: BPE ({tokenizer['vocab_size']} tokens)")
     
-    # Calculate KV cache requirement
-    # Formula: 2 × num_layers × hidden_size × context_length × sizeof(float)
-    # Estimate from parameter count (rough approximation)
-    num_layers = 48  # Default for 27B model
-    hidden_size = 5120
-    kv_bytes_required = 2 * num_layers * hidden_size * context_length * 4
+    # Calculate KV cache requirement from metadata
+    if num_layers > 0 and hidden_size > 0:
+        kv_bytes_required = 2 * num_layers * hidden_size * context_length * 4
+    else:
+        # Fallback: estimate from parameter count (rough approximation)
+        kv_bytes_required = param_count * 4 // 10
     
     print(f"KV cache required: {kv_bytes_required:,} bytes ({kv_bytes_required / 1024**3:.2f} GB)")
     
-    # Build manifest (with zero checksum)
+    # Build manifest (160 bytes with model metadata)
     manifest_data = bytearray()
     manifest_data.extend(struct.pack('<I', XAIOS_MAGIC))
     manifest_data.extend(struct.pack('<H', XAIOS_VERSION))
-    manifest_data.extend(struct.pack('<H', XAIOS_HEADER_SIZE))
+    manifest_data.extend(struct.pack('<H', 160))  # 160-byte header with metadata
     manifest_data.extend(struct.pack('<H', QUANT_MAP[quant_type]))
     manifest_data.extend(struct.pack('<H', 0))  # reserved
     manifest_data.extend(struct.pack('<I', XAIOS_FLAG_CPU_ONLY))
-    manifest_data.extend(struct.pack('<I', XAIOS_TOKENIZER_BPE))
+    manifest_data.extend(struct.pack('<I', XAIOS_TOKENIZER_BPE))  # BPE tokenizer
     manifest_data.extend(struct.pack('<I', XAIOS_RUNTIME_DETERMINISTIC))
     manifest_data.extend(struct.pack('<Q', XAIOS_HEADER_SIZE))  # weights_offset
     manifest_data.extend(struct.pack('<Q', weights_size))
@@ -248,8 +286,17 @@ def convert_gguf_to_xaios(input_path: str, output_path: str, quant_type: str,
     manifest_data.extend(struct.pack('<B', 16))    # stride
     manifest_data.extend(b'\x00' * 6)              # reserved
     
-    # Pad to 80 bytes
-    while len(manifest_data) < XAIOS_HEADER_SIZE:
+    # Model metadata (80 bytes)
+    manifest_data.extend(struct.pack('<I', model_type))
+    manifest_data.extend(struct.pack('<I', param_count))
+    manifest_data.extend(struct.pack('<I', num_layers))
+    manifest_data.extend(struct.pack('<I', hidden_size))
+    manifest_data.extend(struct.pack('<I', num_attention_heads))
+    manifest_data.extend(struct.pack('<I', context_length))
+    manifest_data.extend(b'\x00' * 56)              # reserved for future fields
+    
+    # Pad to 160 bytes
+    while len(manifest_data) < 160:
         manifest_data.append(0)
     
     # Compute payload hash (weights + tokenizer)
@@ -288,7 +335,14 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Convert Qwen3 27B with INT6 quantization
+  # Convert Qwen3.5-0.8B (fast testing, ~3GB)
+  python3 convert_gguf_to_xaios.py \\
+      --input Qwen3.5-0.8B-Q6_K.gguf \\
+      --output qwen3.5-0.8b-xaios.bin \\
+      --quantization int6 \\
+      --context-length 4096
+
+  # Convert Qwen3.6-27B (production, ~20GB)
   python3 convert_gguf_to_xaios.py \\
       --input Qwen3-27B-Q6_K.gguf \\
       --output qwen3-27b-xaios.bin \\

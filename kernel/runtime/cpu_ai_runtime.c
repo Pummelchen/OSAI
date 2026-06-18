@@ -13,6 +13,7 @@
 #define CPU_AI_FLAG_CPU_ONLY UINT32_C(1)
 #define CPU_AI_FLAG_GPU_REQUIRED UINT32_C(1 << 1)
 #define CPU_AI_TOKENIZER_BYTE_TABLE UINT32_C(1)
+#define CPU_AI_TOKENIZER_BPE        UINT32_C(2)  /* BPE tokenizer for modern LLMs */
 #define CPU_AI_RUNTIME_DETERMINISTIC UINT32_C(1)
 #define CPU_AI_MAX_TOKENS 32U
 #define CPU_AI_MIN_WEIGHT_BYTES UINT64_C(2)
@@ -41,6 +42,15 @@ typedef struct {
   uint8_t key;
   uint8_t stride;
   uint8_t reserved1[6];
+  
+  /* Model metadata (appended after original 80 bytes, total 160 bytes) */
+  uint32_t model_type;         /* 1=Qwen3.5, 2=Qwen3.6, 0=unknown */
+  uint32_t parameter_count;    /* Total parameters (e.g., 800000000) */
+  uint32_t num_layers;         /* Transformer layers (e.g., 16 or 48) */
+  uint32_t hidden_size;        /* Hidden dimension (e.g., 1536 or 5120) */
+  uint32_t num_attention_heads;/* Attention heads */
+  uint32_t context_length;     /* Max context length */
+  uint8_t  reserved2[56];      /* Reserved for future fields */
 } cpu_ai_model_manifest_t;
 
 typedef struct {
@@ -71,6 +81,17 @@ typedef struct {
   uint8_t stride;
   xaios_quantization_t quant_format;  /* NEON kernel quantization format */
   const char *model_name;
+  
+  /* BPE tokenizer state (for modern LLMs) */
+  xaios_bpe_tokenizer_t bpe_tokenizer;
+  
+  /* Model metadata (from manifest) */
+  uint32_t model_type;
+  uint32_t parameter_count;
+  uint32_t num_layers;
+  uint32_t hidden_size;
+  uint32_t num_attention_heads;
+  uint32_t context_length;
 } xaios_cpu_ai_runtime_cell_t;
 
 static xaios_cpu_ai_runtime_cell_t g_cells[XAIOS_CPU_AI_RUNTIME_MAX_CELLS];
@@ -155,13 +176,34 @@ static xaios_status_t validate_model_image(const void *base, uint64_t size,
   const cpu_ai_model_manifest_t *manifest =
       (const cpu_ai_model_manifest_t *)base;
   ++g_manifest_validation_count;
+  
+  /* Check magic and version */
   if (manifest->magic != CPU_AI_MAGIC ||
-      manifest->version != CPU_AI_VERSION ||
-      manifest->header_bytes != sizeof(cpu_ai_model_manifest_t) ||
-      manifest->quantization != CPU_AI_QUANTIZATION_SUPPORTED ||
-      manifest->stride == 0 || manifest->stride > 32U ||
-      manifest->tokenizer_id != CPU_AI_TOKENIZER_BYTE_TABLE ||
-      manifest->runtime_id != CPU_AI_RUNTIME_DETERMINISTIC ||
+      manifest->version != CPU_AI_VERSION) {
+    ++g_admission_reject_count;
+    return XAIOS_ERR_INVALID;
+  }
+  
+  /* Support both 80-byte (legacy) and 160-byte (new) manifests */
+  if (manifest->header_bytes != 80 && manifest->header_bytes != 160) {
+    ++g_admission_reject_count;
+    return XAIOS_ERR_INVALID;
+  }
+  
+  if (manifest->quantization != CPU_AI_QUANTIZATION_SUPPORTED ||
+      manifest->stride == 0 || manifest->stride > 32U) {
+    ++g_admission_reject_count;
+    return XAIOS_ERR_INVALID;
+  }
+  
+  /* Accept both BYTE_TABLE and BPE tokenizers */
+  if (manifest->tokenizer_id != CPU_AI_TOKENIZER_BYTE_TABLE &&
+      manifest->tokenizer_id != CPU_AI_TOKENIZER_BPE) {
+    ++g_admission_reject_count;
+    return XAIOS_ERR_INVALID;
+  }
+  
+  if (manifest->runtime_id != CPU_AI_RUNTIME_DETERMINISTIC ||
       (manifest->flags & CPU_AI_FLAG_CPU_ONLY) == 0 ||
       !range_in_model(manifest->weights_offset, manifest->weights_size,
                       size) ||
@@ -237,21 +279,57 @@ static xaios_status_t tokenizer_encode(xaios_cpu_ai_runtime_cell_t *cell,
                                       cpu_ai_token_t *tokens,
                                       uint64_t token_capacity,
                                       uint64_t *token_count) {
-  if (cell == 0 || piece == 0 || tokens == 0 || token_count == 0 ||
-      cell->tokenizer_id != CPU_AI_TOKENIZER_BYTE_TABLE ||
-      cell->tokenizer_base == 0 ||
-      cell->tokenizer_size < CPU_AI_TOKENIZER_BYTES ||
-      piece_bytes > token_capacity) {
+  if (cell == 0 || piece == 0 || tokens == 0 || token_count == 0) {
     return XAIOS_ERR_INVALID;
   }
-
-  for (uint64_t i = 0; i < piece_bytes; ++i) {
-    tokens[i].token_id = cell->tokenizer_base[piece[i]];
-    tokens[i].source_byte = piece[i];
+  
+  /* Dispatch based on tokenizer type */
+  if (cell->tokenizer_id == CPU_AI_TOKENIZER_BYTE_TABLE) {
+    /* BYTE_TABLE tokenizer (legacy, 256-byte lookup table) */
+    if (cell->tokenizer_base == 0 ||
+        cell->tokenizer_size < CPU_AI_TOKENIZER_BYTES ||
+        piece_bytes > token_capacity) {
+      return XAIOS_ERR_INVALID;
+    }
+    
+    for (uint64_t i = 0; i < piece_bytes; ++i) {
+      tokens[i].token_id = cell->tokenizer_base[piece[i]];
+      tokens[i].source_byte = piece[i];
+    }
+    *token_count = piece_bytes;
+    ++g_tokenizer_call_count;
+    return XAIOS_OK;
+    
+  } else if (cell->tokenizer_id == CPU_AI_TOKENIZER_BPE) {
+    /* BPE tokenizer (modern LLMs, variable-length tokens) */
+    if (piece_bytes == 0) {
+      *token_count = 0;
+      return XAIOS_OK;
+    }
+    
+    uint32_t max_tokens = (uint32_t)(token_capacity < UINT32_MAX ? 
+                                     token_capacity : UINT32_MAX);
+    uint32_t token_count_out;
+    
+    xaios_status_t status = ai_bpe_tokenize(
+        &cell->bpe_tokenizer,
+        (const char *)piece,
+        (uint32_t)piece_bytes,
+        (uint32_t *)tokens,
+        &token_count_out,
+        max_tokens
+    );
+    
+    if (status != XAIOS_OK) {
+      return status;
+    }
+    
+    *token_count = token_count_out;
+    ++g_tokenizer_call_count;
+    return XAIOS_OK;
   }
-  *token_count = piece_bytes;
-  ++g_tokenizer_call_count;
-  return XAIOS_OK;
+  
+  return XAIOS_ERR_INVALID;
 }
 
 static xaios_status_t kv_record_tokens(xaios_cpu_ai_runtime_cell_t *cell,
@@ -388,6 +466,32 @@ xaios_status_t cpu_ai_runtime_load_model_file(uint32_t model_arena_id,
   return status;
 }
 
+/*
+ * Calculate KV cache requirements from model metadata
+ * 
+ * Formula: 2 × num_layers × hidden_size × context_length × sizeof(float)
+ * The factor of 2 accounts for both K and V caches.
+ */
+static uint64_t calculate_kv_cache_bytes(const cpu_ai_model_manifest_t *manifest,
+                                        uint32_t context_length) {
+  /* If manifest has metadata, use it */
+  if (manifest->header_bytes >= 160 && manifest->num_layers > 0 &&
+      manifest->hidden_size > 0) {
+    uint32_t num_layers = manifest->num_layers;
+    uint32_t hidden_size = manifest->hidden_size;
+    
+    /* Formula: 2 × num_layers × hidden_size × context_length × 4 bytes */
+    uint64_t kv_bytes = 2ULL * num_layers * hidden_size * context_length * 4;
+    
+    klog("cpu-ai-runtime: KV cache calculated: %lu bytes (%.2f MB)\n",
+         kv_bytes, (double)kv_bytes / (1024.0 * 1024.0));
+    return kv_bytes;
+  }
+  
+  /* Fallback: use manifest's pre-calculated value */
+  return manifest->kv_bytes_required;
+}
+
 xaios_status_t cpu_ai_runtime_bind_model(uint32_t cell_id,
                                         uint32_t model_arena_id) {
   return cpu_ai_runtime_bind_model_with_kv(cell_id, model_arena_id,
@@ -419,10 +523,18 @@ xaios_status_t cpu_ai_runtime_bind_model_with_kv(uint32_t cell_id,
     kassert(model_arena_release(model_arena_id) == XAIOS_OK);
     return XAIOS_ERR_INVALID;
   }
-  if (kv_base == 0 || kv_bytes < manifest->kv_bytes_required) {
+  
+  /* Calculate actual KV requirement from metadata */
+  uint32_t context_len = (manifest->header_bytes >= 160 && manifest->context_length > 0) 
+                         ? manifest->context_length : 4096; /* Default fallback */
+  uint64_t kv_required = calculate_kv_cache_bytes(manifest, context_len);
+  
+  if (kv_base == 0 || kv_bytes < kv_required) {
     ++g_admission_reject_count;
     ++g_model_load_failure_count;
     kassert(model_arena_release(model_arena_id) == XAIOS_OK);
+    klog("cpu-ai-runtime: insufficient KV cache cell=%u required=%lu provided=%lu\n",
+         cell_id, kv_required, kv_bytes);
     return XAIOS_ERR_INVALID;
   }
 
@@ -444,6 +556,38 @@ xaios_status_t cpu_ai_runtime_bind_model_with_kv(uint32_t cell_id,
   cell->key = manifest->key;
   cell->stride = manifest->stride;
   cell->model_name = model->name;
+  
+  /* Initialize BPE tokenizer if needed */
+  if (manifest->tokenizer_id == CPU_AI_TOKENIZER_BPE) {
+    xaios_status_t status = ai_bpe_tokenizer_init(
+        cell->tokenizer_base,
+        cell->tokenizer_size,
+        &cell->bpe_tokenizer
+    );
+    if (status != XAIOS_OK) {
+      klog("cpu-ai-runtime: failed to init BPE tokenizer cell=%u status=%d\n", cell_id, status);
+      ++g_model_load_failure_count;
+      kassert(model_arena_release(model_arena_id) == XAIOS_OK);
+      return XAIOS_ERR_INVALID;
+    }
+    klog("cpu-ai-runtime: BPE tokenizer loaded cell=%u vocab_size=%u\n",
+         cell_id, ai_bpe_vocab_size(&cell->bpe_tokenizer));
+  }
+  
+  /* Copy model metadata (if available from 160-byte manifest) */
+  if (manifest->header_bytes >= 160) {
+    cell->model_type = manifest->model_type;
+    cell->parameter_count = manifest->parameter_count;
+    cell->num_layers = manifest->num_layers;
+    cell->hidden_size = manifest->hidden_size;
+    cell->num_attention_heads = manifest->num_attention_heads;
+    cell->context_length = manifest->context_length;
+    
+    klog("cpu-ai-runtime: model metadata cell=%u type=%u params=%u layers=%u hidden=%u heads=%u context=%u\n",
+         cell_id, cell->model_type, cell->parameter_count,
+         cell->num_layers, cell->hidden_size, cell->num_attention_heads,
+         cell->context_length);
+  }
   
   /* Map manifest quantization to NEON kernel format */
   if (manifest->quantization == 8) {
