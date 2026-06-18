@@ -10,16 +10,6 @@ XAI OS is not a Linux distribution, a BSD fork, a desktop OS, or a GPU AI runtim
 
 ## Why XAI OS Exists
 
-Most applications are still operationally dumb: they run business logic, expose APIs, store data, and wait for humans to improve them. XAI OS targets a different model where normal applications become **intelligent, self-improving systems** powered by embedded AI agents.
-
-In that model, each application hosts an AI agent that:
-
-- understands the application's Git source tree;
-- accepts human requests in natural language;
-- generates, tests, and reviews code patches;
-- rebuilds and validates changes autonomously;
-- hot reloads or redeploys improved services.
-
 The operating system is engineered around making that loop **blazing fast and deterministic**. XAI OS removes avoidable interference from scheduling jitter, memory duplication, background daemons, generic network paths, and cross-core movement on hot AI inference paths.
 
 ## Performance Advantage: CPU-Only AI Inference
