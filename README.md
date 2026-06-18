@@ -59,6 +59,8 @@ Detailed design documentation lives in the GitHub Wiki:
 - [Codex Work Packages](https://github.com/Pummelchen/XAIOS/wiki/Codex-Work-Packages)
 - [Project Tracker](https://github.com/Pummelchen/XAIOS/wiki/Project-Tracker)
 - [QEMU 100 Completion Plan](https://github.com/Pummelchen/XAIOS/wiki/QEMU-100-Completion-Plan)
+- [Qwen3.5/3.6 INT6 Support](https://github.com/Pummelchen/XAIOS/wiki/Qwen3.6-INT6-Support)
+- [Production SSH Server](https://github.com/Pummelchen/XAIOS/wiki/Production-SSH-Server)
 
 Current local QEMU correctness completion is checked with:
 
@@ -73,6 +75,42 @@ For local SSH access to the current QEMU remote-login surface:
 make xaios-ssh-bridge
 ssh -p 2222 admin@localhost
 ```
+
+## AI Model Support
+
+XAI OS supports converted Qwen models in native INT6 quantization format:
+
+### Supported Models
+
+| Model | Parameters | Size (INT6) | Use Case |
+|-------|-----------|-------------|----------|
+| Qwen3.5-0.8B | 800M | ~3 GB | Fast testing, development |
+| Qwen3.6-27B | 27B | ~20 GB | Production deployments |
+
+### Converting Models
+
+Use the GGUF converter to transform HuggingFace models to XAI OS format:
+
+```sh
+# Install dependencies
+pip install gguf numpy
+
+# Convert Qwen3.5-0.8B (fast testing)
+python3 tools/convert_gguf_to_xaios.py \
+    qwen3.5-0.8b.Q4_K_M.gguf \
+    qwen3.5-0.8b.xaios \
+    --quant int6 \
+    --context 8192
+
+# Convert Qwen3.6-27B (production)
+python3 tools/convert_gguf_to_xaios.py \
+    qwen3.6-27b.Q4_K_M.gguf \
+    qwen3.6-27b.xaios \
+    --quant int6 \
+    --context 8192
+```
+
+The converter automatically extracts model metadata, calculates KV cache requirements, and builds optimized INT6 quantized images. See [Qwen3.6 INT6 Support](https://github.com/Pummelchen/XAIOS/wiki/Qwen3.6-INT6-Support) for details.
 
 ## Status
 
