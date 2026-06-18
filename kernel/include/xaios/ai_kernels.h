@@ -21,6 +21,7 @@ typedef enum xaios_quantization {
   XAIOS_QUANT_INT8 = 2,   /* 8-bit integer, 1 byte/param */
   XAIOS_QUANT_INT4 = 3,   /* 4-bit integer, 0.5 bytes/param */
   XAIOS_QUANT_Q88 = 4,    /* Q8.8 fixed-point, 2 bytes/param (legacy) */
+  XAIOS_QUANT_INT6 = 5,   /* 6-bit integer, 0.75 bytes/param (Qwen optimized) */
 } xaios_quantization_t;
 
 /* Work unit for multi-threaded matmul */
@@ -79,9 +80,14 @@ void ai_kernel_forward(const void *input, const void *weights,
  */
 xaios_status_t ai_kernel_quantize_fp32_to_int8(const float *fp32, int8_t *int8,
                                                float *scales, uint32_t count);
+xaios_status_t ai_kernel_quantize_fp32_to_int6(const float *fp32, int8_t *int6,
+                                               float *scales, uint32_t count);
 xaios_status_t ai_kernel_quantize_fp32_to_int4(const float *fp32, int8_t *int4,
                                                float *scales, uint32_t count);
 xaios_status_t ai_kernel_dequantize_int8_to_fp32(const int8_t *int8,
+                                                 const float *scales,
+                                                 float *fp32, uint32_t count);
+xaios_status_t ai_kernel_dequantize_int6_to_fp32(const int8_t *int6,
                                                  const float *scales,
                                                  float *fp32, uint32_t count);
 
@@ -183,5 +189,33 @@ xaios_status_t ai_execute_compiled(const xaios_compiled_kernel_t *kernel,
                                    void *output,
                                    uint64_t input_bytes,
                                    uint64_t output_bytes);
+
+/*
+ * BPE Tokenizer Interface
+ */
+typedef struct xaios_bpe_tokenizer xaios_bpe_tokenizer_t;
+
+xaios_status_t ai_bpe_tokenizer_init(const uint8_t *data, uint64_t size,
+                                     xaios_bpe_tokenizer_t *tokenizer);
+xaios_status_t ai_bpe_tokenize(xaios_bpe_tokenizer_t *tokenizer,
+                               const char *input, uint32_t input_len,
+                               uint32_t *output_tokens,
+                               uint32_t *token_count,
+                               uint32_t max_tokens);
+xaios_status_t ai_bpe_detokenize(xaios_bpe_tokenizer_t *tokenizer,
+                                 const uint32_t *tokens,
+                                 uint32_t token_count,
+                                 char *output, uint32_t *output_len,
+                                 uint32_t max_output_len);
+uint32_t ai_bpe_vocab_size(xaios_bpe_tokenizer_t *tokenizer);
+const char *ai_bpe_get_token(xaios_bpe_tokenizer_t *tokenizer,
+                              uint32_t token_id);
+
+/*
+ * Rotary Position Embedding (RoPE)
+ */
+void ai_kernel_rope_apply(float *query, float *key,
+                         uint32_t num_tokens, uint32_t head_dim,
+                         uint32_t position_offset, float theta_base);
 
 #endif
