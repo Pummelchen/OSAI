@@ -49,6 +49,24 @@ typedef struct {
   uint64_t bytes_received;
 } sshd_stats_t;
 
+/* Lock-free connection queue (atomic operations) */
+typedef struct {
+  volatile u64 connections[SSHD_MAX_PENDING_CONNECTIONS];
+  volatile uint32_t head;  /* Atomic: consumers read */
+  volatile uint32_t tail;  /* Atomic: producers write */
+  volatile uint32_t count; /* Atomic: queue size */
+} sshd_queue_t;
+
+/* Active connection tracking for multi-client support */
+typedef struct {
+  u64 sockfd;
+  int active;
+  uint32_t client_ip;
+  uint64_t last_activity;
+} sshd_active_conn_t;
+
+#define SSHD_MAX_ACTIVE_CONNECTIONS 64
+
 /* Logging levels */
 #define SSH_LOG_INFO  0
 #define SSH_LOG_WARN  1
