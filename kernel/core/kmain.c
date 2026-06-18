@@ -38,6 +38,7 @@
 #include <xaios/syscall.h>
 #include <xaios/telemetry.h>
 #include <xaios/timer.h>
+#include <xaios/topology.h>
 #include <xaios/update.h>
 #include <xaios/user.h>
 #include <xaios/virtio_blk.h>
@@ -91,6 +92,9 @@ void kmain(const xaios_boot_info_t *boot) {
   stack_canary_self_test();
   smp_init_qemu_virt();
   smp_self_test();
+
+  topology_init();          /* Build CPU hierarchy for hierarchical scheduler */
+  topology_self_test();
 
   numa_init(boot);
   numa_self_test();

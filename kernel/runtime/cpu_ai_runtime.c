@@ -1,5 +1,6 @@
 #include <xaios/assert.h>
 #include <xaios/arena.h>
+#include <xaios/ai_kernels.h>
 #include <xaios/cpu_ai_runtime.h>
 #include <xaios/initramfs.h>
 #include <xaios/klog.h>
@@ -68,6 +69,7 @@ typedef struct {
   uint16_t quantization;
   uint8_t key;
   uint8_t stride;
+  xaios_quantization_t quant_format;  /* NEON kernel quantization format */
   const char *model_name;
 } xaios_cpu_ai_runtime_cell_t;
 
@@ -314,39 +316,9 @@ static xaios_status_t deterministic_cpu_kernel(xaios_cpu_ai_runtime_cell_t *cell
   return XAIOS_OK;
 }
 
-static void matmul_q88(const int16_t *mat_a, const int16_t *mat_b,
-                        int16_t *result, uint32_t rows_a, uint32_t cols_a,
-                        uint32_t cols_b) {
-  for (uint32_t i = 0; i < rows_a; ++i) {
-    for (uint32_t j = 0; j < cols_b; ++j) {
-      int32_t acc = 0;
-      for (uint32_t k = 0; k < cols_a; ++k) {
-        acc += (int32_t)mat_a[i * cols_a + k] *
-               (int32_t)mat_b[k * cols_b + j];
-      }
-      result[i * cols_b + j] = (int16_t)(acc >> 8);
-    }
-  }
-}
-
-static void forward_pass_q88(const int16_t *input, const int16_t *weights,
-                              const int16_t *bias, int16_t *output,
-                              uint32_t batch, uint32_t in_dim,
-                              uint32_t out_dim, uint32_t activation) {
-  matmul_q88(input, weights, output, batch, in_dim, out_dim);
-  for (uint32_t i = 0; i < batch; ++i) {
-    for (uint32_t j = 0; j < out_dim; ++j) {
-      if (bias != 0) {
-        int32_t val = (int32_t)output[i * out_dim + j] +
-                      (int32_t)bias[j];
-        output[i * out_dim + j] = (int16_t)val;
-      }
-      if (activation == 1U && output[i * out_dim + j] < 0) {
-        output[i * out_dim + j] = 0;
-      }
-    }
-  }
-}
+/* Legacy scalar kernels replaced by NEON-optimized ai_kernels.c */
+/* matmul_q88_scalar() now dispatches to ai_kernel_matmul() with XAIOS_QUANT_Q88 */
+/* forward_pass_q88 now dispatches to ai_kernel_forward() */
 
 static xaios_status_t runtime_decode_tokens(xaios_cpu_ai_runtime_cell_t *cell,
                                            const cpu_ai_token_t *tokens,
@@ -472,6 +444,13 @@ xaios_status_t cpu_ai_runtime_bind_model_with_kv(uint32_t cell_id,
   cell->key = manifest->key;
   cell->stride = manifest->stride;
   cell->model_name = model->name;
+  
+  /* Map manifest quantization to NEON kernel format */
+  if (manifest->quantization == 8) {
+    cell->quant_format = XAIOS_QUANT_Q88;  /* Legacy Q8.8 */
+  } else {
+    cell->quant_format = XAIOS_QUANT_Q88;  /* Default fallback */
+  }
   cell->decode_calls = 0;
   cell->bytes_in = 0;
   cell->bytes_out = 0;
@@ -479,11 +458,12 @@ xaios_status_t cpu_ai_runtime_bind_model_with_kv(uint32_t cell_id,
   ++g_shared_weight_bind_count;
   ++g_tokenizer_bind_count;
 
-  klog("cpu-ai-runtime: model manifest loaded cell=%u model_id=%u name=%s quant=%u tokenizer=%u runtime=%u weights=%lu tokenizer_bytes=%lu kv_required=%lu\n",
+  klog("cpu-ai-runtime: model manifest loaded cell=%u model_id=%u name=%s quant=%u tokenizer=%u runtime=%u weights=%lu tokenizer_bytes=%lu kv_required=%lu quant_format=%u\n",
        cell_id, model_arena_id,
        cell->model_name != 0 ? cell->model_name : "<anonymous>",
        cell->quantization, cell->tokenizer_id, cell->runtime_id,
-       cell->weights_size, cell->tokenizer_size, manifest->kv_bytes_required);
+       cell->weights_size, cell->tokenizer_size, manifest->kv_bytes_required,
+       cell->quant_format);
   klog("cpu-ai-runtime: cell=%u bound model_id=%u name=%s size=%lu quant=%u stride=%u kv=0x%lx kv_bytes=%lu\n",
        cell_id, model_arena_id,
        cell->model_name != 0 ? cell->model_name : "<anonymous>",
@@ -657,7 +637,7 @@ xaios_status_t cpu_ai_runtime_run_model(uint32_t cell_id, uint64_t model_kind,
     const int16_t *mat_b =
         (const int16_t *)(input + 12U +
                            (uint64_t)(rows_a * cols_a) * sizeof(int16_t));
-    matmul_q88(mat_a, mat_b, (int16_t *)output, rows_a, cols_a, cols_b);
+    ai_kernel_matmul(mat_a, mat_b, output, rows_a, cols_a, cols_b, XAIOS_QUANT_Q88);
     offset = out_bytes;
     ++g_inference_count;
   } else if (model_kind == XAIOS_ML_MODEL_FORWARD) {
@@ -694,8 +674,8 @@ xaios_status_t cpu_ai_runtime_run_model(uint32_t cell_id, uint64_t model_kind,
              (uint64_t)(in_dim * out_dim) * sizeof(int16_t) + 2U)
             ? (const int16_t *)(fwd_cell->weights_base + 2U)
             : (const int16_t *)(input + 12U + input_mat_bytes);
-    forward_pass_q88(input_mat, layer_weights, 0, (int16_t *)output,
-                     batch, in_dim, out_dim, 1U);
+    ai_kernel_forward(input_mat, layer_weights, 0, output,
+                     batch, in_dim, out_dim, XAIOS_QUANT_Q88, XAIOS_ACT_RELU);
     offset = out_bytes;
     ++g_inference_count;
   } else {

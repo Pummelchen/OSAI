@@ -1,0 +1,74 @@
+#ifndef XAIOS_SPINLOCK_H
+#define XAIOS_SPINLOCK_H
+
+#include <xaios/types.h>
+
+/*
+ * Ticket spinlock — fair, FIFO ordering, SMP-safe.
+ *
+ * Uses GCC __sync builtins which compile to LSE/LL-SC atomics on AArch64.
+ * Suitable for systems from 1 to hundreds of cores.
+ */
+
+typedef struct xaios_spinlock {
+  volatile uint32_t next_ticket;
+  volatile uint32_t serve;
+  volatile uint32_t guard; /* single-CPU recursion guard */
+} xaios_spinlock_t;
+
+#define XAIOS_SPINLOCK_INIT \
+  { 0, 0, 0 }
+
+static inline void xaios_spin_init(xaios_spinlock_t *lock) {
+  lock->next_ticket = 0;
+  lock->serve = 0;
+  lock->guard = 0;
+}
+
+static inline void xaios_spin_lock(xaios_spinlock_t *lock) {
+  uint32_t ticket = __sync_fetch_and_add(&lock->next_ticket, 1U);
+  while (__atomic_load_n(&lock->serve, __ATOMIC_ACQUIRE) != ticket) {
+    __asm__ volatile("yield");
+  }
+  lock->guard = 1;
+}
+
+static inline void xaios_spin_unlock(xaios_spinlock_t *lock) {
+  lock->guard = 0;
+  __atomic_store_n(&lock->serve, lock->serve + 1U, __ATOMIC_RELEASE);
+}
+
+/* Non-blocking try-lock. Returns 1 on success, 0 if already held. */
+static inline int xaios_spin_trylock(xaios_spinlock_t *lock) {
+  uint32_t current = __atomic_load_n(&lock->serve, __ATOMIC_ACQUIRE);
+  uint32_t next = __atomic_load_n(&lock->next_ticket, __ATOMIC_RELAXED);
+  if (current != next) {
+    return 0; /* someone is queued or holding */
+  }
+  /* Attempt to claim the lock with a CAS */
+  if (__sync_bool_compare_and_swap(&lock->next_ticket, current, current + 1U)) {
+    lock->guard = 1;
+    return 1;
+  }
+  return 0;
+}
+
+/* Single-CPU recursion guard (non-SMP path, no atomics) */
+static inline int xaios_spin_trylock_guard(xaios_spinlock_t *lock) {
+  if (lock->guard != 0) {
+    return 0;
+  }
+  lock->guard = 1;
+  return 1;
+}
+
+static inline void xaios_spin_unlock_guard(xaios_spinlock_t *lock) {
+  lock->guard = 0;
+}
+
+static inline int xaios_spin_held(xaios_spinlock_t *lock) {
+  return __atomic_load_n(&lock->serve, __ATOMIC_RELAXED) !=
+         __atomic_load_n(&lock->next_ticket, __ATOMIC_RELAXED);
+}
+
+#endif

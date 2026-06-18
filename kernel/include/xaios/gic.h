@@ -14,6 +14,7 @@ typedef struct xaios_gic_info {
 void gic_init_qemu_virt(void);
 void gic_enable_full(void);
 void gic_disable_full(void);
+void gic_secondary_init(uint32_t cpu_id);
 const xaios_gic_info_t *gic_info(void);
 void gic_self_test(void);
 

@@ -106,6 +106,33 @@ void gic_enable_full(void) {
        QEMU_VIRT_GICR_BASE, TIMER_PPI_INTID);
 }
 
+/* Initialize GIC redistributor and CPU interface for a secondary CPU */
+void gic_secondary_init(uint32_t cpu_id) {
+  uint64_t gicr_base = QEMU_VIRT_GICR_BASE + (uint64_t)cpu_id * 0x20000U;
+
+  /* Wake redistributor: clear ProcessorSleep */
+  uint32_t gicr_waker = mmio_read32(gicr_base, GICR_WAKER);
+  gicr_waker &= ~(1U << 1U);
+  mmio_write32(gicr_base, GICR_WAKER, gicr_waker);
+
+  /* Set redistributor priority for timer PPI */
+  uint32_t gicr_ipr7 = mmio_read32(gicr_base, GICR_IPRIORITYR0 + 28U);
+  gicr_ipr7 &= ~(0xffU << 24U);
+  gicr_ipr7 |= (0xa0U << 24U);
+  mmio_write32(gicr_base, GICR_IPRIORITYR0 + 28U, gicr_ipr7);
+
+  /* Enable redistributor PPI 30 (timer) */
+  mmio_write32(gicr_base, GICR_ISENABLER0, (1U << TIMER_PPI_INTID));
+
+  /* Enable CPU interface: priority mask + Group 1 */
+  __asm__ volatile("msr " ICC_PMR_EL1 ", %0" : : "r"((uint64_t)0xffU));
+  __asm__ volatile("msr " ICC_IGRPEN1_EL1 ", %0" : : "r"((uint64_t)1U));
+  __asm__ volatile("isb");
+
+  /* Unmask IRQs at CPU level (clear I bit in DAIF) */
+  __asm__ volatile("msr daifclr, #2");
+}
+
 void gic_disable_full(void) {
   if (g_gic_full_init == 0) {
     return;

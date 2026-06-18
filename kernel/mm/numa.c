@@ -34,6 +34,24 @@ static int page_is_reserved(const xaios_boot_info_t *boot, uint64_t page) {
   return 0;
 }
 
+static void bitmap_set_free(xaios_numa_node_t *node, uint64_t page_index) {
+  if (page_index >= XAIOS_NUMA_BITMAP_BITS) {
+    return;
+  }
+  uint64_t word = page_index / 64U;
+  uint64_t bit = page_index % 64U;
+  node->bitmap[word] |= UINT64_C(1) << bit;
+}
+
+static int bitmap_is_free(const xaios_numa_node_t *node, uint64_t page_index) {
+  if (page_index >= XAIOS_NUMA_BITMAP_BITS) {
+    return 0;
+  }
+  uint64_t word = page_index / 64U;
+  uint64_t bit = page_index % 64U;
+  return (node->bitmap[word] & (UINT64_C(1) << bit)) != 0;
+}
+
 void numa_init(const xaios_boot_info_t *boot) {
   for (uint32_t i = 0; i < XAIOS_NUMA_MAX_NODES; ++i) {
     g_numa_nodes[i].node_id = i;
@@ -43,10 +61,14 @@ void numa_init(const xaios_boot_info_t *boot) {
     g_numa_nodes[i].total_pages = 0;
     g_numa_nodes[i].free_count = 0;
     g_numa_nodes[i].cpu_mask = 0;
+    g_numa_nodes[i].alloc_hint = 0;
+    xaios_spin_init(&g_numa_nodes[i].lock);
+    for (uint64_t w = 0; w < XAIOS_NUMA_BITMAP_WORDS; ++w) {
+      g_numa_nodes[i].bitmap[w] = 0;
+    }
   }
   g_numa_node_count = 0;
 
-  /* Walk the UEFI memory map to find conventional memory bounds */
   uint64_t lowest = UINT64_C(0xffffffffffffffff);
   uint64_t highest = 0;
   uint64_t offset = 0;
@@ -72,20 +94,25 @@ void numa_init(const xaios_boot_info_t *boot) {
     return;
   }
 
-  /* Create single node 0 spanning all conventional memory */
   xaios_numa_node_t *node = &g_numa_nodes[0];
   node->node_id = 0;
   node->online = 1;
   node->phys_start = lowest;
   node->phys_end = highest;
   node->cpu_mask = 0;
-  for (uint32_t c = 0; c < smp_online_count(); ++c) {
+  /* cpu_mask is uint64_t — tracks up to 64 CPUs for affinity */
+  uint32_t online = smp_online_count();
+  uint32_t mask_limit = online < 64U ? online : 64U;
+  for (uint32_t c = 0; c < mask_limit; ++c) {
     node->cpu_mask |= (UINT64_C(1) << c);
   }
+  if (online > 64U) {
+    klog("NUMA: cpu_mask covers first 64 of %u online CPUs\n", online);
+  }
 
-  /* Walk memory map again and classify pages into node 0 free-stack */
   node->total_pages = 0;
   node->free_count = 0;
+  uint64_t skipped_overflow = 0;
   offset = 0;
   while (offset + sizeof(xaios_memory_descriptor_t) <= boot->memory_map_size) {
     const xaios_memory_descriptor_t *desc =
@@ -98,10 +125,16 @@ void numa_init(const xaios_boot_info_t *boot) {
       uint64_t end = align_down(region_end, PAGE_SIZE);
       while (page + PAGE_SIZE <= end) {
         ++node->total_pages;
-        if (page_is_reserved(boot, page)) {
-          /* reserved -- skip */
-        } else if (node->free_count < XAIOS_NUMA_MAX_FREE_PER_NODE) {
-          node->free_stack[node->free_count++] = page;
+        if (page < node->phys_start || page >= node->phys_end) {
+          /* outside node range */
+        } else {
+          uint64_t page_index = (page - node->phys_start) / PAGE_SIZE;
+          if (page_index >= XAIOS_NUMA_BITMAP_BITS) {
+            ++skipped_overflow;
+          } else if (!page_is_reserved(boot, page)) {
+            bitmap_set_free(node, page_index);
+            ++node->free_count;
+          }
         }
         page += PAGE_SIZE;
       }
@@ -110,9 +143,26 @@ void numa_init(const xaios_boot_info_t *boot) {
   }
 
   g_numa_node_count = 1;
-  klog("NUMA: node 0 phys=[0x%lx, 0x%lx) total=%lu free=%lu cpu_mask=0x%lx\n",
-       node->phys_start, node->phys_end, node->total_pages, node->free_count,
-       node->cpu_mask);
+  uint64_t total_bytes = node->total_pages * PAGE_SIZE;
+  uint64_t free_bytes = node->free_count * PAGE_SIZE;
+  klog("NUMA: node 0 phys=[0x%lx, 0x%lx) total=%lu (%lu MB) free=%lu (%lu MB) "
+       "overflow=%lu\n",
+       node->phys_start, node->phys_end, node->total_pages,
+       total_bytes / UINT64_C(1048576), node->free_count,
+       free_bytes / UINT64_C(1048576), skipped_overflow);
+  if (skipped_overflow > 0) {
+    uint64_t lost_mb = (skipped_overflow * PAGE_SIZE) / UINT64_C(1048576);
+    klog("NUMA: WARNING %lu pages (%lu MB) beyond bitmap capacity "
+         "(%lu pages/node = %lu GB/node)\n",
+         skipped_overflow, lost_mb, (uint64_t)XAIOS_NUMA_BITMAP_BITS,
+         (uint64_t)XAIOS_NUMA_BITMAP_BITS / UINT64_C(262144));
+    klog("NUMA: increase XAIOS_NUMA_BITMAP_BITS in numa.h to recover\n");
+  }
+  klog("NUMA: system capacity %u nodes x %lu GB = %lu GB max\n",
+       XAIOS_NUMA_MAX_NODES,
+       (uint64_t)XAIOS_NUMA_BITMAP_BITS / UINT64_C(262144),
+       (uint64_t)XAIOS_NUMA_MAX_NODES *
+           ((uint64_t)XAIOS_NUMA_BITMAP_BITS / UINT64_C(262144)));
 }
 
 uint32_t numa_node_count(void) { return g_numa_node_count; }
@@ -134,20 +184,63 @@ uint32_t numa_node_of_phys(uint64_t phys_addr) {
   return UINT32_C(0xffffffff);
 }
 
-/* Internal: allocate from a specific node's free-stack */
 void *numa_alloc_page_on_node(uint32_t node_id) {
   if (node_id >= g_numa_node_count) {
     return 0;
   }
   xaios_numa_node_t *node = &g_numa_nodes[node_id];
+  xaios_spin_lock(&node->lock);
+
   if (node->free_count == 0) {
+    xaios_spin_unlock(&node->lock);
     return 0;
   }
-  uint64_t page = node->free_stack[--node->free_count];
-  return (void *)(uintptr_t)page;
+
+  uint64_t start_word = node->alloc_hint / 64U;
+  uint64_t max_page = (node->phys_end - node->phys_start) / PAGE_SIZE;
+  if (max_page > XAIOS_NUMA_BITMAP_BITS) {
+    max_page = XAIOS_NUMA_BITMAP_BITS;
+  }
+  uint64_t used_words = (max_page + 63U) / 64U;
+  if (used_words == 0) {
+    used_words = 1;
+  }
+  if (start_word >= used_words) {
+    start_word = 0;
+  }
+
+  for (uint64_t i = 0; i < used_words; ++i) {
+    uint64_t word_idx = (start_word + i) % used_words;
+    uint64_t word = node->bitmap[word_idx];
+    if (word == 0) {
+      continue;
+    }
+
+    uint32_t bit = 0;
+    uint64_t mask = 1;
+    while ((word & mask) == 0) {
+      ++bit;
+      mask <<= 1U;
+    }
+
+    uint64_t page_index = word_idx * 64U + bit;
+    if (page_index >= max_page) {
+      continue;
+    }
+
+    node->bitmap[word_idx] &= ~mask;
+    --node->free_count;
+    node->alloc_hint = page_index + 1;
+
+    uint64_t phys = node->phys_start + page_index * PAGE_SIZE;
+    xaios_spin_unlock(&node->lock);
+    return (void *)(uintptr_t)phys;
+  }
+
+  xaios_spin_unlock(&node->lock);
+  return 0;
 }
 
-/* Internal: free a page back to its owning node */
 void numa_free_page(void *page) {
   if (page == 0) {
     return;
@@ -158,9 +251,14 @@ void numa_free_page(void *page) {
     return;
   }
   xaios_numa_node_t *node = &g_numa_nodes[node_id];
-  if (node->free_count < XAIOS_NUMA_MAX_FREE_PER_NODE) {
-    node->free_stack[node->free_count++] = phys;
+  uint64_t page_index = (phys - node->phys_start) / PAGE_SIZE;
+
+  xaios_spin_lock(&node->lock);
+  if (page_index < XAIOS_NUMA_BITMAP_BITS && !bitmap_is_free(node, page_index)) {
+    bitmap_set_free(node, page_index);
+    ++node->free_count;
   }
+  xaios_spin_unlock(&node->lock);
 }
 
 void numa_self_test(void) {
@@ -172,19 +270,16 @@ void numa_self_test(void) {
   kassert(node0->cpu_mask != 0);
   kassert(node0->phys_start < node0->phys_end);
 
-  /* Allocate a page on node 0 and verify node-of-page */
   void *p = numa_alloc_page_on_node(0);
   kassert(p != 0);
   uint64_t phys = (uint64_t)(uintptr_t)p;
   kassert(numa_node_of_phys(phys) == 0);
   kassert(phys >= node0->phys_start && phys < node0->phys_end);
 
-  /* Free and verify count restored */
   uint64_t prev_free = g_numa_nodes[0].free_count;
   numa_free_page(p);
   kassert(g_numa_nodes[0].free_count == prev_free + 1);
 
-  /* Allocate 64 pages, all on node 0 */
   void *pages[64];
   for (uint32_t i = 0; i < 64; ++i) {
     pages[i] = numa_alloc_page_on_node(0);
@@ -195,13 +290,13 @@ void numa_self_test(void) {
     numa_free_page(pages[i]);
   }
 
-  /* Total pages should equal sum of node totals */
   uint64_t sum_total = 0;
   for (uint32_t i = 0; i < g_numa_node_count; ++i) {
     sum_total += g_numa_nodes[i].total_pages;
   }
   kassert(sum_total > 0);
 
-  klog("NUMA: self-test passed nodes=%u node0_free=%lu\n", g_numa_node_count,
-       g_numa_nodes[0].free_count);
+  klog("NUMA: self-test passed nodes=%u node0_free=%lu bitmap_capacity=%lu\n",
+       g_numa_node_count, g_numa_nodes[0].free_count,
+       (uint64_t)XAIOS_NUMA_BITMAP_BITS);
 }

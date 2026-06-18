@@ -1,10 +1,17 @@
 #include <xaios/assert.h>
+#include <xaios/gic.h>
 #include <xaios/klog.h>
+#include <xaios/scheduler.h>
 #include <xaios/smp.h>
+#include <xaios/timer.h>
 
 #define PSCI_0_2_FN64_CPU_ON UINT64_C(0xc4000003)
 #define SECONDARY_STACK_SIZE 4096U
-#define SECONDARY_BOOT_SPINS UINT64_C(5000000)
+#define SECONDARY_BOOT_TIMEOUT_MS UINT64_C(1000) /* 1 second */
+
+/* GIC distributor base for early CPU count detection */
+#define QEMU_VIRT_GICD_BASE UINT64_C(0x08000000)
+#define GICD_TYPER 0x0004U
 
 extern char aarch64_secondary_entry[];
 
@@ -12,11 +19,17 @@ uint8_t g_secondary_stacks[XAIOS_MAX_CPUS][SECONDARY_STACK_SIZE]
     __attribute__((aligned(16)));
 
 static xaios_cpu_state_t g_cpu_states[XAIOS_MAX_CPUS];
+static xaios_spinlock_t g_smp_lock = XAIOS_SPINLOCK_INIT;
 
 static uint64_t read_mpidr_el1(void) {
   uint64_t value = 0;
   __asm__ volatile("mrs %[value], mpidr_el1" : [value] "=r"(value));
   return value;
+}
+
+static uint32_t mmio_read32(uint64_t base, uint32_t offset) {
+  volatile uint32_t *reg = (volatile uint32_t *)(uintptr_t)(base + offset);
+  return *reg;
 }
 
 static uint64_t psci_cpu_on(uint64_t mpidr, uint64_t entry, uint64_t context) {
@@ -32,34 +45,66 @@ static uint64_t psci_cpu_on(uint64_t mpidr, uint64_t entry, uint64_t context) {
   return x0;
 }
 
+static uint32_t g_online_count; /* cached for O(1) reads */
+
 static uint32_t count_online(void) {
-  uint32_t online = 0;
-  for (uint32_t i = 0; i < XAIOS_MAX_CPUS; ++i) {
-    if (g_cpu_states[i].online != 0) {
-      ++online;
-    }
+  return g_online_count;
+}
+
+static void bump_online(void) {
+  __sync_fetch_and_add(&g_online_count, 1);
+}
+
+/* Detect available CPU count from GIC distributor TYPER register.
+ * GIC TYPER ItLinesNumber is only 3 bits (max 8 CPU hint).
+ * For hyperscale systems (>8 CPUs), ACPI MADT or DT parsing is required.
+ * On QEMU virt, this reports the -smp N value correctly for N<=8.
+ */
+static uint32_t detect_cpu_count(void) {
+  uint32_t typer = mmio_read32(QEMU_VIRT_GICD_BASE, GICD_TYPER);
+  uint32_t cpu_hint = ((typer >> 5U) & 0x7U) + 1U;
+  if (cpu_hint > XAIOS_MAX_CPUS) {
+    cpu_hint = XAIOS_MAX_CPUS;
   }
-  return online;
+  return cpu_hint;
 }
 
 void smp_secondary_main(uint64_t cpu_id) {
   if (cpu_id < XAIOS_MAX_CPUS) {
     g_cpu_states[cpu_id].cpu_id = (uint32_t)cpu_id;
     g_cpu_states[cpu_id].mpidr = read_mpidr_el1();
-    g_cpu_states[cpu_id].role = XAIOS_CPU_ROLE_RESERVED_IDLE;
+    g_cpu_states[cpu_id].role = XAIOS_CPU_ROLE_SCHEDULING;
     g_cpu_states[cpu_id].lease_owner_id = 0;
-    g_cpu_states[cpu_id].irq_routed_away = 1;
-    g_cpu_states[cpu_id].tick_suppressed = 1;
+    g_cpu_states[cpu_id].irq_routed_away = 0;
+    g_cpu_states[cpu_id].tick_suppressed = 0;
     g_cpu_states[cpu_id].online = 1;
+    g_cpu_states[cpu_id].scheduling_enabled = 0;
+    g_cpu_states[cpu_id].steal_count = 0;
+    bump_online();
   }
 
+  /* Initialize this CPU's GIC redistributor and CPU interface */
+  gic_secondary_init((uint32_t)cpu_id);
+
+  /* Enable per-CPU timer for preemptive scheduling */
+  timer_enable_periodic(XAIOS_SCHEDULER_DEFAULT_TICK_HZ);
+
+  if (cpu_id < XAIOS_MAX_CPUS) {
+    g_cpu_states[cpu_id].scheduling_enabled = 1;
+  }
+
+  /* Enter idle loop — timer IRQs will invoke scheduler_tick */
   for (;;) {
     __asm__ volatile("wfe");
   }
 }
 
 void smp_init_qemu_virt(void) {
-  for (uint32_t i = 0; i < XAIOS_MAX_CPUS; ++i) {
+  /* Only initialize up to the detected hardware CPU count,
+   * not all 131K slots (that would be extremely slow at boot). */
+  uint32_t hw_cpu_count = detect_cpu_count();
+  uint32_t init_limit = hw_cpu_count < XAIOS_MAX_CPUS ? hw_cpu_count : XAIOS_MAX_CPUS;
+  for (uint32_t i = 0; i < init_limit; ++i) {
     g_cpu_states[i].cpu_id = i;
     g_cpu_states[i].online = 0;
     g_cpu_states[i].mpidr = i;
@@ -69,37 +114,54 @@ void smp_init_qemu_virt(void) {
     g_cpu_states[i].tick_suppressed = 0;
     g_cpu_states[i].migration_count = 0;
     g_cpu_states[i].involuntary_context_switch_count = 0;
+    g_cpu_states[i].scheduling_enabled = 0;
+    g_cpu_states[i].steal_count = 0;
   }
+  xaios_spin_init(&g_smp_lock);
+  g_online_count = 0;
 
   g_cpu_states[0].online = 1;
   g_cpu_states[0].mpidr = read_mpidr_el1();
   g_cpu_states[0].role = XAIOS_CPU_ROLE_HOUSEKEEPING;
   g_cpu_states[0].irq_routed_away = 0;
   g_cpu_states[0].tick_suppressed = 0;
+  bump_online();
 
   klog("smp: boot cpu mpidr=0x%lx role=housekeeping\n",
        g_cpu_states[0].mpidr);
 
-  for (uint32_t cpu = 1; cpu < XAIOS_MAX_CPUS; ++cpu) {
+  klog("smp: hardware reports %u CPUs (max %u)\n", hw_cpu_count, XAIOS_MAX_CPUS);
+
+  /* Wake secondary CPUs via PSCI */
+  for (uint32_t cpu = 1; cpu < hw_cpu_count; ++cpu) {
     uint64_t mpidr = cpu;
     uint64_t status =
         psci_cpu_on(mpidr, (uint64_t)(uintptr_t)aarch64_secondary_entry, cpu);
-    klog("smp: cpu%u psci_cpu_on mpidr=0x%lx status=0x%lx\n",
-         cpu, mpidr, status);
+    if (status != 0) {
+      klog("smp: cpu%u PSCI failed status=0x%lx\n", cpu, status);
+    }
   }
 
-  for (uint64_t spin = 0; spin < SECONDARY_BOOT_SPINS; ++spin) {
-    if (count_online() == XAIOS_MAX_CPUS) {
+  /* Wait for secondaries to come online with timeout */
+  uint64_t start_time = timer_counter();
+  uint64_t timeout = timer_frequency_hz() * SECONDARY_BOOT_TIMEOUT_MS / 1000U;
+  while (count_online() < hw_cpu_count) {
+    if (timer_counter() - start_time > timeout) {
+      klog("smp: boot timeout — %u/%u CPUs online\n",
+           count_online(), hw_cpu_count);
       break;
     }
     __asm__ volatile("yield");
   }
 
-  klog("smp: online cpus=%u/%u\n", count_online(), XAIOS_MAX_CPUS);
-  for (uint32_t cpu = 0; cpu < XAIOS_MAX_CPUS; ++cpu) {
-    klog("smp: cpu%u online=%u mpidr=0x%lx role=%u\n",
-         cpu, g_cpu_states[cpu].online, g_cpu_states[cpu].mpidr,
-         (unsigned)g_cpu_states[cpu].role);
+  klog("smp: online cpus=%u/%u (hw detected=%u)\n",
+       count_online(), init_limit, hw_cpu_count);
+  for (uint32_t cpu = 0; cpu < init_limit; ++cpu) {
+    if (g_cpu_states[cpu].online != 0) {
+      klog("smp: cpu%u online=%u mpidr=0x%lx role=%u\n",
+           cpu, g_cpu_states[cpu].online, g_cpu_states[cpu].mpidr,
+           (unsigned)g_cpu_states[cpu].role);
+    }
   }
 }
 
@@ -111,15 +173,19 @@ const xaios_cpu_state_t *smp_cpu_state(uint32_t cpu_id) {
 }
 
 xaios_status_t smp_mark_core_leased(uint32_t cpu_id, uint32_t owner_id) {
+  xaios_spin_lock(&g_smp_lock);
+
   if (cpu_id == 0 || cpu_id >= XAIOS_MAX_CPUS || owner_id == UINT32_MAX ||
       g_cpu_states[cpu_id].online == 0 ||
-      g_cpu_states[cpu_id].role != XAIOS_CPU_ROLE_RESERVED_IDLE) {
+      g_cpu_states[cpu_id].role != XAIOS_CPU_ROLE_SCHEDULING) {
+    xaios_spin_unlock(&g_smp_lock);
     return XAIOS_ERR_INVALID;
   }
 
   if (g_cpu_states[cpu_id].lease_owner_id != 0 &&
       g_cpu_states[cpu_id].lease_owner_id != owner_id + 1U) {
     ++g_cpu_states[cpu_id].migration_count;
+    xaios_spin_unlock(&g_smp_lock);
     return XAIOS_ERR_BUSY;
   }
 
@@ -127,30 +193,40 @@ xaios_status_t smp_mark_core_leased(uint32_t cpu_id, uint32_t owner_id) {
   g_cpu_states[cpu_id].lease_owner_id = owner_id + 1U;
   g_cpu_states[cpu_id].irq_routed_away = 1;
   g_cpu_states[cpu_id].tick_suppressed = 1;
-  klog("smp: cpu%u leased owner=%u role=ai-hot irq_routed_away=1 tick_suppressed=1\n",
-       cpu_id, owner_id);
+  g_cpu_states[cpu_id].scheduling_enabled = 0;
+
+  xaios_spin_unlock(&g_smp_lock);
+  klog("smp: cpu%u leased owner=%u role=ai-hot\n", cpu_id, owner_id);
   return XAIOS_OK;
 }
 
 xaios_status_t smp_release_core_lease(uint32_t cpu_id, uint32_t owner_id) {
+  xaios_spin_lock(&g_smp_lock);
+
   if (cpu_id == 0 || cpu_id >= XAIOS_MAX_CPUS ||
       g_cpu_states[cpu_id].online == 0 ||
       g_cpu_states[cpu_id].role != XAIOS_CPU_ROLE_AI_HOT ||
       g_cpu_states[cpu_id].lease_owner_id != owner_id + 1U) {
+    xaios_spin_unlock(&g_smp_lock);
     return XAIOS_ERR_INVALID;
   }
 
-  g_cpu_states[cpu_id].role = XAIOS_CPU_ROLE_RESERVED_IDLE;
+  g_cpu_states[cpu_id].role = XAIOS_CPU_ROLE_SCHEDULING;
   g_cpu_states[cpu_id].lease_owner_id = 0;
-  g_cpu_states[cpu_id].irq_routed_away = 1;
-  g_cpu_states[cpu_id].tick_suppressed = 1;
-  klog("smp: cpu%u released owner=%u role=reserved-idle\n", cpu_id, owner_id);
+  g_cpu_states[cpu_id].irq_routed_away = 0;
+  g_cpu_states[cpu_id].tick_suppressed = 0;
+  g_cpu_states[cpu_id].scheduling_enabled = 1;
+
+  xaios_spin_unlock(&g_smp_lock);
+  klog("smp: cpu%u released owner=%u role=scheduling\n", cpu_id, owner_id);
   return XAIOS_OK;
 }
 
 uint32_t smp_hot_core_mask(void) {
   uint32_t mask = 0;
-  for (uint32_t cpu = 0; cpu < XAIOS_MAX_CPUS; ++cpu) {
+  /* uint32_t mask only covers CPUs 0-31 */
+  uint32_t limit = XAIOS_MAX_CPUS < 32U ? XAIOS_MAX_CPUS : 32U;
+  for (uint32_t cpu = 0; cpu < limit; ++cpu) {
     if (g_cpu_states[cpu].role == XAIOS_CPU_ROLE_AI_HOT) {
       mask |= UINT32_C(1) << cpu;
     }
@@ -160,7 +236,9 @@ uint32_t smp_hot_core_mask(void) {
 
 uint32_t smp_irq_isolated_mask(void) {
   uint32_t mask = 0;
-  for (uint32_t cpu = 0; cpu < XAIOS_MAX_CPUS; ++cpu) {
+  /* uint32_t mask only covers CPUs 0-31 */
+  uint32_t limit = XAIOS_MAX_CPUS < 32U ? XAIOS_MAX_CPUS : 32U;
+  for (uint32_t cpu = 0; cpu < limit; ++cpu) {
     if (g_cpu_states[cpu].irq_routed_away != 0) {
       mask |= UINT32_C(1) << cpu;
     }
@@ -170,7 +248,9 @@ uint32_t smp_irq_isolated_mask(void) {
 
 uint64_t smp_total_migration_count(void) {
   uint64_t total = 0;
-  for (uint32_t cpu = 0; cpu < XAIOS_MAX_CPUS; ++cpu) {
+  uint32_t limit = count_online();
+  if (limit > 32U) limit = 32U; /* cache-line optimization */
+  for (uint32_t cpu = 0; cpu < limit; ++cpu) {
     total += g_cpu_states[cpu].migration_count;
   }
   return total;
@@ -178,7 +258,9 @@ uint64_t smp_total_migration_count(void) {
 
 uint64_t smp_total_involuntary_context_switch_count(void) {
   uint64_t total = 0;
-  for (uint32_t cpu = 0; cpu < XAIOS_MAX_CPUS; ++cpu) {
+  uint32_t limit = count_online();
+  if (limit > 32U) limit = 32U;
+  for (uint32_t cpu = 0; cpu < limit; ++cpu) {
     total += g_cpu_states[cpu].involuntary_context_switch_count;
   }
   return total;
@@ -205,16 +287,14 @@ xaios_status_t smp_run_user_task_set(uint64_t requested_workers,
   if (workers > online) {
     workers = online;
   }
-  if (workers > XAIOS_MAX_CPUS) {
-    workers = XAIOS_MAX_CPUS;
-  }
   if (iterations > UINT64_C(100000)) {
     iterations = UINT64_C(100000);
   }
 
   uint64_t total = 0;
   uint64_t assigned = 0;
-  for (uint32_t cpu = 0; cpu < XAIOS_MAX_CPUS && assigned < workers; ++cpu) {
+  uint32_t limit = count_online();
+  for (uint32_t cpu = 0; cpu < limit && assigned < workers; ++cpu) {
     if (g_cpu_states[cpu].online == 0) {
       continue;
     }
@@ -280,5 +360,6 @@ void smp_self_test(void) {
   kassert(smp_run_user_thread_group(2, 8, &ran, &checksum) == XAIOS_OK);
   kassert(ran == 2);
   kassert(checksum != 0);
-  klog("smp: per-core registry self-test passed\n");
+  klog("smp: per-core registry self-test passed online=%u\n",
+       smp_online_count());
 }

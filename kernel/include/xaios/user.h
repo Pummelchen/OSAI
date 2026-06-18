@@ -7,7 +7,7 @@
 #include <xaios/syscall.h>
 #include <xaios/types.h>
 
-#define XAIOS_MAX_USER_PROCESSES 16U
+#define XAIOS_MAX_USER_PROCESSES 1024U
 #define XAIOS_USER_EXIT_RETURN_MAGIC UINT64_C(0x4f53414900000000)
 #define XAIOS_USER_EXIT_RETURN_MASK UINT64_C(0xffffffff00000000)
 

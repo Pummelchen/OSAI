@@ -165,6 +165,7 @@ KERNEL_OBJECTS="
   $KERNEL_BUILD_DIR/security.o
   $KERNEL_BUILD_DIR/remote_login.o
   $KERNEL_BUILD_DIR/cpu_ai_runtime.o
+  $KERNEL_BUILD_DIR/ai_kernels.o
   $KERNEL_BUILD_DIR/user.o
   $KERNEL_BUILD_DIR/model_arena.o
   $KERNEL_BUILD_DIR/ai_cell.o
@@ -183,6 +184,7 @@ KERNEL_OBJECTS="
   $KERNEL_BUILD_DIR/kheap.o
   $KERNEL_BUILD_DIR/mmu.o
   $KERNEL_BUILD_DIR/scheduler.o
+  $KERNEL_BUILD_DIR/topology.o
   $KERNEL_BUILD_DIR/context.o
   $KERNEL_BUILD_DIR/arp.o
   $KERNEL_BUILD_DIR/ipv4.o
@@ -208,6 +210,7 @@ KERNEL_OBJECTS="
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/pci.c" -o "$KERNEL_BUILD_DIR/pci.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/gic.c" -o "$KERNEL_BUILD_DIR/gic.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/smp.c" -o "$KERNEL_BUILD_DIR/smp.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/topology.c" -o "$KERNEL_BUILD_DIR/topology.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/dev/virtio/virtio_transport.c" -o "$KERNEL_BUILD_DIR/virtio_transport.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/dev/virtio/virtio_blk.c" -o "$KERNEL_BUILD_DIR/virtio_blk.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/dev/virtio/virtio_net.c" -o "$KERNEL_BUILD_DIR/virtio_net.o"
@@ -222,6 +225,7 @@ KERNEL_OBJECTS="
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/model_arena.c" -o "$KERNEL_BUILD_DIR/model_arena.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/ai_cell.c" -o "$KERNEL_BUILD_DIR/ai_cell.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/cpu_ai_runtime.c" -o "$KERNEL_BUILD_DIR/cpu_ai_runtime.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/ai_kernels.c" -o "$KERNEL_BUILD_DIR/ai_kernels.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/sandbox.c" -o "$KERNEL_BUILD_DIR/sandbox.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/persistence.c" -o "$KERNEL_BUILD_DIR/persistence.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/update.c" -o "$KERNEL_BUILD_DIR/update.o"
