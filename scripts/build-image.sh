@@ -166,6 +166,9 @@ KERNEL_OBJECTS="
   $KERNEL_BUILD_DIR/remote_login.o
   $KERNEL_BUILD_DIR/cpu_ai_runtime.o
   $KERNEL_BUILD_DIR/ai_kernels.o
+  $KERNEL_BUILD_DIR/paged_kv_cache.o
+  $KERNEL_BUILD_DIR/inference_batcher.o
+  $KERNEL_BUILD_DIR/inference_preempt.o
   $KERNEL_BUILD_DIR/user.o
   $KERNEL_BUILD_DIR/model_arena.o
   $KERNEL_BUILD_DIR/ai_cell.o
@@ -226,6 +229,9 @@ KERNEL_OBJECTS="
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/ai_cell.c" -o "$KERNEL_BUILD_DIR/ai_cell.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/cpu_ai_runtime.c" -o "$KERNEL_BUILD_DIR/cpu_ai_runtime.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/ai_kernels.c" -o "$KERNEL_BUILD_DIR/ai_kernels.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/paged_kv_cache.c" -o "$KERNEL_BUILD_DIR/paged_kv_cache.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/inference_batcher.c" -o "$KERNEL_BUILD_DIR/inference_batcher.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/inference_preempt.c" -o "$KERNEL_BUILD_DIR/inference_preempt.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/sandbox.c" -o "$KERNEL_BUILD_DIR/sandbox.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/persistence.c" -o "$KERNEL_BUILD_DIR/persistence.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/update.c" -o "$KERNEL_BUILD_DIR/update.o"
