@@ -767,7 +767,7 @@ def xaios_remote_command(command, cwd="/"):
     return 127, f"xaios-ssh: command not allowlisted: {command}\n"
 
 
-class OsaiSshServer(paramiko.ServerInterface):
+class XaiosSshServer(paramiko.ServerInterface):
     def __init__(self):
         self.event = threading.Event()
         self.command = None
@@ -901,7 +901,7 @@ def handle_client(client, address, host_key):
     transport = paramiko.Transport(client)
     transport.local_version = "SSH-2.0-XAIOS_ssh_bridge"
     transport.add_server_key(host_key)
-    server = OsaiSshServer()
+    server = XaiosSshServer()
     try:
         transport.start_server(server=server)
         channel = transport.accept(20)
