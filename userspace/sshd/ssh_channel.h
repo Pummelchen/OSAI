@@ -1,7 +1,7 @@
 #ifndef SSH_CHANNEL_H
 #define SSH_CHANNEL_H
 
-#include <osai/types.h>
+#include <xaios/types.h>
 #include "ssh_protocol.h"
 
 #define SSH_CHANNEL_MAX 4U

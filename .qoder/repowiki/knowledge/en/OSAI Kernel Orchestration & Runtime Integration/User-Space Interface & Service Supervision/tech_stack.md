@@ -1,0 +1,1 @@
+Freestanding C99 kernel code targeting AArch64 (evidenced by `aarch64_enter_user` in `user.c`). Uses ELF format for user-space binaries and a custom capability mask system for access control.

@@ -1,0 +1,4 @@
+- The module consists of standalone C executables, each targeting a specific subsystem of the OSAI kernel via the `osai_user.h` interface.
+- Applications are structured as flat, single-file programs with no internal sub-packages or complex layering, serving as direct clients to kernel syscalls like `osai_fs_*`, `osai_net_*`, and `osai_ml_run`.
+- Key entry points include `osai-shell.c` for remote command surface validation, `lstm-xor.c` for CPU-only AI runtime verification, and `systest.c` for filesystem syscall coverage.
+- Dependency direction is strictly unidirectional: apps depend on the `osai_user` SDK, with no inter-app dependencies.

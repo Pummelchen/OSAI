@@ -3,21 +3,21 @@ from qemu_gate_lib import (BUILD, check_markers, now, parse_telemetry, result,
                            run, status_from_failures, write_report)
 
 
-SCHEMA = "osai.qemu.process_scheduler_gate.v1"
+SCHEMA = "xaios.qemu.process_scheduler_gate.v1"
 REPORT = BUILD / "qemu-milestone-60-process-gate.json"
 
 MARKERS = [
     "user: process table initialized slots=16",
     "scheduler: lifecycle self-test passed",
-    "scheduler: process pid=3 parent=2 runnable name=/bin/osai-worker",
-    "scheduler: dispatch pid=3 parent=2 name=/bin/osai-worker",
-    "kernel: /bin/osai-worker pid=3 returned to kernel exit_code=0",
-    "scheduler: process pid=4 parent=2 runnable name=/bin/osai-worker",
-    "scheduler: dispatch pid=4 parent=2 name=/bin/osai-worker",
-    "kernel: /bin/osai-worker pid=4 returned to kernel exit_code=0",
-    "scheduler: process pid=5 parent=2 runnable name=/bin/osai-worker",
-    "scheduler: dispatch pid=5 parent=2 name=/bin/osai-worker",
-    "kernel: /bin/osai-worker pid=5 returned to kernel exit_code=0",
+    "scheduler: process pid=3 parent=2 runnable name=/bin/xaios-worker",
+    "scheduler: dispatch pid=3 parent=2 name=/bin/xaios-worker",
+    "kernel: /bin/xaios-worker pid=3 returned to kernel exit_code=0",
+    "scheduler: process pid=4 parent=2 runnable name=/bin/xaios-worker",
+    "scheduler: dispatch pid=4 parent=2 name=/bin/xaios-worker",
+    "kernel: /bin/xaios-worker pid=4 returned to kernel exit_code=0",
+    "scheduler: process pid=5 parent=2 runnable name=/bin/xaios-worker",
+    "scheduler: dispatch pid=5 parent=2 name=/bin/xaios-worker",
+    "kernel: /bin/xaios-worker pid=5 returned to kernel exit_code=0",
     "/worker: scheduled child process ran",
 ]
 

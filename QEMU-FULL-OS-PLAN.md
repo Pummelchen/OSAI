@@ -1,7 +1,7 @@
 # QEMU Full OS Plan
 
 The milestone 1-33 track is a QEMU readiness gate, not the end of the QEMU OS.
-OSAI should stay on QEMU until the core OS behavior is implemented deeply enough
+XAIOS should stay on QEMU until the core OS behavior is implemented deeply enough
 to justify Intel Desktop bring-up.
 
 ## Current Status
@@ -126,7 +126,7 @@ The current implementation still has important MVP/stub areas:
   capability ABI.
 - Validate benchmark, preview, readiness, and CPU matrix artifacts.
 - Emit `build/qemu-full-os-rc-report.json` with schema
-  `osai.qemu.full_os_release_candidate.v1`.
+  `xaios.qemu.full_os_release_candidate.v1`.
 - Treat `qemu_full_os_complete=true` as the local gate that allows Intel
   Desktop planning to move into implementation.
 

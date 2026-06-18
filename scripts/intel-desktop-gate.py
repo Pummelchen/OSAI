@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 
-SCHEMA = "osai.intel_desktop.hardware_gate.v1"
+SCHEMA = "xaios.intel_desktop.hardware_gate.v1"
 REPORT_PATH = Path("build/intel-desktop-gate-report.json")
 REQUIRED_MARKERS = [
     "x86_64: Intel Desktop milestone 49 placement policy passed",
@@ -20,8 +20,8 @@ REQUIRED_MARKERS = [
 
 def run_smoke() -> subprocess.CompletedProcess:
     env = os.environ.copy()
-    env.setdefault("OSAI_QEMU_X86_ACCEL", "tcg")
-    env.setdefault("OSAI_QEMU_X86_CPU", "Skylake-Client")
+    env.setdefault("XAIOS_QEMU_X86_ACCEL", "tcg")
+    env.setdefault("XAIOS_QEMU_X86_CPU", "Skylake-Client")
     return subprocess.run(
         ["make", "qemu-x86_64-smoke"],
         check=False,
@@ -29,7 +29,7 @@ def run_smoke() -> subprocess.CompletedProcess:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         env=env,
-        timeout=int(env.get("OSAI_INTEL_DESKTOP_GATE_TIMEOUT", "120")),
+        timeout=int(env.get("XAIOS_INTEL_DESKTOP_GATE_TIMEOUT", "120")),
     )
 
 

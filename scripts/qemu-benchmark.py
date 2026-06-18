@@ -21,7 +21,7 @@ def parse_telemetry(text: str):
 
 def main() -> int:
     env = os.environ.copy()
-    env.setdefault("OSAI_QEMU_SMOKE_TIMEOUT", "60")
+    env.setdefault("XAIOS_QEMU_SMOKE_TIMEOUT", "60")
     proc = subprocess.run(
         ["python3", "./scripts/qemu-smoke.py"],
         check=False,
@@ -320,7 +320,7 @@ def main() -> int:
         return 1
 
     report = {
-        "schema": "osai.qemu.correctness_benchmark.v1",
+        "schema": "xaios.qemu.correctness_benchmark.v1",
         "status": "pass",
         "benchmark_type": "qemu-correctness",
         "baseline_required_for_performance_claims": True,
@@ -332,7 +332,7 @@ def main() -> int:
     }
     print(f"qemu-benchmark: report={json.dumps(report, sort_keys=True)}")
 
-    output = os.environ.get("OSAI_QEMU_BENCHMARK_OUTPUT")
+    output = os.environ.get("XAIOS_QEMU_BENCHMARK_OUTPUT")
     if output:
         with open(output, "w", encoding="utf-8") as handle:
             json.dump(report, handle, sort_keys=True, indent=2)

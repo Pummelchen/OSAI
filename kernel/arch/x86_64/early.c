@@ -1,5 +1,5 @@
-#include <osai/boot_info.h>
-#include <osai/types.h>
+#include <xaios/boot_info.h>
+#include <xaios/types.h>
 
 #define COM1_PORT UINT16_C(0x3f8)
 #define UART_DATA 0U
@@ -288,7 +288,7 @@ static void serial_dec(uint16_t base, uint64_t value) {
   }
 }
 
-static uint64_t memory_descriptor_count(const osai_boot_info_t *boot) {
+static uint64_t memory_descriptor_count(const xaios_boot_info_t *boot) {
   if (boot == 0 || boot->memory_descriptor_size == 0) {
     return 0;
   }
@@ -353,16 +353,16 @@ static void install_idt(uint16_t serial_base) {
   serial_puts(serial_base, "x86_64: early exception path online\n");
 }
 
-static void parse_memory_map(uint16_t serial_base, const osai_boot_info_t *boot) {
+static void parse_memory_map(uint16_t serial_base, const xaios_boot_info_t *boot) {
   g_pmm = (x86_64_pmm_state_t){0};
   uint64_t offset = 0;
-  while (offset + sizeof(osai_memory_descriptor_t) <= boot->memory_map_size) {
-    const osai_memory_descriptor_t *desc =
-        (const osai_memory_descriptor_t *)(uintptr_t)(boot->memory_map + offset);
+  while (offset + sizeof(xaios_memory_descriptor_t) <= boot->memory_map_size) {
+    const xaios_memory_descriptor_t *desc =
+        (const xaios_memory_descriptor_t *)(uintptr_t)(boot->memory_map + offset);
     uint64_t pages = desc->number_of_pages;
     g_pmm.descriptors++;
     g_pmm.total_pages += pages;
-    if (desc->type == OSAI_MEMORY_TYPE_CONVENTIONAL) {
+    if (desc->type == XAIOS_MEMORY_TYPE_CONVENTIONAL) {
       uint64_t region_start = align_up(desc->physical_start, PAGE_SIZE);
       uint64_t region_end = align_down(desc->physical_start + pages * PAGE_SIZE,
                                        PAGE_SIZE);
@@ -670,16 +670,16 @@ void x86_64_exception_entry(const x86_64_exception_frame_t *frame) {
   panic_halt(serial_base, "controlled x86_64 exception reported");
 }
 
-void x86_64_kmain(const osai_boot_info_t *boot) {
+void x86_64_kmain(const xaios_boot_info_t *boot) {
   uint16_t serial_base = COM1_PORT;
   if (boot != 0 && boot->uart_base != 0 && boot->uart_base <= UINT16_MAX) {
     serial_base = (uint16_t)boot->uart_base;
   }
   serial_init(serial_base);
 
-  serial_puts(serial_base, "OSAI x86_64 kernel starting\n");
-  if (boot == 0 || boot->magic != OSAI_BOOT_INFO_MAGIC ||
-      boot->version != OSAI_BOOT_INFO_VERSION) {
+  serial_puts(serial_base, "XAIOS x86_64 kernel starting\n");
+  if (boot == 0 || boot->magic != XAIOS_BOOT_INFO_MAGIC ||
+      boot->version != XAIOS_BOOT_INFO_VERSION) {
     serial_puts(serial_base, "x86_64: boot info invalid\n");
     for (;;) {
       __asm__ volatile("hlt");

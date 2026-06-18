@@ -1,0 +1,1 @@
+AArch64 assembly (`start.S`, inline `svc #0`) for bare-metal syscall invocation without libc.

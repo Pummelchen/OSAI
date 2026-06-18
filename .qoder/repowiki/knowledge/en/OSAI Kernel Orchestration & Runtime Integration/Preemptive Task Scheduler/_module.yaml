@@ -1,0 +1,17 @@
+schema_version: 1
+module_path: kernel/scheduler
+title: Preemptive Task Scheduler
+scope:
+    - kernel/sched/
+source_files: []
+depends_on: []
+related_to:
+    - path: kernel/memory_mgmt
+    - path: kernel/user_interface
+    - path: kernel/arch_ports
+    - path: kernel/core_boot
+    - path: userspace/process_runtime
+    - path: test_and_build_scripts
+    - path: kernel/runtime_services
+    - path: kernel/device_drivers
+    - path: kernel/networking

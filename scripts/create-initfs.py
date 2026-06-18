@@ -5,7 +5,7 @@ import sys
 
 
 SECTOR_SIZE = 512
-MAGIC = b"OSAIROFS2"
+MAGIC = b"XAIOSROFS2"
 VERSION = 2
 MAX_FILES = 16
 PATH_MAX = 64
@@ -17,7 +17,7 @@ ENTRY_FLAG_EXECUTABLE = 1
 ENTRY_FLAG_MANIFEST = 2
 ENTRY_TYPE_FILE = 1
 EXTRA_EXECUTABLE_PATHS = [
-    "/bin/osai-shell",
+    "/bin/xaios-shell",
     "/bin/hello",
     "/bin/sysinfo",
     "/bin/systest",
@@ -109,10 +109,10 @@ def main() -> int:
     files = [
         ("/init", init_elf, ENTRY_FLAG_EXECUTABLE),
         ("/bin/service-manager", service_manager_elf, ENTRY_FLAG_EXECUTABLE),
-        ("/bin/osai-worker", worker_elf, ENTRY_FLAG_EXECUTABLE),
-        ("/etc/osai-init.conf", config, ENTRY_FLAG_MANIFEST),
+        ("/bin/xaios-worker", worker_elf, ENTRY_FLAG_EXECUTABLE),
+        ("/etc/xaios-init.conf", config, ENTRY_FLAG_MANIFEST),
         ("/etc/services/source-index.svc", service_descriptor, 0),
-        ("/models/cpu-ai-mvp.osaimodel", model_file, 0),
+        ("/models/cpu-ai-mvp.xaiosmodel", model_file, 0),
     ]
     for spec in sys.argv[7:]:
         if "=" not in spec:

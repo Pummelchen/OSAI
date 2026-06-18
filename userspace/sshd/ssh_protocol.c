@@ -1,5 +1,5 @@
 #include "ssh_protocol.h"
-#include <osai_user.h>
+#include <xaios_user.h>
 
 uint32_t ssh_read_u32_be(const uint8_t *p) {
   return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
@@ -19,7 +19,7 @@ static int send_all(int sockfd, const void *data, uint64_t len) {
   uint64_t sent = 0;
   while (sent < len) {
     u64 n = 0;
-    int r = osai_net_send((u64)(uint64_t)sockfd,
+    int r = xaios_net_send((u64)(uint64_t)sockfd,
                           (const uint8_t *)data + sent, len - sent, &n);
     if (r != 0 || n == 0) return -1;
     sent += n;
@@ -31,7 +31,7 @@ static int recv_all(int sockfd, void *data, uint64_t len) {
   uint64_t got = 0;
   while (got < len) {
     u64 n = 0;
-    int r = osai_net_recv((u64)(uint64_t)sockfd,
+    int r = xaios_net_recv((u64)(uint64_t)sockfd,
                           (uint8_t *)data + got, len - got, &n);
     if (r != 0 || n == 0) return -1;
     got += n;
@@ -52,7 +52,7 @@ int ssh_recv_version(int sockfd, uint8_t *buf, uint32_t buf_size,
   uint32_t pos = 0;
   while (pos < buf_size) {
     u64 n = 0;
-    int r = osai_net_recv((u64)(uint64_t)sockfd, buf + pos, 1, &n);
+    int r = xaios_net_recv((u64)(uint64_t)sockfd, buf + pos, 1, &n);
     if (r != 0 || n == 0) return -1;
     if (buf[pos] == '\n') {
       *out_len = pos + 1;

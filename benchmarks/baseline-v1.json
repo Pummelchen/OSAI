@@ -7,7 +7,7 @@
     "firmware": "AAVMF",
     "note": "QEMU TCG timing is NOT representative of bare-metal performance"
   },
-  "osai": {
+  "xaios": {
     "boot_time_ms": 0,
     "smoke_targets_passed": 0,
     "smoke_targets_total": 0,
@@ -22,8 +22,8 @@
   },
   "linux_baseline": null,
   "comparison": {
-    "status": "osai-only",
-    "note": "Linux baseline not available. Set OSAI_LINUX_KERNEL and OSAI_LINUX_INITRD env vars to enable comparison."
+    "status": "xaios-only",
+    "note": "Linux baseline not available. Set XAIOS_LINUX_KERNEL and XAIOS_LINUX_INITRD env vars to enable comparison."
   },
   "performance_claims_allowed": false,
   "methodology_ref": "benchmarks/METHODOLOGY.md"

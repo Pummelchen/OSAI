@@ -57,9 +57,9 @@ def run_ssh(command: str) -> str:
 
 def main() -> int:
     bridge = subprocess.Popen(
-        ["./scripts/run-osai-ssh-bridge.sh"],
+        ["./scripts/run-xaios-ssh-bridge.sh"],
         cwd=ROOT,
-        env={**os.environ, "OSAI_SSH_PORT": SMOKE_PORT},
+        env={**os.environ, "XAIOS_SSH_PORT": SMOKE_PORT},
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -70,10 +70,10 @@ def main() -> int:
         if bridge.poll() is not None:
             output = bridge.stdout.read() if bridge.stdout is not None else ""
             raise RuntimeError(
-                f"osai ssh bridge exited before smoke test rc={bridge.returncode}\n{output}"
+                f"xaios ssh bridge exited before smoke test rc={bridge.returncode}\n{output}"
             )
         status = run_ssh("status")
-        if "osai qemu session=running" not in status:
+        if "xaios qemu session=running" not in status:
             raise RuntimeError(f"missing status marker: {status!r}")
         listing = run_ssh("ls /")
         if "bin\n" not in listing or "state\n" not in listing:
@@ -81,7 +81,7 @@ def main() -> int:
         sysinfo = run_ssh("sysinfo")
         if "cpu_only_ai=true" not in sysinfo:
             raise RuntimeError(f"missing sysinfo marker: {sysinfo!r}")
-        print("qemu-ssh-smoke: OpenSSH client reached OSAI remote login")
+        print("qemu-ssh-smoke: OpenSSH client reached XAIOS remote login")
         return 0
     finally:
         try:

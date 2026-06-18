@@ -1,0 +1,16 @@
+schema_version: 1
+module_path: kernel/device_drivers
+title: Virtio Device Drivers
+scope:
+    - kernel/dev/
+source_files: []
+depends_on: []
+related_to:
+    - path: kernel/memory_mgmt
+    - path: kernel/networking
+    - path: kernel/arch_ports
+    - path: kernel/runtime_services
+    - path: userspace/apps
+    - path: test_and_build_scripts
+    - path: kernel/scheduler
+    - path: kernel/core_boot

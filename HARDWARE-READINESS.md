@@ -1,6 +1,6 @@
 # Hardware Readiness Gate
 
-OSAI is not ready for Intel Desktop hardware until the QEMU contract is frozen
+XAIOS is not ready for Intel Desktop hardware until the QEMU contract is frozen
 and the local QEMU matrix is green.
 
 ## Current Gates
@@ -17,9 +17,9 @@ artifacts. It writes:
 - `build/qemu-cpu-matrix-report.json`
 - `build/qemu-readiness-report.json`
 
-The readiness report schema is `osai.qemu.hardware_readiness_gate.v1`.
+The readiness report schema is `xaios.qemu.hardware_readiness_gate.v1`.
 The frozen release-candidate contract schema is
-`osai.qemu.release_candidate_contract.v1` and lives at
+`xaios.qemu.release_candidate_contract.v1` and lives at
 `contracts/qemu-rc-v1.json`.
 
 The benchmark harness is a correctness benchmark only. It does not authorize
@@ -36,7 +36,7 @@ and writes:
 - `build/qemu-full-os-rc-report.json`
 
 The full OS RC report schema is
-`osai.qemu.full_os_release_candidate.v1`. Intel Desktop implementation starts
+`xaios.qemu.full_os_release_candidate.v1`. Intel Desktop implementation starts
 only after that report has `status=pass` and `qemu_full_os_complete=true`.
 
 The post-51 QEMU-only hardening gate is:

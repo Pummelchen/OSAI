@@ -10,9 +10,9 @@ from typing import Any, Dict, List, Optional, Set
 
 CONTRACT_PATH = "contracts/qemu-rc-v1.json"
 REPORT_PATH = "build/qemu-cpu-matrix-report.json"
-SCHEMA = "osai.qemu.cpu_matrix.v1"
+SCHEMA = "xaios.qemu.cpu_matrix.v1"
 BOOT_PROBE_MARKERS = [
-    "OSAI kernel starting",
+    "XAIOS kernel starting",
     "smp: per-core registry self-test passed",
     "VMM map/unmap self-test passed",
     "VMM translation test passed",
@@ -137,8 +137,8 @@ def run_arm_boot_tier(tier: Dict[str, Any], supported: Set[str],
 
     if tier["validation"] == "qemu-smoke-default":
         env = base_env.copy()
-        env["OSAI_QEMU_ACCEL"] = accelerator
-        env["OSAI_QEMU_CPU"] = cpu
+        env["XAIOS_QEMU_ACCEL"] = accelerator
+        env["XAIOS_QEMU_CPU"] = cpu
         proc = run(["python3", "./scripts/qemu-smoke.py"], env, 140)
         return {
             "name": name,
@@ -152,10 +152,10 @@ def run_arm_boot_tier(tier: Dict[str, Any], supported: Set[str],
         }
 
     env = base_env.copy()
-    env["OSAI_QEMU_ACCEL"] = accelerator
-    env["OSAI_QEMU_CPU"] = cpu
-    env["OSAI_QEMU_HOSTFWD_PORT"] = "none"
-    env.setdefault("OSAI_QEMU_SMOKE_TIMEOUT", "90")
+    env["XAIOS_QEMU_ACCEL"] = accelerator
+    env["XAIOS_QEMU_CPU"] = cpu
+    env["XAIOS_QEMU_HOSTFWD_PORT"] = "none"
+    env.setdefault("XAIOS_QEMU_SMOKE_TIMEOUT", "90")
     probe = run_until_markers(["make", "qemu-aarch64"], env, 100,
                               BOOT_PROBE_MARKERS)
     return {
@@ -175,7 +175,7 @@ def run_x86_tier(tier: Dict[str, Any], supported: Set[str],
                  base_env: Dict[str, str]) -> Dict[str, Any]:
     cpu = tier["cpu"]
     env = base_env.copy()
-    env["OSAI_QEMU_X86_CPU"] = cpu
+    env["XAIOS_QEMU_X86_CPU"] = cpu
     validation = tier["validation"]
     supported_by_qemu = cpu == "max" or cpu in supported
     if not supported_by_qemu:
@@ -191,7 +191,7 @@ def run_x86_tier(tier: Dict[str, Any], supported: Set[str],
         }
 
     if validation == "qemu-smoke":
-        env.setdefault("OSAI_QEMU_SMOKE_TIMEOUT", "90")
+        env.setdefault("XAIOS_QEMU_SMOKE_TIMEOUT", "90")
         proc = run(["python3", "./scripts/qemu-x86_64-smoke.py"], env, 140)
     else:
         proc = run(["./scripts/run-qemu-x86_64.sh", "--dry-run"], env, 20)
@@ -222,7 +222,7 @@ def main() -> int:
     arm_supported = cpu_help_set(qemu_aarch64) if qemu_aarch64 else set()
     x86_supported = cpu_help_set(qemu_x86_64) if qemu_x86_64 else set()
     base_env = os.environ.copy()
-    base_env.setdefault("OSAI_QEMU_SMOKE_TIMEOUT", "90")
+    base_env.setdefault("XAIOS_QEMU_SMOKE_TIMEOUT", "90")
 
     tiers: List[Dict[str, Any]] = []
     if qemu_aarch64:

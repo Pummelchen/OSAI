@@ -1,0 +1,3 @@
+- Subsystems are validated immediately after initialization using dedicated `_self_test()` functions to ensure correctness before proceeding.
+- Fatal errors are handled via the `kassert` macro, which delegates to `panic_at` for consistent file/line reporting and system halt.
+- Kernel logging uses a custom, dependency-free `klog` implementation supporting `%u`, `%x`, `%p`, and `%lu` format specifiers for freestanding environments.

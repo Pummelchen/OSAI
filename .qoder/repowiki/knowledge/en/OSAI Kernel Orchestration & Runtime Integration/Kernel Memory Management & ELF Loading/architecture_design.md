@@ -1,0 +1,4 @@
+- **Physical Memory Manager (`pmm.c`)**: Implements a stack-based page allocator using boot-time memory maps to identify conventional RAM, excluding kernel and reserved regions.
+- **Kernel Heap (`kheap.c`)**: Provides a bump-allocator heap at a fixed virtual base (`0x4a000000`) that dynamically maps physical pages via the VMM as allocations grow.
+- **Arena Subsystem (`arena.c`)**: Manages up to 32 named, fixed-size memory regions for specific workloads (e.g., model weights, KV cache) with reference counting, fault tracking, and configurable VMM permissions.
+- **ELF Loader (`elf_loader.c`)**: Parses AArch64 ELF64 executables from initramfs, validates headers, and loads `PT_LOAD` segments into per-process address spaces (`osai_process_aspace_t`) with guard-page protected stacks.

@@ -1,7 +1,7 @@
-#include <osai/assert.h>
-#include <osai/klog.h>
-#include <osai/pmm.h>
-#include <osai/smmu.h>
+#include <xaios/assert.h>
+#include <xaios/klog.h>
+#include <xaios/pmm.h>
+#include <xaios/smmu.h>
 
 #define PAGE_SIZE UINT64_C(4096)
 
@@ -11,7 +11,7 @@ static uint32_t g_smmu_ready;
 static uint32_t g_smmu_idr0;
 static uint64_t g_stream_table_phys;
 static uint64_t g_cmdq_phys;
-static osai_smmu_stream_t g_streams[OSAI_SMMU_MAX_STREAMS];
+static xaios_smmu_stream_t g_streams[XAIOS_SMMU_MAX_STREAMS];
 static uint32_t g_active_streams;
 static uint64_t g_tlb_invalidate_count;
 static uint64_t g_fault_count;
@@ -41,13 +41,13 @@ static int smmu_issue_command(uint32_t opcode, uint32_t word0_extra,
     return 0;
   }
   /* Wait for space in command queue */
-  uint64_t prod_idx = g_cmdq_prod & (OSAI_SMMU_CMDQ_ENTRIES - 1);
-  uint64_t cons_idx = g_cmdq_cons & (OSAI_SMMU_CMDQ_ENTRIES - 1);
+  uint64_t prod_idx = g_cmdq_prod & (XAIOS_SMMU_CMDQ_ENTRIES - 1);
+  uint64_t cons_idx = g_cmdq_cons & (XAIOS_SMMU_CMDQ_ENTRIES - 1);
   if (prod_idx == cons_idx && g_cmdq_prod != g_cmdq_cons) {
     /* Queue full -- poll consumer */
     for (uint32_t spin = 0; spin < 100000; ++spin) {
       g_cmdq_cons = mmio_read32(g_smmu_page1, SMMU_CMDQ_CONS);
-      cons_idx = g_cmdq_cons & (OSAI_SMMU_CMDQ_ENTRIES - 1);
+      cons_idx = g_cmdq_cons & (XAIOS_SMMU_CMDQ_ENTRIES - 1);
       if (prod_idx != cons_idx || g_cmdq_prod == g_cmdq_cons) {
         break;
       }
@@ -79,14 +79,14 @@ void smmu_init(void) {
   g_fault_count = 0;
   g_cmdq_prod = 0;
   g_cmdq_cons = 0;
-  for (uint32_t i = 0; i < OSAI_SMMU_MAX_STREAMS; ++i) {
+  for (uint32_t i = 0; i < XAIOS_SMMU_MAX_STREAMS; ++i) {
     g_streams[i].stream_id = 0;
     g_streams[i].active = 0;
     g_streams[i].device_type = 0;
   }
 
-  g_smmu_page0 = (volatile uint32_t *)(uintptr_t)OSAI_SMMU_MMIO_BASE;
-  g_smmu_page1 = (volatile uint32_t *)(uintptr_t)OSAI_SMMU_MMIO_PAGE1;
+  g_smmu_page0 = (volatile uint32_t *)(uintptr_t)XAIOS_SMMU_MMIO_BASE;
+  g_smmu_page1 = (volatile uint32_t *)(uintptr_t)XAIOS_SMMU_MMIO_PAGE1;
 
   /* Read IDR0 to detect SMMUv3 */
   g_smmu_idr0 = mmio_read32(g_smmu_page0, SMMU_IDR0);
@@ -106,7 +106,7 @@ void smmu_init(void) {
     return;
   }
   g_stream_table_phys = (uint64_t)(uintptr_t)st_page;
-  zero_memory(st_page, OSAI_SMMU_STREAM_TABLE_BYTES);
+  zero_memory(st_page, XAIOS_SMMU_STREAM_TABLE_BYTES);
 
   /* Allocate command queue (128 entries * 16 bytes = 2KB, fits in one page) */
   void *cq_page = pmm_alloc_page();
@@ -115,7 +115,7 @@ void smmu_init(void) {
     return;
   }
   g_cmdq_phys = (uint64_t)(uintptr_t)cq_page;
-  zero_memory(cq_page, OSAI_SMMU_CMDQ_BYTES);
+  zero_memory(cq_page, XAIOS_SMMU_CMDQ_BYTES);
 
   /* Program stream table base (page 1 registers) */
   mmio_write32(g_smmu_page1, SMMU_STBASE_LO,
@@ -164,19 +164,19 @@ void smmu_init(void) {
   }
 
   klog("SMMU: enabled IDR0=0x%x streams_max=%u cmdq_entries=%u\n",
-       g_smmu_idr0, OSAI_SMMU_MAX_STREAMS, OSAI_SMMU_CMDQ_ENTRIES);
+       g_smmu_idr0, XAIOS_SMMU_MAX_STREAMS, XAIOS_SMMU_CMDQ_ENTRIES);
 }
 
 uint32_t smmu_initialized(void) { return g_smmu_ready; }
 
 uint32_t smmu_idr0_value(void) { return g_smmu_idr0; }
 
-osai_status_t smmu_register_stream(uint32_t stream_id, uint32_t device_type) {
-  if (stream_id >= OSAI_SMMU_MAX_STREAMS) {
-    return OSAI_ERR_INVALID;
+xaios_status_t smmu_register_stream(uint32_t stream_id, uint32_t device_type) {
+  if (stream_id >= XAIOS_SMMU_MAX_STREAMS) {
+    return XAIOS_ERR_INVALID;
   }
   if (g_streams[stream_id].active) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   /* Program STE in stream table: 64 bytes per STE
@@ -206,15 +206,15 @@ osai_status_t smmu_register_stream(uint32_t stream_id, uint32_t device_type) {
   g_streams[stream_id].device_type = device_type;
   ++g_active_streams;
 
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t smmu_unregister_stream(uint32_t stream_id) {
-  if (stream_id >= OSAI_SMMU_MAX_STREAMS) {
-    return OSAI_ERR_INVALID;
+xaios_status_t smmu_unregister_stream(uint32_t stream_id) {
+  if (stream_id >= XAIOS_SMMU_MAX_STREAMS) {
+    return XAIOS_ERR_INVALID;
   }
   if (g_streams[stream_id].active == 0) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   /* Clear STE */
@@ -238,19 +238,19 @@ osai_status_t smmu_unregister_stream(uint32_t stream_id) {
     --g_active_streams;
   }
 
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t smmu_tlb_invalidate_all(void) {
+xaios_status_t smmu_tlb_invalidate_all(void) {
   if (g_smmu_ready == 0) {
     ++g_tlb_invalidate_count;
-    return OSAI_OK;
+    return XAIOS_OK;
   }
   if (smmu_issue_command(SMMU_CMD_TLBI_NH_ALL, 0, 0)) {
     ++g_tlb_invalidate_count;
-    return OSAI_OK;
+    return XAIOS_OK;
   }
-  return OSAI_ERR_IO;
+  return XAIOS_ERR_IO;
 }
 
 uint64_t smmu_tlb_invalidate_count(void) { return g_tlb_invalidate_count; }
@@ -263,11 +263,11 @@ void smmu_self_test(void) {
   if (g_smmu_idr0 == 0) {
     klog("SMMU: self-test bypass mode (hardware not present)\n");
     /* Even in bypass mode, register/unregister should work */
-    kassert(smmu_register_stream(0, 0xAA) == OSAI_OK);
+    kassert(smmu_register_stream(0, 0xAA) == XAIOS_OK);
     kassert(smmu_stream_count() == 1);
-    kassert(smmu_unregister_stream(0) == OSAI_OK);
+    kassert(smmu_unregister_stream(0) == XAIOS_OK);
     kassert(smmu_stream_count() == 0);
-    kassert(smmu_tlb_invalidate_all() == OSAI_OK);
+    kassert(smmu_tlb_invalidate_all() == XAIOS_OK);
     kassert(smmu_tlb_invalidate_count() == 1);
     return;
   }
@@ -282,7 +282,7 @@ void smmu_self_test(void) {
 
   /* Register a test stream */
   uint32_t test_sid = 31; /* Use last slot */
-  kassert(smmu_register_stream(test_sid, 0xBB) == OSAI_OK);
+  kassert(smmu_register_stream(test_sid, 0xBB) == XAIOS_OK);
   kassert(g_streams[test_sid].active == 1);
   kassert(smmu_stream_count() == 1);
 
@@ -294,21 +294,21 @@ void smmu_self_test(void) {
   }
 
   /* TLB invalidation */
-  kassert(smmu_tlb_invalidate_all() == OSAI_OK);
+  kassert(smmu_tlb_invalidate_all() == XAIOS_OK);
   kassert(smmu_tlb_invalidate_count() >= 1);
 
   /* Unregister */
-  kassert(smmu_unregister_stream(test_sid) == OSAI_OK);
+  kassert(smmu_unregister_stream(test_sid) == XAIOS_OK);
   kassert(g_streams[test_sid].active == 0);
   kassert(smmu_stream_count() == 0);
 
   /* Duplicate register should fail */
-  kassert(smmu_register_stream(0, 1) == OSAI_OK);
-  kassert(smmu_register_stream(0, 2) == OSAI_ERR_INVALID);
-  kassert(smmu_unregister_stream(0) == OSAI_OK);
+  kassert(smmu_register_stream(0, 1) == XAIOS_OK);
+  kassert(smmu_register_stream(0, 2) == XAIOS_ERR_INVALID);
+  kassert(smmu_unregister_stream(0) == XAIOS_OK);
 
   /* Out-of-range should fail */
-  kassert(smmu_register_stream(OSAI_SMMU_MAX_STREAMS, 0) == OSAI_ERR_INVALID);
+  kassert(smmu_register_stream(XAIOS_SMMU_MAX_STREAMS, 0) == XAIOS_ERR_INVALID);
 
   klog("SMMU: self-test passed IDR0=0x%x tlb_inv=%lu\n", g_smmu_idr0,
        g_tlb_invalidate_count);

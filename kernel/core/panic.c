@@ -1,7 +1,7 @@
 #include <stdarg.h>
-#include <osai/klog.h>
-#include <osai/panic.h>
-#include <osai/watchdog.h>
+#include <xaios/klog.h>
+#include <xaios/panic.h>
+#include <xaios/watchdog.h>
 
 void panic_at(const char *file, int line, const char *fmt, ...) {
   va_list args;

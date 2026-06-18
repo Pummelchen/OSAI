@@ -1,0 +1,1 @@
+Uses Clang/LLD for cross-compilation to `aarch64-none-elf` and `aarch64-unknown-windows` (UEFI), `mtools` for FAT image manipulation, and QEMU for system-level emulation and testing.

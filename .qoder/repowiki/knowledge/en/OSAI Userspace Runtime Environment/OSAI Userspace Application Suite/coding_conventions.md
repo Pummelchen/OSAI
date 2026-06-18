@@ -1,0 +1,4 @@
+- All applications include `osai_user.h` as the primary interface to kernel services.
+- Error handling consistently uses direct return code checks from `osai_*` functions, often logging a descriptive message via `osai_log` before returning a non-zero exit code.
+- Buffer management relies on static stack-allocated arrays (e.g., `char output[2048]`) initialized with `osai_memzero` before use.
+- Logging follows a standardized prefix format `/bin/<app_name>: <message>` to identify the source executable in kernel logs.

@@ -3,7 +3,7 @@ from qemu_gate_lib import (BUILD, check_markers, now, parse_telemetry, result,
                            run, status_from_failures, write_report)
 
 
-SCHEMA = "osai.qemu.osctl_gate.v1"
+SCHEMA = "xaios.qemu.osctl_gate.v1"
 REPORT = BUILD / "qemu-milestone-61-osctl-gate.json"
 
 MARKERS = [

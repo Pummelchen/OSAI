@@ -1,0 +1,3 @@
+- All UEFI status values are checked via a local `is_error()` helper that tests bit 63, rather than comparing against individual error codes.
+- Wide-character UTF-16 string literals prefixed with `u""` are used consistently for all UEFI console output messages.
+- Local `mem_copy` and `mem_set` functions replace standard library `memcpy`/`memset` to avoid any libc dependency in the freestanding UEFI environment.

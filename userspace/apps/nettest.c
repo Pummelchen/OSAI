@@ -1,43 +1,43 @@
-#include <osai_user.h>
+#include <xaios_user.h>
 
 int main(void) {
-  const char payload[] = "osai-nettest";
+  const char payload[] = "xaios-nettest";
   u64 echoed = 0;
   u64 round_trips = 0;
   u64 out = 0;
   char session[96];
-  osai_log("/bin/nettest: validating ethernet tcp udp network telemetry\n");
-  if (osai_net_udp_echo(payload, osai_strlen(payload), &echoed) < 0 ||
-      echoed != osai_strlen(payload)) {
-    osai_log("/bin/nettest: udp echo syscall failed\n");
+  xaios_log("/bin/nettest: validating ethernet tcp udp network telemetry\n");
+  if (xaios_net_udp_echo(payload, xaios_strlen(payload), &echoed) < 0 ||
+      echoed != xaios_strlen(payload)) {
+    xaios_log("/bin/nettest: udp echo syscall failed\n");
     return 1;
   }
-  if (osai_net_tcp_connect(&round_trips) < 0 || round_trips != 2U) {
-    osai_log("/bin/nettest: tcp connect syscall failed\n");
+  if (xaios_net_tcp_connect(&round_trips) < 0 || round_trips != 2U) {
+    xaios_log("/bin/nettest: tcp connect syscall failed\n");
     return 1;
   }
-  osai_memzero(session, sizeof(session));
-  if (osai_net_external_session(OSAI_NET_PROTOCOL_UDP, 2222, payload,
-                                osai_strlen(payload), session,
+  xaios_memzero(session, sizeof(session));
+  if (xaios_net_external_session(XAIOS_NET_PROTOCOL_UDP, 2222, payload,
+                                xaios_strlen(payload), session,
                                 sizeof(session), &out) < 0 ||
       out == 0) {
-    osai_log("/bin/nettest: external udp session failed\n");
+    xaios_log("/bin/nettest: external udp session failed\n");
     return 1;
   }
-  osai_memzero(session, sizeof(session));
+  xaios_memzero(session, sizeof(session));
   out = 0;
-  if (osai_net_external_session(OSAI_NET_PROTOCOL_TCP, 2222, payload,
-                                osai_strlen(payload), session,
+  if (xaios_net_external_session(XAIOS_NET_PROTOCOL_TCP, 2222, payload,
+                                xaios_strlen(payload), session,
                                 sizeof(session), &out) < 0 ||
       out == 0) {
-    osai_log("/bin/nettest: external tcp session failed\n");
+    xaios_log("/bin/nettest: external tcp session failed\n");
     return 1;
   }
-  (void)osai_osctl("osctl net");
-  osai_log_u64("/bin/nettest: udp_echo_bytes=", echoed, "\n");
-  osai_log_u64("/bin/nettest: tcp_round_trips=", round_trips, "\n");
-  osai_log("/bin/nettest: app-callable udp/tcp path passed\n");
-  osai_log("/bin/nettest: external host-to-guest tcp/udp session path passed\n");
-  osai_log("/bin/nettest: complete\n");
+  (void)xaios_osctl("osctl net");
+  xaios_log_u64("/bin/nettest: udp_echo_bytes=", echoed, "\n");
+  xaios_log_u64("/bin/nettest: tcp_round_trips=", round_trips, "\n");
+  xaios_log("/bin/nettest: app-callable udp/tcp path passed\n");
+  xaios_log("/bin/nettest: external host-to-guest tcp/udp session path passed\n");
+  xaios_log("/bin/nettest: complete\n");
   return 0;
 }

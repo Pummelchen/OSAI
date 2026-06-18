@@ -1,7 +1,7 @@
 #ifndef SSH_CRYPTO_H
 #define SSH_CRYPTO_H
 
-#include <osai/types.h>
+#include <xaios/types.h>
 
 /* SHA-256 (FIPS 180-4) */
 #define SHA256_DIGEST_SIZE 32U

@@ -1,6 +1,6 @@
 # QEMU Full OS Core Workdown
 
-This is the execution checklist for moving OSAI from the current QEMU readiness
+This is the execution checklist for moving XAIOS from the current QEMU readiness
 gate toward a real QEMU full OS core. The QEMU hardware-readiness gate remains
 useful, but it is not the same as a complete OS.
 
@@ -257,8 +257,8 @@ signed update, key, rollback, sandbox, and secret-handling paths.
 
 Required work:
 
-- [x] Add `OSAI_CAP_ADMIN` as a separate administrative capability.
-- [x] Require both `OSAI_CAP_UPDATE` and `OSAI_CAP_ADMIN` for signed update
+- [x] Add `XAIOS_CAP_ADMIN` as a separate administrative capability.
+- [x] Require both `XAIOS_CAP_UPDATE` and `XAIOS_CAP_ADMIN` for signed update
   authorization.
 - [x] Replace the old update token stub with a structured development
   public-key signature format.
@@ -362,6 +362,6 @@ Definition of done:
 
 - `make qemu-full-os-rc` exits 0 and writes
   `build/qemu-full-os-rc-report.json`.
-- The report schema is `osai.qemu.full_os_release_candidate.v1`.
+- The report schema is `xaios.qemu.full_os_release_candidate.v1`.
 - The report marks milestone 42 complete with `qemu_full_os_complete=true`.
 - Intel Desktop bring-up remains blocked unless this final report passes.

@@ -1,0 +1,4 @@
+- Entry point: `start.S` defines `_start`, which calls `main` and then invokes the exit syscall (`OSAI_SYSCALL_EXIT`) directly, followed by a wait-for-event loop.
+- Core mechanism: `osai_syscall3` in `osai_user.c` implements the AArch64 `svc #0` instruction to trap into the kernel, passing up to three arguments in registers `x0`–`x2` and the syscall number in `x8`.
+- API layer: `osai_user.h` exposes a flat set of wrappers for kernel services (filesystem, networking, SMP, ML, etc.), each mapping to a specific syscall number.
+- Dependency direction: Userspace applications depend on this library; the library depends only on the kernel's syscall ABI.

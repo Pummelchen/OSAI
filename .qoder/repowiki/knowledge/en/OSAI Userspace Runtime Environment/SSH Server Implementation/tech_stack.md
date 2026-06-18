@@ -1,0 +1,1 @@
+Custom freestanding C99 implementation of SSH-2.0 protocol components including Curve25519 for key exchange, AES-128-CTR for encryption, and HMAC-SHA-256 for integrity, relying on `osai_net_*` syscalls for TCP/IP.

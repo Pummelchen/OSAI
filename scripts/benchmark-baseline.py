@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Benchmark baseline: compare OSAI QEMU telemetry against optional Linux baseline.
+"""Benchmark baseline: compare XAIOS QEMU telemetry against optional Linux baseline.
 
-Produces a structured JSON report comparing OSAI correctness metrics with an
+Produces a structured JSON report comparing XAIOS correctness metrics with an
 optional Linux QEMU baseline.  The Linux baseline is best-effort -- if Linux
 QEMU is unavailable the comparison section is empty and the script still
-succeeds with OSAI-only results.
+succeeds with XAIOS-only results.
 
 No performance claims are derived from QEMU results.  This script validates
 correctness gates and collects telemetry for trending.
@@ -36,11 +36,11 @@ def parse_telemetry(text: str):
         return None
 
 
-def run_osai_smoke():
-    """Run OSAI smoke test and extract telemetry."""
+def run_xaios_smoke():
+    """Run XAIOS smoke test and extract telemetry."""
     env = os.environ.copy()
-    env.setdefault("OSAI_QEMU_SMOKE_TIMEOUT", "60")
-    env.setdefault("OSAI_QEMU_HOSTFWD_PORT", "none")
+    env.setdefault("XAIOS_QEMU_SMOKE_TIMEOUT", "60")
+    env.setdefault("XAIOS_QEMU_HOSTFWD_PORT", "none")
     proc = subprocess.run(
         ["make", "qemu-aarch64"],
         cwd=ROOT,
@@ -73,9 +73,9 @@ def run_linux_baseline():
     except (FileNotFoundError, subprocess.TimeoutExpired, subprocess.CalledProcessError):
         return None
 
-    # Check for Linux kernel and initrd (not shipped with OSAI)
-    linux_kernel = os.environ.get("OSAI_LINUX_KERNEL", "")
-    linux_initrd = os.environ.get("OSAI_LINUX_INITRD", "")
+    # Check for Linux kernel and initrd (not shipped with XAIOS)
+    linux_kernel = os.environ.get("XAIOS_LINUX_KERNEL", "")
+    linux_initrd = os.environ.get("XAIOS_LINUX_INITRD", "")
     if not linux_kernel or not os.path.isfile(linux_kernel):
         return None
     if not linux_initrd or not os.path.isfile(linux_initrd):
@@ -129,8 +129,8 @@ def run_linux_baseline():
     }
 
 
-def extract_osai_metrics(telemetry):
-    """Extract key metrics from OSAI telemetry for comparison."""
+def extract_xaios_metrics(telemetry):
+    """Extract key metrics from XAIOS telemetry for comparison."""
     if telemetry is None:
         return {}
     return {
@@ -153,29 +153,29 @@ def extract_osai_metrics(telemetry):
 
 
 def main() -> int:
-    print("benchmark-baseline: running OSAI smoke test...", flush=True)
-    telemetry, smoke_rc = run_osai_smoke()
+    print("benchmark-baseline: running XAIOS smoke test...", flush=True)
+    telemetry, smoke_rc = run_xaios_smoke()
 
     if telemetry is None:
-        print("benchmark-baseline: OSAI smoke test failed or no telemetry")
+        print("benchmark-baseline: XAIOS smoke test failed or no telemetry")
         return 1
 
-    osai_metrics = extract_osai_metrics(telemetry)
+    xaios_metrics = extract_xaios_metrics(telemetry)
 
     print("benchmark-baseline: attempting Linux baseline...", flush=True)
     linux = run_linux_baseline()
     linux_metrics = linux if linux else {}
 
     report = {
-        "schema": "osai.benchmark.baseline_comparison.v1",
+        "schema": "xaios.benchmark.baseline_comparison.v1",
         "collected_at_unix": int(time.time()),
         "host_os": platform.system().lower(),
         "host_arch": platform.machine(),
         "qemu_accel": "tcg",
-        "osai": {
+        "xaios": {
             "status": "pass" if smoke_rc == 0 else "fail",
             "smoke_exit_code": smoke_rc,
-            "metrics": osai_metrics,
+            "metrics": xaios_metrics,
             "telemetry_keys": len(telemetry),
         },
         "linux_baseline": linux_metrics,
@@ -191,22 +191,22 @@ def main() -> int:
 
     if linux:
         report["comparison"] = {
-            "osai_cpu_count": osai_metrics.get("cpu_count", 0),
+            "xaios_cpu_count": xaios_metrics.get("cpu_count", 0),
             "linux_boot_available": True,
             "linux_boot_time_ms": linux.get("boot_time_ms", 0),
             "linux_memory_kb": linux.get("memory_available_kb", 0),
-            "note": "OSAI and Linux boot different workloads; direct comparison requires bare-metal tuning.",
+            "note": "XAIOS and Linux boot different workloads; direct comparison requires bare-metal tuning.",
         }
     else:
         report["comparison"] = {
             "linux_boot_available": False,
-            "note": "Linux baseline skipped (set OSAI_LINUX_KERNEL and OSAI_LINUX_INITRD to enable).",
+            "note": "Linux baseline skipped (set XAIOS_LINUX_KERNEL and XAIOS_LINUX_INITRD to enable).",
         }
 
     report_json = json.dumps(report, sort_keys=True, indent=2)
     print(f"benchmark-baseline: report={json.dumps(report, sort_keys=True)}")
 
-    output_path = os.environ.get("OSAI_BENCHMARK_OUTPUT")
+    output_path = os.environ.get("XAIOS_BENCHMARK_OUTPUT")
     if not output_path:
         output_path = str(BUILD / "benchmark-baseline.json")
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)

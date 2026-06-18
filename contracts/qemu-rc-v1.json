@@ -1,5 +1,5 @@
 {
-  "schema": "osai.qemu.release_candidate_contract.v1",
+  "schema": "xaios.qemu.release_candidate_contract.v1",
   "status": "frozen",
   "release_candidate": "qemu-rc-1",
   "scope": {
@@ -13,56 +13,56 @@
   "syscall_abi": {
     "version": 1,
     "syscalls": [
-      {"number": 1, "name": "log", "capability": "OSAI_CAP_LOG"},
-      {"number": 2, "name": "exit", "capability": "OSAI_CAP_EXIT"},
-      {"number": 3, "name": "osctl", "capability": "OSAI_CAP_OSCTL"},
-      {"number": 4, "name": "read_service_descriptor", "capability": "OSAI_CAP_FS_READ"},
-      {"number": 5, "name": "service_status", "capability": "OSAI_CAP_SERVICE_CONTROL"},
-      {"number": 6, "name": "service_start", "capability": "OSAI_CAP_SERVICE_CONTROL"},
-      {"number": 7, "name": "service_stop", "capability": "OSAI_CAP_SERVICE_CONTROL"},
-      {"number": 8, "name": "service_restart", "capability": "OSAI_CAP_SERVICE_CONTROL"},
-      {"number": 9, "name": "service_rollback", "capability": "OSAI_CAP_SERVICE_ROLLBACK"},
-      {"number": 10, "name": "service_update", "capability": "OSAI_CAP_UPDATE"},
-      {"number": 11, "name": "fs_open", "capability": "OSAI_CAP_FS_READ"},
-      {"number": 12, "name": "fs_read", "capability": "OSAI_CAP_FS_READ"},
-      {"number": 13, "name": "fs_write", "capability": "OSAI_CAP_FS_WRITE"},
-      {"number": 14, "name": "fs_close", "capability": "OSAI_CAP_FS_READ"},
-      {"number": 15, "name": "fs_stat", "capability": "OSAI_CAP_FS_READ"},
-      {"number": 16, "name": "fs_mkdir", "capability": "OSAI_CAP_FS_WRITE"},
-      {"number": 17, "name": "fs_delete", "capability": "OSAI_CAP_FS_WRITE"},
-      {"number": 18, "name": "fs_rename", "capability": "OSAI_CAP_FS_WRITE"},
-      {"number": 19, "name": "fs_list", "capability": "OSAI_CAP_FS_READ"},
-      {"number": 20, "name": "clock_nanos", "capability": "OSAI_CAP_TIME"},
-      {"number": 21, "name": "net_udp_echo", "capability": "OSAI_CAP_NET"},
-      {"number": 22, "name": "net_tcp_connect", "capability": "OSAI_CAP_NET"},
-      {"number": 23, "name": "smp_run", "capability": "OSAI_CAP_SMP"},
-      {"number": 24, "name": "cpu_ai_decode", "capability": "OSAI_CAP_CPU_AI"},
-      {"number": 25, "name": "remote_login", "capability": "OSAI_CAP_REMOTE_LOGIN"},
-      {"number": 26, "name": "net_external_session", "capability": "OSAI_CAP_NET"},
-      {"number": 27, "name": "thread_group_run", "capability": "OSAI_CAP_THREADS"},
-      {"number": 28, "name": "ml_run", "capability": "OSAI_CAP_ML"}
+      {"number": 1, "name": "log", "capability": "XAIOS_CAP_LOG"},
+      {"number": 2, "name": "exit", "capability": "XAIOS_CAP_EXIT"},
+      {"number": 3, "name": "osctl", "capability": "XAIOS_CAP_OSCTL"},
+      {"number": 4, "name": "read_service_descriptor", "capability": "XAIOS_CAP_FS_READ"},
+      {"number": 5, "name": "service_status", "capability": "XAIOS_CAP_SERVICE_CONTROL"},
+      {"number": 6, "name": "service_start", "capability": "XAIOS_CAP_SERVICE_CONTROL"},
+      {"number": 7, "name": "service_stop", "capability": "XAIOS_CAP_SERVICE_CONTROL"},
+      {"number": 8, "name": "service_restart", "capability": "XAIOS_CAP_SERVICE_CONTROL"},
+      {"number": 9, "name": "service_rollback", "capability": "XAIOS_CAP_SERVICE_ROLLBACK"},
+      {"number": 10, "name": "service_update", "capability": "XAIOS_CAP_UPDATE"},
+      {"number": 11, "name": "fs_open", "capability": "XAIOS_CAP_FS_READ"},
+      {"number": 12, "name": "fs_read", "capability": "XAIOS_CAP_FS_READ"},
+      {"number": 13, "name": "fs_write", "capability": "XAIOS_CAP_FS_WRITE"},
+      {"number": 14, "name": "fs_close", "capability": "XAIOS_CAP_FS_READ"},
+      {"number": 15, "name": "fs_stat", "capability": "XAIOS_CAP_FS_READ"},
+      {"number": 16, "name": "fs_mkdir", "capability": "XAIOS_CAP_FS_WRITE"},
+      {"number": 17, "name": "fs_delete", "capability": "XAIOS_CAP_FS_WRITE"},
+      {"number": 18, "name": "fs_rename", "capability": "XAIOS_CAP_FS_WRITE"},
+      {"number": 19, "name": "fs_list", "capability": "XAIOS_CAP_FS_READ"},
+      {"number": 20, "name": "clock_nanos", "capability": "XAIOS_CAP_TIME"},
+      {"number": 21, "name": "net_udp_echo", "capability": "XAIOS_CAP_NET"},
+      {"number": 22, "name": "net_tcp_connect", "capability": "XAIOS_CAP_NET"},
+      {"number": 23, "name": "smp_run", "capability": "XAIOS_CAP_SMP"},
+      {"number": 24, "name": "cpu_ai_decode", "capability": "XAIOS_CAP_CPU_AI"},
+      {"number": 25, "name": "remote_login", "capability": "XAIOS_CAP_REMOTE_LOGIN"},
+      {"number": 26, "name": "net_external_session", "capability": "XAIOS_CAP_NET"},
+      {"number": 27, "name": "thread_group_run", "capability": "XAIOS_CAP_THREADS"},
+      {"number": 28, "name": "ml_run", "capability": "XAIOS_CAP_ML"}
     ],
     "capabilities": [
-      {"bit": 1, "name": "OSAI_CAP_LOG"},
-      {"bit": 2, "name": "OSAI_CAP_EXIT"},
-      {"bit": 4, "name": "OSAI_CAP_OSCTL"},
-      {"bit": 8, "name": "OSAI_CAP_SERVICE_ROLLBACK"},
-      {"bit": 16, "name": "OSAI_CAP_UPDATE"},
-      {"bit": 32, "name": "OSAI_CAP_FS_READ"},
-      {"bit": 64, "name": "OSAI_CAP_SERVICE_CONTROL"},
-      {"bit": 128, "name": "OSAI_CAP_ADMIN"},
-      {"bit": 256, "name": "OSAI_CAP_FS_WRITE"},
-      {"bit": 512, "name": "OSAI_CAP_TIME"},
-      {"bit": 1024, "name": "OSAI_CAP_NET"},
-      {"bit": 2048, "name": "OSAI_CAP_SMP"},
-      {"bit": 4096, "name": "OSAI_CAP_CPU_AI"},
-      {"bit": 8192, "name": "OSAI_CAP_REMOTE_LOGIN"},
-      {"bit": 16384, "name": "OSAI_CAP_THREADS"},
-      {"bit": 32768, "name": "OSAI_CAP_ML"}
+      {"bit": 1, "name": "XAIOS_CAP_LOG"},
+      {"bit": 2, "name": "XAIOS_CAP_EXIT"},
+      {"bit": 4, "name": "XAIOS_CAP_OSCTL"},
+      {"bit": 8, "name": "XAIOS_CAP_SERVICE_ROLLBACK"},
+      {"bit": 16, "name": "XAIOS_CAP_UPDATE"},
+      {"bit": 32, "name": "XAIOS_CAP_FS_READ"},
+      {"bit": 64, "name": "XAIOS_CAP_SERVICE_CONTROL"},
+      {"bit": 128, "name": "XAIOS_CAP_ADMIN"},
+      {"bit": 256, "name": "XAIOS_CAP_FS_WRITE"},
+      {"bit": 512, "name": "XAIOS_CAP_TIME"},
+      {"bit": 1024, "name": "XAIOS_CAP_NET"},
+      {"bit": 2048, "name": "XAIOS_CAP_SMP"},
+      {"bit": 4096, "name": "XAIOS_CAP_CPU_AI"},
+      {"bit": 8192, "name": "XAIOS_CAP_REMOTE_LOGIN"},
+      {"bit": 16384, "name": "XAIOS_CAP_THREADS"},
+      {"bit": 32768, "name": "XAIOS_CAP_ML"}
     ]
   },
   "telemetry_schema": {
-    "schema": "osai.qemu.telemetry.v1",
+    "schema": "xaios.qemu.telemetry.v1",
     "minimums": {
       "cpu_count": 1,
       "pmm_total_pages": 1,
@@ -188,8 +188,8 @@
     }
   },
   "filesystem_format": {
-    "name": "OSAI read-only initramfs",
-    "magic": "OSAIROFS2",
+    "name": "XAIOS read-only initramfs",
+    "magic": "XAIOSROFS2",
     "version": 2,
     "header_sector": 1,
     "sector_size": 512,
@@ -204,8 +204,8 @@
     "required_paths": [
       "/init",
       "/bin/service-manager",
-      "/bin/osai-worker",
-      "/bin/osai-shell",
+      "/bin/xaios-worker",
+      "/bin/xaios-shell",
       "/bin/hello",
       "/bin/sysinfo",
       "/bin/systest",
@@ -214,11 +214,11 @@
       "/bin/lstm-xor",
       "/bin/sshtest",
       "/bin/mltest",
-      "/etc/osai-init.conf",
+      "/etc/xaios-init.conf",
       "/etc/services/source-index.svc",
-      "/models/cpu-ai-mvp.osaimodel"
+      "/models/cpu-ai-mvp.xaiosmodel"
     ],
-    "manifest_path": "/etc/osai-init.conf",
+    "manifest_path": "/etc/xaios-init.conf",
     "manifest_keys": [
       "service",
       "service_manager",
@@ -230,12 +230,12 @@
     ]
   },
   "cpu_ai_model_format": {
-    "name": "OSAI QEMU CPU-AI model image",
-    "magic": "OSAI_MODEL_MIAI",
+    "name": "XAIOS QEMU CPU-AI model image",
+    "magic": "XAIOS_MODEL_MIAI",
     "magic_value": "0x4941494d",
     "version": 1,
     "header_bytes": 80,
-    "path": "/models/cpu-ai-mvp.osaimodel",
+    "path": "/models/cpu-ai-mvp.xaiosmodel",
     "quantization": 8,
     "tokenizer": "byte table",
     "tokenizer_bytes": 256,
@@ -247,7 +247,7 @@
     "shared_weights_read_only": true
   },
   "ai_cell_descriptor_abi": {
-    "name": "OSAI AI Cell descriptor ABI",
+    "name": "XAIOS AI Cell descriptor ABI",
     "magic": "AIC1",
     "magic_value": "0x41494331",
     "version": 1,
@@ -282,8 +282,8 @@
     ]
   },
   "persistence_format": {
-    "name": "OSAI QEMU mutable state sector",
-    "magic": "OSAIPST1",
+    "name": "XAIOS QEMU mutable state sector",
+    "magic": "XAIOSPST1",
     "version": 1,
     "sector": 3000,
     "sector_bytes": 512,
@@ -299,7 +299,7 @@
     ]
   },
   "service_descriptor_format": {
-    "name": "OSAI service descriptor",
+    "name": "XAIOS service descriptor",
     "encoding": "ascii key=value lines",
     "path": "/etc/services/source-index.svc",
     "required_keys": ["name", "parent", "restart", "start", "status"],
@@ -312,22 +312,22 @@
     }
   },
   "security_policy": {
-    "name": "OSAI QEMU security hardening policy",
+    "name": "XAIOS QEMU security hardening policy",
     "admin_capability_required": true,
-    "admin_capability": "OSAI_CAP_ADMIN",
-    "update_signature_format": "osai-update:v1:gen=<monotonic>:sha256=<64 hex>:key=OSAI-QEMU-DEV-PUBKEY:sig=<64 hex>",
+    "admin_capability": "XAIOS_CAP_ADMIN",
+    "update_signature_format": "xaios-update:v1:gen=<monotonic>:sha256=<64 hex>:key=XAIOS-QEMU-DEV-PUBKEY:sig=<64 hex>",
     "update_requires_capabilities": [
-      "OSAI_CAP_UPDATE",
-      "OSAI_CAP_ADMIN"
+      "XAIOS_CAP_UPDATE",
+      "XAIOS_CAP_ADMIN"
     ],
     "update_generation_policy": "strictly monotonic",
-    "accepted_update_key": "OSAI-QEMU-DEV-PUBKEY",
+    "accepted_update_key": "XAIOS-QEMU-DEV-PUBKEY",
     "rollback_authorization_required": true,
     "sandbox_path_escape_rejected": true,
     "credential_material_rejected": true
   },
   "update_system": {
-    "name": "OSAI QEMU update transaction and rollback system",
+    "name": "XAIOS QEMU update transaction and rollback system",
     "transaction_record_path": "/state/updates/update.state",
     "record_fields": [
       "policy",
@@ -344,11 +344,11 @@
     "minimum_persisted_records": 8
   },
   "admin_control_plane": {
-    "name": "OSAI QEMU admin control plane",
+    "name": "XAIOS QEMU admin control plane",
     "access_policy": "ssh-only",
     "password_login": false,
     "admin_capability_required": true,
-    "admin_capability": "OSAI_CAP_ADMIN",
+    "admin_capability": "XAIOS_CAP_ADMIN",
     "status_export_path": "/state/services/admin.state",
     "required_commands": [
       "admin policy",
@@ -368,7 +368,7 @@
     "minimum_log_reads": 1
   },
   "cpu_matrix": {
-    "schema": "osai.qemu.cpu_matrix.v1",
+    "schema": "xaios.qemu.cpu_matrix.v1",
     "arm64_boot_tiers": [
       {"name": "fast-local-hvf-host", "cpu": "host", "accelerator": "hvf", "validation": "qemu-smoke-default"},
       {"name": "baseline-cortex-a53", "cpu": "cortex-a53", "accelerator": "tcg", "validation": "qemu-boot-probe"},

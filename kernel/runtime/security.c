@@ -1,13 +1,13 @@
-#include <osai/assert.h>
-#include <osai/klog.h>
-#include <osai/security.h>
-#include <osai/syscall.h>
+#include <xaios/assert.h>
+#include <xaios/klog.h>
+#include <xaios/security.h>
+#include <xaios/syscall.h>
 
-#define OSAI_UPDATE_SIGNATURE_PREFIX "osai-update:v1:"
-#define OSAI_UPDATE_SIGNATURE_GEN_FIELD "gen="
-#define OSAI_UPDATE_SIGNATURE_SHA_FIELD "sha256="
-#define OSAI_UPDATE_SIGNATURE_KEY_FIELD "key=OSAI-QEMU-DEV-PUBKEY"
-#define OSAI_UPDATE_SIGNATURE_SIG_FIELD "sig="
+#define XAIOS_UPDATE_SIGNATURE_PREFIX "xaios-update:v1:"
+#define XAIOS_UPDATE_SIGNATURE_GEN_FIELD "gen="
+#define XAIOS_UPDATE_SIGNATURE_SHA_FIELD "sha256="
+#define XAIOS_UPDATE_SIGNATURE_KEY_FIELD "key=XAIOS-QEMU-DEV-PUBKEY"
+#define XAIOS_UPDATE_SIGNATURE_SIG_FIELD "sig="
 
 static uint64_t g_denied_operations;
 static uint64_t g_capability_denials;
@@ -114,10 +114,10 @@ static int contains_buffer(const char *text, uint64_t length,
   return 0;
 }
 
-static osai_status_t reject_security_operation(const char *reason) {
+static xaios_status_t reject_security_operation(const char *reason) {
   ++g_denied_operations;
   klog("security: denied operation reason=%s\n", reason);
-  return OSAI_ERR_INVALID;
+  return XAIOS_ERR_INVALID;
 }
 
 static int is_hex_char(char ch) {
@@ -130,46 +130,46 @@ static int is_digit(char ch) {
   return ch >= '0' && ch <= '9';
 }
 
-static osai_status_t parse_generation(const char **cursor,
+static xaios_status_t parse_generation(const char **cursor,
                                       uint64_t *generation) {
   uint64_t parsed = 0;
   const char *value = 0;
   if (cursor == 0 || cursor[0] == 0 || generation == 0 ||
-      !starts_with(cursor[0], OSAI_UPDATE_SIGNATURE_GEN_FIELD)) {
-    return OSAI_ERR_INVALID;
+      !starts_with(cursor[0], XAIOS_UPDATE_SIGNATURE_GEN_FIELD)) {
+    return XAIOS_ERR_INVALID;
   }
-  value = cursor[0] + sizeof(OSAI_UPDATE_SIGNATURE_GEN_FIELD) - 1U;
+  value = cursor[0] + sizeof(XAIOS_UPDATE_SIGNATURE_GEN_FIELD) - 1U;
   if (!is_digit(*value)) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   while (*value != '\0' && *value != ':') {
     if (!is_digit(*value) ||
         parsed > (UINT64_MAX - (uint64_t)(*value - '0')) / 10U) {
-      return OSAI_ERR_INVALID;
+      return XAIOS_ERR_INVALID;
     }
     parsed = (parsed * 10U) + (uint64_t)(*value - '0');
     ++value;
   }
   if (*value != ':' || parsed == 0) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   *generation = parsed;
   *cursor = value + 1U;
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t reject_update_signature(const char *reason) {
+static xaios_status_t reject_update_signature(const char *reason) {
   ++g_signature_rejects;
   ++g_update_policy_rejects;
   return reject_security_operation(reason);
 }
 
-static osai_status_t reject_update_key(const char *reason) {
+static xaios_status_t reject_update_key(const char *reason) {
   ++g_key_rejects;
   return reject_update_signature(reason);
 }
 
-static osai_status_t reject_update_replay(void) {
+static xaios_status_t reject_update_replay(void) {
   ++g_update_replay_rejects;
   return reject_update_signature("update-replay-denied");
 }
@@ -199,105 +199,105 @@ void security_record_denied_operation(void) {
   ++g_denied_operations;
 }
 
-osai_status_t security_authorize_capability(const char *operation,
+xaios_status_t security_authorize_capability(const char *operation,
                                             uint64_t granted,
                                             uint64_t required) {
   (void)operation;
   if ((granted & required) == required) {
-    return OSAI_OK;
+    return XAIOS_OK;
   }
   ++g_capability_denials;
   return reject_security_operation("missing-capability");
 }
 
-osai_status_t security_authorize_fs_read(const char *path) {
-  if (security_reject_credential_material(path) != OSAI_OK) {
+xaios_status_t security_authorize_fs_read(const char *path) {
+  if (security_reject_credential_material(path) != XAIOS_OK) {
     ++g_fs_denials;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   if (starts_with(path, "/etc/") || path_in_tree(path, "/tmp") ||
       path_in_tree(path, "/home") || path_in_tree(path, "/apps") ||
       path_in_tree(path, "/state") || path_in_tree(path, "/logs")) {
-    return OSAI_OK;
+    return XAIOS_OK;
   }
   ++g_fs_denials;
   return reject_security_operation("fs-read-denied");
 }
 
-osai_status_t security_authorize_fs_write(const char *path) {
-  if (security_reject_credential_material(path) != OSAI_OK) {
+xaios_status_t security_authorize_fs_write(const char *path) {
+  if (security_reject_credential_material(path) != XAIOS_OK) {
     ++g_fs_denials;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   if (path_in_tree(path, "/tmp") || path_in_tree(path, "/home") ||
       path_in_tree(path, "/apps") || path_in_tree(path, "/state") ||
       path_in_tree(path, "/logs")) {
-    return OSAI_OK;
+    return XAIOS_OK;
   }
   ++g_fs_denials;
   return reject_security_operation("fs-write-denied");
 }
 
-osai_status_t security_authorize_git_workspace(uint32_t workspace_id,
+xaios_status_t security_authorize_git_workspace(uint32_t workspace_id,
                                                uint32_t owner_cell_id,
                                                uint32_t actor_cell_id,
                                                const char *operation) {
   (void)workspace_id;
-  if (security_reject_credential_material(operation) != OSAI_OK) {
+  if (security_reject_credential_material(operation) != XAIOS_OK) {
     ++g_workspace_denials;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   if (actor_cell_id == owner_cell_id) {
-    return OSAI_OK;
+    return XAIOS_OK;
   }
   ++g_workspace_denials;
   return reject_security_operation("git-workspace-owner-mismatch");
 }
 
-osai_status_t security_authorize_sandbox(uint32_t sandbox_id,
+xaios_status_t security_authorize_sandbox(uint32_t sandbox_id,
                                          uint32_t owner_cell_id,
                                          uint32_t actor_cell_id,
                                          const char *operation) {
   (void)sandbox_id;
-  if (security_reject_credential_material(operation) != OSAI_OK) {
+  if (security_reject_credential_material(operation) != XAIOS_OK) {
     ++g_sandbox_denials;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   if (actor_cell_id == owner_cell_id) {
-    return OSAI_OK;
+    return XAIOS_OK;
   }
   ++g_sandbox_denials;
   return reject_security_operation("sandbox-owner-mismatch");
 }
 
-osai_status_t security_authorize_rollback(const char *target,
+xaios_status_t security_authorize_rollback(const char *target,
                                           uint32_t authorized) {
-  if (security_reject_credential_material(target) != OSAI_OK) {
+  if (security_reject_credential_material(target) != XAIOS_OK) {
     ++g_rollback_denials;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   if (authorized != 0) {
-    return OSAI_OK;
+    return XAIOS_OK;
   }
   ++g_rollback_denials;
   return reject_security_operation("rollback-denied");
 }
 
-osai_status_t security_authorize_admin(const char *operation,
+xaios_status_t security_authorize_admin(const char *operation,
                                        uint64_t granted) {
-  if (security_reject_credential_material(operation) != OSAI_OK) {
+  if (security_reject_credential_material(operation) != XAIOS_OK) {
     ++g_admin_denials;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
-  if ((granted & OSAI_CAP_ADMIN) == OSAI_CAP_ADMIN) {
-    return OSAI_OK;
+  if ((granted & XAIOS_CAP_ADMIN) == XAIOS_CAP_ADMIN) {
+    return XAIOS_OK;
   }
   ++g_admin_denials;
   ++g_capability_denials;
   return reject_security_operation("admin-capability-denied");
 }
 
-osai_status_t security_reject_credential_material(const char *text) {
+xaios_status_t security_reject_credential_material(const char *text) {
   if (text == 0) {
     ++g_credential_rejects;
     return reject_security_operation("null-input");
@@ -314,10 +314,10 @@ osai_status_t security_reject_credential_material(const char *text) {
     return reject_security_operation("credential-material");
   }
 
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t security_reject_credential_material_buffer(const char *text,
+xaios_status_t security_reject_credential_material_buffer(const char *text,
                                                          uint64_t length) {
   if (text == 0) {
     ++g_credential_rejects;
@@ -333,33 +333,33 @@ osai_status_t security_reject_credential_material_buffer(const char *text,
     ++g_credential_rejects;
     return reject_security_operation("credential-material");
   }
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t security_validate_update_signature(const char *signature) {
+xaios_status_t security_validate_update_signature(const char *signature) {
   uint64_t generation = 0;
-  if (security_reject_credential_material(signature) != OSAI_OK) {
+  if (security_reject_credential_material(signature) != XAIOS_OK) {
     ++g_signature_rejects;
     ++g_update_policy_rejects;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
-  if (!starts_with(signature, OSAI_UPDATE_SIGNATURE_PREFIX)) {
+  if (!starts_with(signature, XAIOS_UPDATE_SIGNATURE_PREFIX)) {
     return reject_update_signature("bad-update-signature-prefix");
   }
 
-  const char *cursor = signature + sizeof(OSAI_UPDATE_SIGNATURE_PREFIX) - 1U;
-  if (parse_generation(&cursor, &generation) != OSAI_OK) {
+  const char *cursor = signature + sizeof(XAIOS_UPDATE_SIGNATURE_PREFIX) - 1U;
+  if (parse_generation(&cursor, &generation) != XAIOS_OK) {
     return reject_update_signature("bad-update-generation");
   }
   if (generation <= g_last_update_generation) {
     return reject_update_replay();
   }
 
-  if (!starts_with(cursor, OSAI_UPDATE_SIGNATURE_SHA_FIELD)) {
+  if (!starts_with(cursor, XAIOS_UPDATE_SIGNATURE_SHA_FIELD)) {
     return reject_update_signature("missing-update-sha256");
   }
-  cursor += sizeof(OSAI_UPDATE_SIGNATURE_SHA_FIELD) - 1U;
+  cursor += sizeof(XAIOS_UPDATE_SIGNATURE_SHA_FIELD) - 1U;
   for (uint32_t i = 0; i < 64U; ++i) {
     if (!is_hex_char(cursor[i])) {
       return reject_update_signature("bad-update-sha256");
@@ -371,19 +371,19 @@ osai_status_t security_validate_update_signature(const char *signature) {
   }
   ++cursor;
 
-  if (!starts_with(cursor, OSAI_UPDATE_SIGNATURE_KEY_FIELD)) {
+  if (!starts_with(cursor, XAIOS_UPDATE_SIGNATURE_KEY_FIELD)) {
     return reject_update_key("bad-update-key");
   }
-  cursor += sizeof(OSAI_UPDATE_SIGNATURE_KEY_FIELD) - 1U;
+  cursor += sizeof(XAIOS_UPDATE_SIGNATURE_KEY_FIELD) - 1U;
   if (*cursor != ':') {
     return reject_update_signature("bad-update-signature-format");
   }
   ++cursor;
 
-  if (!starts_with(cursor, OSAI_UPDATE_SIGNATURE_SIG_FIELD)) {
+  if (!starts_with(cursor, XAIOS_UPDATE_SIGNATURE_SIG_FIELD)) {
     return reject_update_signature("missing-update-signature");
   }
-  cursor += sizeof(OSAI_UPDATE_SIGNATURE_SIG_FIELD) - 1U;
+  cursor += sizeof(XAIOS_UPDATE_SIGNATURE_SIG_FIELD) - 1U;
   for (uint32_t i = 0; i < 64U; ++i) {
     if (!is_hex_char(cursor[i])) {
       return reject_update_signature("bad-update-signature-bytes");
@@ -399,31 +399,31 @@ osai_status_t security_validate_update_signature(const char *signature) {
   ++g_signature_accepts;
   klog("security: update signature accepted policy=qemu-dev generation=%lu key=dev-public-key\n",
        generation);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t security_authorize_update_signature(const char *signature,
+xaios_status_t security_authorize_update_signature(const char *signature,
                                                   uint64_t granted) {
-  if ((granted & OSAI_CAP_UPDATE) != OSAI_CAP_UPDATE) {
+  if ((granted & XAIOS_CAP_UPDATE) != XAIOS_CAP_UPDATE) {
     (void)security_authorize_capability("service.update", granted,
-                                        OSAI_CAP_UPDATE);
-    return OSAI_ERR_INVALID;
+                                        XAIOS_CAP_UPDATE);
+    return XAIOS_ERR_INVALID;
   }
-  if (security_authorize_admin("service.update", granted) != OSAI_OK) {
-    return OSAI_ERR_INVALID;
+  if (security_authorize_admin("service.update", granted) != XAIOS_OK) {
+    return XAIOS_ERR_INVALID;
   }
-  if (security_validate_update_signature(signature) != OSAI_OK) {
-    return OSAI_ERR_INVALID;
+  if (security_validate_update_signature(signature) != XAIOS_OK) {
+    return XAIOS_ERR_INVALID;
   }
   ++g_update_authorizations;
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t security_validate_sandbox_path(const char *path) {
+xaios_status_t security_validate_sandbox_path(const char *path) {
   const char *cursor = path;
-  if (security_reject_credential_material(path) != OSAI_OK) {
+  if (security_reject_credential_material(path) != XAIOS_OK) {
     ++g_sandbox_escape_rejects;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   if (path == 0 || path[0] != '/') {
     ++g_sandbox_escape_rejects;
@@ -442,17 +442,17 @@ osai_status_t security_validate_sandbox_path(const char *path) {
     }
     ++cursor;
   }
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t security_validate_benchmark_record(const char *record) {
-  if (security_reject_credential_material(record) != OSAI_OK) {
-    return OSAI_ERR_INVALID;
+xaios_status_t security_validate_benchmark_record(const char *record) {
+  if (security_reject_credential_material(record) != XAIOS_OK) {
+    return XAIOS_ERR_INVALID;
   }
   if (record == 0 || !contains(record, "\"design_targets\":true")) {
     return reject_security_operation("benchmark-record-policy");
   }
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 uint64_t security_denied_operation_count(void) {
@@ -525,43 +525,43 @@ void security_self_test(void) {
       'g', 'i', 't', 'h', 'u', 'b', '_', 'p', 'a', 't', '_',
       'e', 'x', 'a', 'm', 'p', 'l', 'e', '\0'};
   kassert(security_reject_credential_material("normal-update-request") ==
-          OSAI_OK);
+          XAIOS_OK);
   kassert(security_reject_credential_material(credential_fixture) ==
-          OSAI_ERR_INVALID);
+          XAIOS_ERR_INVALID);
   kassert(security_validate_update_signature("unsigned-update") ==
-          OSAI_ERR_INVALID);
+          XAIOS_ERR_INVALID);
   kassert(security_authorize_capability("service.update", 0U, 16U) ==
-          OSAI_ERR_INVALID);
+          XAIOS_ERR_INVALID);
   kassert(security_authorize_fs_read("/etc/services/source-index.svc") ==
-          OSAI_OK);
+          XAIOS_OK);
   kassert(security_authorize_fs_write("/etc/services/source-index.svc") ==
-          OSAI_ERR_INVALID);
+          XAIOS_ERR_INVALID);
   kassert(security_authorize_git_workspace(0, 1, 2, "patch") ==
-          OSAI_ERR_INVALID);
+          XAIOS_ERR_INVALID);
   kassert(security_authorize_sandbox(0, 1, 2, "build") ==
-          OSAI_ERR_INVALID);
-  kassert(security_authorize_rollback("/init", 0) == OSAI_ERR_INVALID);
-  kassert(security_authorize_admin("admin.shell", 0) == OSAI_ERR_INVALID);
+          XAIOS_ERR_INVALID);
+  kassert(security_authorize_rollback("/init", 0) == XAIOS_ERR_INVALID);
+  kassert(security_authorize_admin("admin.shell", 0) == XAIOS_ERR_INVALID);
   kassert(security_validate_sandbox_path("/workspace/1/../escape") ==
-          OSAI_ERR_INVALID);
+          XAIOS_ERR_INVALID);
   kassert(security_validate_benchmark_record(
               "{\"design_targets\":true,\"latency\":\"target\"}") ==
-          OSAI_OK);
+          XAIOS_OK);
   kassert(security_validate_benchmark_record("token=bad") ==
-          OSAI_ERR_INVALID);
+          XAIOS_ERR_INVALID);
   kassert(security_validate_update_signature(
-              "osai-update:v1:gen=1:sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:key=BAD:sig=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef") ==
-          OSAI_ERR_INVALID);
+              "xaios-update:v1:gen=1:sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:key=BAD:sig=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef") ==
+          XAIOS_ERR_INVALID);
   kassert(security_authorize_update_signature(
-              "osai-update:v1:gen=1:sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:key=OSAI-QEMU-DEV-PUBKEY:sig=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-              OSAI_CAP_UPDATE) == OSAI_ERR_INVALID);
+              "xaios-update:v1:gen=1:sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:key=XAIOS-QEMU-DEV-PUBKEY:sig=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+              XAIOS_CAP_UPDATE) == XAIOS_ERR_INVALID);
   kassert(security_authorize_update_signature(
-              "osai-update:v1:gen=1:sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:key=OSAI-QEMU-DEV-PUBKEY:sig=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-              OSAI_CAP_UPDATE | OSAI_CAP_ADMIN) ==
-          OSAI_OK);
+              "xaios-update:v1:gen=1:sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:key=XAIOS-QEMU-DEV-PUBKEY:sig=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+              XAIOS_CAP_UPDATE | XAIOS_CAP_ADMIN) ==
+          XAIOS_OK);
   kassert(security_validate_update_signature(
-              "osai-update:v1:gen=1:sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:key=OSAI-QEMU-DEV-PUBKEY:sig=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef") ==
-          OSAI_ERR_INVALID);
+              "xaios-update:v1:gen=1:sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:key=XAIOS-QEMU-DEV-PUBKEY:sig=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef") ==
+          XAIOS_ERR_INVALID);
   kassert(g_credential_rejects == 2);
   kassert(g_signature_rejects == 3);
   kassert(g_signature_accepts == 1);

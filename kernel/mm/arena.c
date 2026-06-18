@@ -1,9 +1,9 @@
-#include <osai/arena.h>
-#include <osai/assert.h>
-#include <osai/kheap.h>
-#include <osai/klog.h>
-#include <osai/pmm.h>
-#include <osai/vmm.h>
+#include <xaios/arena.h>
+#include <xaios/assert.h>
+#include <xaios/kheap.h>
+#include <xaios/klog.h>
+#include <xaios/pmm.h>
+#include <xaios/vmm.h>
 
 #define PAGE_SIZE UINT64_C(4096)
 #define MAX_ARENAS 32U
@@ -11,7 +11,7 @@
 #define ARENA_VA_STRIDE UINT64_C(0x00200000)
 #define ARENA_VA_LIMIT UINT64_C(0x50000000)
 
-static osai_arena_t g_arenas[MAX_ARENAS];
+static xaios_arena_t g_arenas[MAX_ARENAS];
 static uint64_t g_committed_pages;
 static uint64_t g_active_count;
 
@@ -25,19 +25,19 @@ static int str_nonempty(const char *value) {
 
 static void copy_name(char *dst, const char *src) {
   uint32_t i = 0;
-  for (; i + 1U < OSAI_ARENA_NAME_MAX && src[i] != '\0'; ++i) {
+  for (; i + 1U < XAIOS_ARENA_NAME_MAX && src[i] != '\0'; ++i) {
     dst[i] = src[i];
   }
   dst[i] = '\0';
 }
 
 static uint32_t vmm_flags_from_arena(uint32_t arena_flags) {
-  uint32_t flags = OSAI_VMM_PRESENT;
-  if ((arena_flags & OSAI_ARENA_FLAG_READ_ONLY) == 0) {
-    flags |= OSAI_VMM_WRITABLE;
+  uint32_t flags = XAIOS_VMM_PRESENT;
+  if ((arena_flags & XAIOS_ARENA_FLAG_READ_ONLY) == 0) {
+    flags |= XAIOS_VMM_WRITABLE;
   }
-  if ((arena_flags & OSAI_ARENA_FLAG_USER_VISIBLE) != 0) {
-    flags |= OSAI_VMM_USER;
+  if ((arena_flags & XAIOS_ARENA_FLAG_USER_VISIBLE) != 0) {
+    flags |= XAIOS_VMM_USER;
   }
   return flags;
 }
@@ -46,7 +46,7 @@ void arena_manager_init(void) {
   for (uint32_t i = 0; i < MAX_ARENAS; ++i) {
     g_arenas[i].arena_id = i;
     g_arenas[i].kind = 0;
-    g_arenas[i].state = OSAI_ARENA_EMPTY;
+    g_arenas[i].state = XAIOS_ARENA_EMPTY;
     g_arenas[i].owner_id = 0;
     g_arenas[i].name[0] = '\0';
     g_arenas[i].base = 0;
@@ -62,18 +62,18 @@ void arena_manager_init(void) {
   klog("arena: manager initialized\n");
 }
 
-static osai_status_t arena_validate_create(uint32_t arena_id,
-                                           osai_arena_kind_t kind,
+static xaios_status_t arena_validate_create(uint32_t arena_id,
+                                           xaios_arena_kind_t kind,
                                            const char *name, uint64_t size) {
   if (arena_id >= MAX_ARENAS || kind == 0 || !str_nonempty(name) ||
-      size == 0 || g_arenas[arena_id].state == OSAI_ARENA_READY) {
-    return OSAI_ERR_INVALID;
+      size == 0 || g_arenas[arena_id].state == XAIOS_ARENA_READY) {
+    return XAIOS_ERR_INVALID;
   }
   uint64_t base = ARENA_VA_BASE + ((uint64_t)arena_id * ARENA_VA_STRIDE);
   if (base + align_up(size, PAGE_SIZE) > ARENA_VA_LIMIT) {
-    return OSAI_ERR_NO_MEMORY;
+    return XAIOS_ERR_NO_MEMORY;
   }
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 static void arena_zero(void *buffer, uint64_t size) {
@@ -83,14 +83,14 @@ static void arena_zero(void *buffer, uint64_t size) {
   }
 }
 
-static void arena_unmap_pages(osai_arena_t *arena) {
+static void arena_unmap_pages(xaios_arena_t *arena) {
   if (arena->pages == 0) {
     return;
   }
 
   for (uint64_t i = 0; i < arena->page_count; ++i) {
     uint64_t va = arena->base + (i * PAGE_SIZE);
-    kassert(vmm_unmap_page(va) == OSAI_OK);
+    kassert(vmm_unmap_page(va) == XAIOS_OK);
     if (arena->pages[i] != 0) {
       pmm_free_page(arena->pages[i]);
       --g_committed_pages;
@@ -99,19 +99,19 @@ static void arena_unmap_pages(osai_arena_t *arena) {
   }
 }
 
-osai_status_t arena_create(uint32_t arena_id, osai_arena_kind_t kind,
+xaios_status_t arena_create(uint32_t arena_id, xaios_arena_kind_t kind,
                            uint32_t owner_id, const char *name, uint64_t size,
-                           uint32_t flags, const osai_arena_t **arena) {
-  if (arena_validate_create(arena_id, kind, name, size) != OSAI_OK) {
-    return OSAI_ERR_INVALID;
+                           uint32_t flags, const xaios_arena_t **arena) {
+  if (arena_validate_create(arena_id, kind, name, size) != XAIOS_OK) {
+    return XAIOS_ERR_INVALID;
   }
 
-  osai_arena_t *entry = &g_arenas[arena_id];
+  xaios_arena_t *entry = &g_arenas[arena_id];
   uint64_t mapped_size = align_up(size, PAGE_SIZE);
   uint64_t page_count = mapped_size / PAGE_SIZE;
   void **pages = (void **)kheap_calloc(sizeof(void *) * page_count, 16);
   if (pages == 0) {
-    return OSAI_ERR_NO_MEMORY;
+    return XAIOS_ERR_NO_MEMORY;
   }
 
   entry->kind = kind;
@@ -120,7 +120,7 @@ osai_status_t arena_create(uint32_t arena_id, osai_arena_kind_t kind,
   entry->base = ARENA_VA_BASE + ((uint64_t)arena_id * ARENA_VA_STRIDE);
   entry->size = size;
   entry->page_count = page_count;
-  entry->flags = flags | OSAI_ARENA_FLAG_PREFaultED;
+  entry->flags = flags | XAIOS_ARENA_FLAG_PREFaultED;
   entry->ref_count = 0;
   entry->fault_count = 0;
   entry->pages = pages;
@@ -129,21 +129,21 @@ osai_status_t arena_create(uint32_t arena_id, osai_arena_kind_t kind,
     pages[i] = pmm_alloc_page();
     if (pages[i] == 0) {
       arena_unmap_pages(entry);
-      entry->state = OSAI_ARENA_EMPTY;
-      return OSAI_ERR_NO_MEMORY;
+      entry->state = XAIOS_ARENA_EMPTY;
+      return XAIOS_ERR_NO_MEMORY;
     }
     arena_zero(pages[i], PAGE_SIZE);
     if (vmm_map_page(entry->base + (i * PAGE_SIZE),
                      (uint64_t)(uintptr_t)pages[i],
-                     vmm_flags_from_arena(entry->flags)) != OSAI_OK) {
+                     vmm_flags_from_arena(entry->flags)) != XAIOS_OK) {
       arena_unmap_pages(entry);
-      entry->state = OSAI_ARENA_EMPTY;
-      return OSAI_ERR_INVALID;
+      entry->state = XAIOS_ARENA_EMPTY;
+      return XAIOS_ERR_INVALID;
     }
     ++g_committed_pages;
   }
 
-  entry->state = OSAI_ARENA_READY;
+  entry->state = XAIOS_ARENA_READY;
   ++g_active_count;
   if (arena != 0) {
     *arena = entry;
@@ -151,38 +151,38 @@ osai_status_t arena_create(uint32_t arena_id, osai_arena_kind_t kind,
   klog("arena: created id=%u kind=%u owner=%u name=%s base=0x%lx size=%lu pages=%lu flags=0x%x\n",
        arena_id, kind, owner_id, entry->name, entry->base, entry->size,
        entry->page_count, entry->flags);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t arena_acquire(uint32_t arena_id, const osai_arena_t **arena) {
-  if (arena_id >= MAX_ARENAS || g_arenas[arena_id].state != OSAI_ARENA_READY) {
-    return OSAI_ERR_INVALID;
+xaios_status_t arena_acquire(uint32_t arena_id, const xaios_arena_t **arena) {
+  if (arena_id >= MAX_ARENAS || g_arenas[arena_id].state != XAIOS_ARENA_READY) {
+    return XAIOS_ERR_INVALID;
   }
   ++g_arenas[arena_id].ref_count;
   if (arena != 0) {
     *arena = &g_arenas[arena_id];
   }
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t arena_release(uint32_t arena_id) {
-  if (arena_id >= MAX_ARENAS || g_arenas[arena_id].state != OSAI_ARENA_READY ||
+xaios_status_t arena_release(uint32_t arena_id) {
+  if (arena_id >= MAX_ARENAS || g_arenas[arena_id].state != XAIOS_ARENA_READY ||
       g_arenas[arena_id].ref_count == 0) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   --g_arenas[arena_id].ref_count;
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t arena_destroy(uint32_t arena_id) {
-  if (arena_id >= MAX_ARENAS || g_arenas[arena_id].state != OSAI_ARENA_READY ||
+xaios_status_t arena_destroy(uint32_t arena_id) {
+  if (arena_id >= MAX_ARENAS || g_arenas[arena_id].state != XAIOS_ARENA_READY ||
       g_arenas[arena_id].ref_count != 0) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
-  osai_arena_t *entry = &g_arenas[arena_id];
+  xaios_arena_t *entry = &g_arenas[arena_id];
   arena_unmap_pages(entry);
-  entry->state = OSAI_ARENA_DESTROYED;
+  entry->state = XAIOS_ARENA_DESTROYED;
   entry->base = 0;
   entry->size = 0;
   entry->page_count = 0;
@@ -190,15 +190,15 @@ osai_status_t arena_destroy(uint32_t arena_id) {
   entry->pages = 0;
   --g_active_count;
   klog("arena: destroyed id=%u\n", arena_id);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t arena_record_fault(uint32_t arena_id) {
-  if (arena_id >= MAX_ARENAS || g_arenas[arena_id].state != OSAI_ARENA_READY) {
-    return OSAI_ERR_INVALID;
+xaios_status_t arena_record_fault(uint32_t arena_id) {
+  if (arena_id >= MAX_ARENAS || g_arenas[arena_id].state != XAIOS_ARENA_READY) {
+    return XAIOS_ERR_INVALID;
   }
   ++g_arenas[arena_id].fault_count;
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 uint64_t arena_committed_pages(void) {
@@ -210,46 +210,46 @@ uint64_t arena_active_count(void) {
 }
 
 void arena_self_test(void) {
-  const osai_arena_t *model = 0;
-  const osai_arena_t *kv = 0;
-  const osai_arena_t *build = 0;
-  const osai_arena_t *log = 0;
-  const osai_arena_t *telemetry = 0;
+  const xaios_arena_t *model = 0;
+  const xaios_arena_t *kv = 0;
+  const xaios_arena_t *build = 0;
+  const xaios_arena_t *log = 0;
+  const xaios_arena_t *telemetry = 0;
 
-  kassert(arena_create(20, OSAI_ARENA_MODEL_WEIGHTS, 0, "arena-test-model",
-                       4096, OSAI_ARENA_FLAG_READ_ONLY |
-                                 OSAI_ARENA_FLAG_SHARED,
-                       &model) == OSAI_OK);
-  kassert(arena_create(21, OSAI_ARENA_KV_CACHE, 7, "arena-test-kv", 8192, 0,
-                       &kv) == OSAI_OK);
-  kassert(arena_create(22, OSAI_ARENA_BUILD_OUTPUT, 7, "arena-test-build",
-                       4096, 0, &build) == OSAI_OK);
-  kassert(arena_create(23, OSAI_ARENA_LOG, 7, "arena-test-log", 4096, 0,
-                       &log) == OSAI_OK);
-  kassert(arena_create(24, OSAI_ARENA_TELEMETRY, 7, "arena-test-telemetry",
-                       4096, 0, &telemetry) == OSAI_OK);
+  kassert(arena_create(20, XAIOS_ARENA_MODEL_WEIGHTS, 0, "arena-test-model",
+                       4096, XAIOS_ARENA_FLAG_READ_ONLY |
+                                 XAIOS_ARENA_FLAG_SHARED,
+                       &model) == XAIOS_OK);
+  kassert(arena_create(21, XAIOS_ARENA_KV_CACHE, 7, "arena-test-kv", 8192, 0,
+                       &kv) == XAIOS_OK);
+  kassert(arena_create(22, XAIOS_ARENA_BUILD_OUTPUT, 7, "arena-test-build",
+                       4096, 0, &build) == XAIOS_OK);
+  kassert(arena_create(23, XAIOS_ARENA_LOG, 7, "arena-test-log", 4096, 0,
+                       &log) == XAIOS_OK);
+  kassert(arena_create(24, XAIOS_ARENA_TELEMETRY, 7, "arena-test-telemetry",
+                       4096, 0, &telemetry) == XAIOS_OK);
   kassert(model != 0 && kv != 0 && build != 0 && log != 0 && telemetry != 0);
-  kassert((model->flags & OSAI_ARENA_FLAG_READ_ONLY) != 0);
-  kassert((model->flags & OSAI_ARENA_FLAG_PREFaultED) != 0);
+  kassert((model->flags & XAIOS_ARENA_FLAG_READ_ONLY) != 0);
+  kassert((model->flags & XAIOS_ARENA_FLAG_PREFaultED) != 0);
   kassert(model->page_count == 1);
   kassert(kv->page_count == 2);
 
   uint64_t physical = 0;
   uint32_t vmm_flags = 0;
-  kassert(vmm_translate(model->base, &physical, &vmm_flags) == OSAI_OK);
-  kassert((vmm_flags & OSAI_VMM_WRITABLE) == 0);
-  kassert(vmm_translate(kv->base, &physical, &vmm_flags) == OSAI_OK);
-  kassert((vmm_flags & OSAI_VMM_WRITABLE) != 0);
+  kassert(vmm_translate(model->base, &physical, &vmm_flags) == XAIOS_OK);
+  kassert((vmm_flags & XAIOS_VMM_WRITABLE) == 0);
+  kassert(vmm_translate(kv->base, &physical, &vmm_flags) == XAIOS_OK);
+  kassert((vmm_flags & XAIOS_VMM_WRITABLE) != 0);
 
-  kassert(arena_acquire(20, &model) == OSAI_OK);
-  kassert(arena_destroy(20) == OSAI_ERR_INVALID);
-  kassert(arena_release(20) == OSAI_OK);
-  kassert(arena_record_fault(21) == OSAI_OK);
-  kassert(arena_destroy(20) == OSAI_OK);
-  kassert(arena_destroy(21) == OSAI_OK);
-  kassert(arena_destroy(22) == OSAI_OK);
-  kassert(arena_destroy(23) == OSAI_OK);
-  kassert(arena_destroy(24) == OSAI_OK);
+  kassert(arena_acquire(20, &model) == XAIOS_OK);
+  kassert(arena_destroy(20) == XAIOS_ERR_INVALID);
+  kassert(arena_release(20) == XAIOS_OK);
+  kassert(arena_record_fault(21) == XAIOS_OK);
+  kassert(arena_destroy(20) == XAIOS_OK);
+  kassert(arena_destroy(21) == XAIOS_OK);
+  kassert(arena_destroy(22) == XAIOS_OK);
+  kassert(arena_destroy(23) == XAIOS_OK);
+  kassert(arena_destroy(24) == XAIOS_OK);
   klog("arena: self-test passed active=%lu committed_pages=%lu\n",
        arena_active_count(), arena_committed_pages());
 }

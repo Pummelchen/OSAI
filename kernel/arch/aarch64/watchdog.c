@@ -1,8 +1,8 @@
-#include <osai/assert.h>
-#include <osai/klog.h>
-#include <osai/mutable_fs.h>
-#include <osai/timer.h>
-#include <osai/watchdog.h>
+#include <xaios/assert.h>
+#include <xaios/klog.h>
+#include <xaios/mutable_fs.h>
+#include <xaios/timer.h>
+#include <xaios/watchdog.h>
 
 static uint64_t g_watchdog_deadline_ns;
 static uint32_t g_watchdog_active;
@@ -24,10 +24,10 @@ static void psci_system_reset(void) {
 void watchdog_init(void) {
   g_watchdog_deadline_ns =
       timer_now_ns() +
-      (uint64_t)OSAI_WATCHDOG_TIMEOUT_SECONDS * UINT64_C(1000000000);
+      (uint64_t)XAIOS_WATCHDOG_TIMEOUT_SECONDS * UINT64_C(1000000000);
   g_watchdog_active = 1;
   klog("watchdog: initialized timeout=%u s deadline=%lu ns\n",
-       OSAI_WATCHDOG_TIMEOUT_SECONDS, g_watchdog_deadline_ns);
+       XAIOS_WATCHDOG_TIMEOUT_SECONDS, g_watchdog_deadline_ns);
 }
 
 void watchdog_kick(void) {
@@ -36,7 +36,7 @@ void watchdog_kick(void) {
   }
   g_watchdog_deadline_ns =
       timer_now_ns() +
-      (uint64_t)OSAI_WATCHDOG_TIMEOUT_SECONDS * UINT64_C(1000000000);
+      (uint64_t)XAIOS_WATCHDOG_TIMEOUT_SECONDS * UINT64_C(1000000000);
 }
 
 void watchdog_trigger_reset(void) {
@@ -113,9 +113,9 @@ uint32_t boot_counter_read(void) {
   for (uint64_t i = 0; i < sizeof(buf); ++i) {
     buf[i] = 0;
   }
-  osai_status_t status =
-      mutable_fs_read(OSAI_BOOT_COUNTER_PATH, buf, sizeof(buf) - 1U, &read_size);
-  if (status != OSAI_OK || read_size == 0) {
+  xaios_status_t status =
+      mutable_fs_read(XAIOS_BOOT_COUNTER_PATH, buf, sizeof(buf) - 1U, &read_size);
+  if (status != XAIOS_OK || read_size == 0) {
     return 0;
   }
   return parse_u32_simple(buf, read_size);
@@ -129,17 +129,17 @@ void boot_counter_increment(void) {
     buf[i] = 0;
   }
   format_u32(count, buf, &len);
-  mutable_fs_write(OSAI_BOOT_COUNTER_PATH, buf, len);
+  mutable_fs_write(XAIOS_BOOT_COUNTER_PATH, buf, len);
   klog("boot: counter incremented count=%u\n", count);
 }
 
 void boot_counter_reset(void) {
   char buf[2] = {'0', 0};
-  mutable_fs_write(OSAI_BOOT_COUNTER_PATH, buf, 1);
+  mutable_fs_write(XAIOS_BOOT_COUNTER_PATH, buf, 1);
   klog("boot: counter reset\n");
 }
 
 uint32_t boot_in_recovery_mode(void) {
   uint32_t count = boot_counter_read();
-  return count > OSAI_BOOT_THRESHOLD ? 1U : 0U;
+  return count > XAIOS_BOOT_THRESHOLD ? 1U : 0U;
 }

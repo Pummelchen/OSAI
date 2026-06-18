@@ -1,0 +1,1 @@
+Provides a minimal SSH-2.0 server with key exchange, authentication, and channel management for remote access.

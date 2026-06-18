@@ -1,11 +1,11 @@
-#include <osai/arp.h>
-#include <osai/assert.h>
-#include <osai/icmp.h>
-#include <osai/ipv4.h>
-#include <osai/klog.h>
-#include <osai/network_stack.h>
-#include <osai/timer.h>
-#include <osai/virtio_net.h>
+#include <xaios/arp.h>
+#include <xaios/assert.h>
+#include <xaios/icmp.h>
+#include <xaios/ipv4.h>
+#include <xaios/klog.h>
+#include <xaios/network_stack.h>
+#include <xaios/timer.h>
+#include <xaios/virtio_net.h>
 
 #define NETWORK_ETHERTYPE_IPV4 UINT16_C(0x0800)
 #define NETWORK_IP_PROTO_UDP UINT8_C(17)
@@ -78,7 +78,7 @@ typedef struct network_udp_flow {
 } network_udp_flow_t;
 
 typedef struct network_tcp_flow {
-  osai_network_flow_state_t state;
+  xaios_network_flow_state_t state;
   uint32_t flow_id;
   uint32_t queue_id;
   uint32_t cell_id;
@@ -126,8 +126,8 @@ typedef struct network_tcp_header {
   uint16_t urgent_pointer;
 } network_tcp_header_t;
 
-static network_queue_binding_t g_queue_bindings[OSAI_NETWORK_MAX_QUEUE_BINDINGS];
-static network_queue_ring_t g_queue_rings[OSAI_NETWORK_MAX_QUEUE_BINDINGS];
+static network_queue_binding_t g_queue_bindings[XAIOS_NETWORK_MAX_QUEUE_BINDINGS];
+static network_queue_ring_t g_queue_rings[XAIOS_NETWORK_MAX_QUEUE_BINDINGS];
 static uint64_t g_next_flow_id = 1U;
 static network_packet_desc_t g_packet_descs[NETWORK_PACKET_DESCRIPTORS];
 static network_udp_flow_t g_udp_flows[NETWORK_UDP_FLOWS];
@@ -233,7 +233,7 @@ static void record_latency(uint64_t *samples, uint32_t *count, uint64_t value) {
 }
 
 static network_queue_binding_t *find_binding(uint32_t queue_id) {
-  for (uint32_t i = 0; i < OSAI_NETWORK_MAX_QUEUE_BINDINGS; ++i) {
+  for (uint32_t i = 0; i < XAIOS_NETWORK_MAX_QUEUE_BINDINGS; ++i) {
     if (g_queue_bindings[i].in_use != 0 &&
         g_queue_bindings[i].queue_id == queue_id) {
       return &g_queue_bindings[i];
@@ -243,7 +243,7 @@ static network_queue_binding_t *find_binding(uint32_t queue_id) {
 }
 
 static network_queue_ring_t *find_queue_ring(uint32_t queue_id) {
-  for (uint32_t i = 0; i < OSAI_NETWORK_MAX_QUEUE_BINDINGS; ++i) {
+  for (uint32_t i = 0; i < XAIOS_NETWORK_MAX_QUEUE_BINDINGS; ++i) {
     if (g_queue_rings[i].queue_id == queue_id) {
       return &g_queue_rings[i];
     }
@@ -253,7 +253,7 @@ static network_queue_ring_t *find_queue_ring(uint32_t queue_id) {
 
 static uint32_t active_binding_count(void) {
   uint32_t active = 0;
-  for (uint32_t i = 0; i < OSAI_NETWORK_MAX_QUEUE_BINDINGS; ++i) {
+  for (uint32_t i = 0; i < XAIOS_NETWORK_MAX_QUEUE_BINDINGS; ++i) {
     if (g_queue_bindings[i].in_use != 0) {
       ++active;
     }
@@ -262,7 +262,7 @@ static uint32_t active_binding_count(void) {
 }
 
 static network_queue_binding_t *binding_by_active_index(uint32_t index) {
-  for (uint32_t i = 0; i < OSAI_NETWORK_MAX_QUEUE_BINDINGS; ++i) {
+  for (uint32_t i = 0; i < XAIOS_NETWORK_MAX_QUEUE_BINDINGS; ++i) {
     if (g_queue_bindings[i].in_use != 0) {
       if (index == 0U) {
         return &g_queue_bindings[i];
@@ -537,7 +537,7 @@ static network_tcp_flow_t *find_flow_by_ports(uint16_t local_port,
                                               uint16_t remote_port,
                                               uint32_t remote_address) {
   for (uint32_t i = 0; i < NETWORK_TCP_CONNECTIONS; ++i) {
-    if (g_tcp_flows[i].state != OSAI_NETWORK_FLOW_FREE &&
+    if (g_tcp_flows[i].state != XAIOS_NETWORK_FLOW_FREE &&
         g_tcp_flows[i].local_port == local_port &&
         g_tcp_flows[i].remote_port == remote_port &&
         g_tcp_flows[i].remote_address == remote_address) {
@@ -603,8 +603,8 @@ static network_udp_flow_t *alloc_udp_flow(uint32_t queue_id, uint32_t cell_id,
 
 static network_tcp_flow_t *alloc_tcp_flow(void) {
   for (uint32_t i = 0; i < NETWORK_TCP_CONNECTIONS; ++i) {
-    if (g_tcp_flows[i].state == OSAI_NETWORK_FLOW_FREE) {
-      g_tcp_flows[i].state = OSAI_NETWORK_FLOW_SYN_RECV;
+    if (g_tcp_flows[i].state == XAIOS_NETWORK_FLOW_FREE) {
+      g_tcp_flows[i].state = XAIOS_NETWORK_FLOW_SYN_RECV;
       g_tcp_flows[i].retransmits = 0;
       g_tcp_flows[i].packets_rx = 0;
       g_tcp_flows[i].packets_tx = 0;
@@ -615,9 +615,9 @@ static network_tcp_flow_t *alloc_tcp_flow(void) {
 }
 
 void network_stack_init(void) {
-  for (uint32_t i = 0; i < OSAI_NETWORK_MAX_QUEUE_BINDINGS; ++i) {
+  for (uint32_t i = 0; i < XAIOS_NETWORK_MAX_QUEUE_BINDINGS; ++i) {
     g_queue_bindings[i].cell_id = 0;
-    g_queue_bindings[i].queue_id = OSAI_NETWORK_QUEUE_ID_INVALID;
+    g_queue_bindings[i].queue_id = XAIOS_NETWORK_QUEUE_ID_INVALID;
     g_queue_bindings[i].core_mask = 0;
     g_queue_bindings[i].in_use = 0;
     g_queue_rings[i].queue_id = i;
@@ -628,9 +628,9 @@ void network_stack_init(void) {
   }
 
   for (uint32_t i = 0; i < NETWORK_TCP_CONNECTIONS; ++i) {
-    g_tcp_flows[i].state = OSAI_NETWORK_FLOW_FREE;
+    g_tcp_flows[i].state = XAIOS_NETWORK_FLOW_FREE;
     g_tcp_flows[i].flow_id = 0;
-    g_tcp_flows[i].queue_id = OSAI_NETWORK_QUEUE_ID_INVALID;
+    g_tcp_flows[i].queue_id = XAIOS_NETWORK_QUEUE_ID_INVALID;
     g_tcp_flows[i].cell_id = 0;
     g_tcp_flows[i].local_port = 0;
     g_tcp_flows[i].remote_port = 0;
@@ -647,7 +647,7 @@ void network_stack_init(void) {
   for (uint32_t i = 0; i < NETWORK_UDP_FLOWS; ++i) {
     g_udp_flows[i].active = 0;
     g_udp_flows[i].flow_id = 0;
-    g_udp_flows[i].queue_id = OSAI_NETWORK_QUEUE_ID_INVALID;
+    g_udp_flows[i].queue_id = XAIOS_NETWORK_QUEUE_ID_INVALID;
     g_udp_flows[i].cell_id = 0;
     g_udp_flows[i].local_port = 0;
     g_udp_flows[i].remote_port = 0;
@@ -660,7 +660,7 @@ void network_stack_init(void) {
 
   for (uint32_t i = 0; i < NETWORK_PACKET_DESCRIPTORS; ++i) {
     g_packet_descs[i].state = NETWORK_PACKET_FREE;
-    g_packet_descs[i].queue_id = OSAI_NETWORK_QUEUE_ID_INVALID;
+    g_packet_descs[i].queue_id = XAIOS_NETWORK_QUEUE_ID_INVALID;
     g_packet_descs[i].cell_id = 0;
     g_packet_descs[i].src_port = 0;
     g_packet_descs[i].dst_port = 0;
@@ -704,21 +704,21 @@ void network_stack_init(void) {
   klog("network: stack initialized\n");
 }
 
-osai_status_t network_stack_bind_queue(uint32_t cell_id, uint32_t queue_id,
+xaios_status_t network_stack_bind_queue(uint32_t cell_id, uint32_t queue_id,
                                        uint32_t core_mask) {
-  if (queue_id >= OSAI_NETWORK_MAX_QUEUE_BINDINGS || core_mask == 0 ||
+  if (queue_id >= XAIOS_NETWORK_MAX_QUEUE_BINDINGS || core_mask == 0 ||
       cell_id == UINT32_C(0xffffffff)) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
-  for (uint32_t i = 0; i < OSAI_NETWORK_MAX_QUEUE_BINDINGS; ++i) {
+  for (uint32_t i = 0; i < XAIOS_NETWORK_MAX_QUEUE_BINDINGS; ++i) {
     if (g_queue_bindings[i].in_use != 0 &&
         g_queue_bindings[i].queue_id == queue_id) {
-      return OSAI_ERR_BUSY;
+      return XAIOS_ERR_BUSY;
     }
   }
 
-  for (uint32_t i = 0; i < OSAI_NETWORK_MAX_QUEUE_BINDINGS; ++i) {
+  for (uint32_t i = 0; i < XAIOS_NETWORK_MAX_QUEUE_BINDINGS; ++i) {
     if (g_queue_bindings[i].in_use == 0) {
       g_queue_bindings[i].in_use = 1;
       g_queue_bindings[i].cell_id = cell_id;
@@ -728,39 +728,39 @@ osai_status_t network_stack_bind_queue(uint32_t cell_id, uint32_t queue_id,
       ++g_queue_binding_count;
       klog("network: bound queue=%u cell=%u core_mask=0x%x\n", queue_id,
            cell_id, core_mask);
-      return OSAI_OK;
+      return XAIOS_OK;
     }
   }
 
-  return OSAI_ERR_NO_MEMORY;
+  return XAIOS_ERR_NO_MEMORY;
 }
 
-osai_status_t network_stack_release_queue(uint32_t queue_id, uint32_t cell_id) {
-  for (uint32_t i = 0; i < OSAI_NETWORK_MAX_QUEUE_BINDINGS; ++i) {
+xaios_status_t network_stack_release_queue(uint32_t queue_id, uint32_t cell_id) {
+  for (uint32_t i = 0; i < XAIOS_NETWORK_MAX_QUEUE_BINDINGS; ++i) {
     if (g_queue_bindings[i].in_use != 0 &&
         g_queue_bindings[i].queue_id == queue_id &&
         g_queue_bindings[i].cell_id == cell_id) {
       g_queue_bindings[i].in_use = 0;
       g_queue_bindings[i].cell_id = 0;
-      g_queue_bindings[i].queue_id = OSAI_NETWORK_QUEUE_ID_INVALID;
+      g_queue_bindings[i].queue_id = XAIOS_NETWORK_QUEUE_ID_INVALID;
       g_queue_bindings[i].core_mask = 0;
       queue_ring_reset(queue_id);
       g_queue_binding_count =
           (g_queue_binding_count == 0U) ? 0U : (g_queue_binding_count - 1U);
       klog("network: released queue=%u cell=%u\n", queue_id, cell_id);
-      return OSAI_OK;
+      return XAIOS_OK;
     }
   }
-  return OSAI_ERR_NOT_FOUND;
+  return XAIOS_ERR_NOT_FOUND;
 }
 
-osai_status_t network_stack_process_udp_frame(const uint8_t *frame,
+xaios_status_t network_stack_process_udp_frame(const uint8_t *frame,
                                             uint64_t frame_len) {
   if (frame == 0 || frame_len < 34U) {
     ++g_udp_dropped_count;
     ++g_udp_malformed_count;
     ++g_packet_drop_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   uint64_t start = timer_now_ns();
@@ -775,13 +775,13 @@ osai_status_t network_stack_process_udp_frame(const uint8_t *frame,
     ++g_udp_dropped_count;
     ++g_udp_malformed_count;
     ++g_packet_drop_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   if (src_port == 0 || dst_port == 0 || payload_len == 0) {
     ++g_udp_dropped_count;
     ++g_packet_drop_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   network_udp_flow_t *existing =
@@ -793,14 +793,14 @@ osai_status_t network_stack_process_udp_frame(const uint8_t *frame,
   if (binding == 0) {
     ++g_udp_dropped_count;
     ++g_packet_drop_count;
-    return OSAI_ERR_NOT_FOUND;
+    return XAIOS_ERR_NOT_FOUND;
   }
 
   network_packet_desc_t *packet =
       alloc_packet_desc(binding->queue_id, frame_len, start);
   if (packet == 0) {
     ++g_udp_dropped_count;
-    return OSAI_ERR_NO_MEMORY;
+    return XAIOS_ERR_NO_MEMORY;
   }
 
   packet->src_port = src_port;
@@ -813,12 +813,12 @@ osai_status_t network_stack_process_udp_frame(const uint8_t *frame,
   if (flow == 0) {
     ++g_udp_dropped_count;
     packet_mark_dropped(packet);
-    return OSAI_ERR_NO_MEMORY;
+    return XAIOS_ERR_NO_MEMORY;
   }
   if (flow->queue_id != binding->queue_id || flow->cell_id != binding->cell_id) {
     ++g_flow_core_mismatch_count;
     packet_mark_dropped(packet);
-    return OSAI_ERR_BUSY;
+    return XAIOS_ERR_BUSY;
   }
   ++flow->packets_rx;
   ++g_udp_rx_count;
@@ -827,15 +827,15 @@ osai_status_t network_stack_process_udp_frame(const uint8_t *frame,
   ++g_udp_tx_count;
   packet_mark_complete(packet);
   record_latency(g_udp_latency_samples, &g_udp_latency_count, timer_now_ns() - start);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t network_stack_process_tcp_frame(const uint8_t *frame,
+xaios_status_t network_stack_process_tcp_frame(const uint8_t *frame,
                                             uint64_t frame_len) {
   if (frame == 0 || frame_len < 54U) {
     ++g_tcp_reset_count;
     ++g_packet_drop_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   uint64_t start = timer_now_ns();
@@ -849,7 +849,7 @@ osai_status_t network_stack_process_tcp_frame(const uint8_t *frame,
       0) {
     ++g_tcp_reset_count;
     ++g_packet_drop_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   const network_ip4_header_t *ip =
@@ -865,14 +865,14 @@ osai_status_t network_stack_process_tcp_frame(const uint8_t *frame,
   if (binding == 0) {
     ++g_tcp_reset_count;
     ++g_packet_drop_count;
-    return OSAI_ERR_NOT_FOUND;
+    return XAIOS_ERR_NOT_FOUND;
   }
 
   network_packet_desc_t *packet =
       alloc_packet_desc(binding->queue_id, frame_len, start);
   if (packet == 0) {
     ++g_tcp_reset_count;
-    return OSAI_ERR_NO_MEMORY;
+    return XAIOS_ERR_NO_MEMORY;
   }
 
   packet->src_port = src_port;
@@ -882,12 +882,12 @@ osai_status_t network_stack_process_tcp_frame(const uint8_t *frame,
 
   if ((flags & NETWORK_TCP_FLAG_RST) != 0U) {
     if (flow != 0) {
-      flow->state = OSAI_NETWORK_FLOW_CLOSED;
+      flow->state = XAIOS_NETWORK_FLOW_CLOSED;
       ++g_tcp_reset_count;
       ++g_tcp_closed_count;
     }
     packet_mark_dropped(packet);
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   if (flow == 0 && (flags & NETWORK_TCP_FLAG_SYN) != 0U) {
@@ -895,7 +895,7 @@ osai_status_t network_stack_process_tcp_frame(const uint8_t *frame,
     if (flow == 0) {
       ++g_tcp_reset_count;
       packet_mark_dropped(packet);
-      return OSAI_ERR_NO_MEMORY;
+      return XAIOS_ERR_NO_MEMORY;
     }
     flow->flow_id = (uint32_t)(g_next_flow_id++);
     if (flow->flow_id == 0U) {
@@ -911,7 +911,7 @@ osai_status_t network_stack_process_tcp_frame(const uint8_t *frame,
     flow->remote_seq = seq;
     flow->local_seq = 0;
     flow->last_seen_ns = start;
-    flow->state = OSAI_NETWORK_FLOW_SYN_RECV;
+    flow->state = XAIOS_NETWORK_FLOW_SYN_RECV;
     flow->retransmits = 0;
     flow->packets_rx = 1;
     flow->packets_tx = 1;
@@ -920,12 +920,12 @@ osai_status_t network_stack_process_tcp_frame(const uint8_t *frame,
     packet_mark_complete(packet);
     record_latency(g_tcp_latency_samples, &g_tcp_latency_count,
                   timer_now_ns() - start);
-    return OSAI_OK;
+    return XAIOS_OK;
   }
 
-  if (flow != 0 && flow->state == OSAI_NETWORK_FLOW_SYN_RECV &&
+  if (flow != 0 && flow->state == XAIOS_NETWORK_FLOW_SYN_RECV &&
       (flags & NETWORK_TCP_FLAG_ACK) != 0U) {
-    flow->state = OSAI_NETWORK_FLOW_ESTABLISHED;
+    flow->state = XAIOS_NETWORK_FLOW_ESTABLISHED;
     flow->local_seq = ack;
     flow->last_seen_ns = start;
     ++flow->packets_rx;
@@ -936,10 +936,10 @@ osai_status_t network_stack_process_tcp_frame(const uint8_t *frame,
     packet_mark_complete(packet);
     record_latency(g_tcp_latency_samples, &g_tcp_latency_count,
                   timer_now_ns() - start);
-    return OSAI_OK;
+    return XAIOS_OK;
   }
 
-  if (flow != 0 && flow->state == OSAI_NETWORK_FLOW_ESTABLISHED) {
+  if (flow != 0 && flow->state == XAIOS_NETWORK_FLOW_ESTABLISHED) {
     (void)ack;
     (void)seq;
     flow->last_seen_ns = start;
@@ -950,12 +950,12 @@ osai_status_t network_stack_process_tcp_frame(const uint8_t *frame,
     packet_mark_complete(packet);
     record_latency(g_tcp_latency_samples, &g_tcp_latency_count,
                   timer_now_ns() - start);
-    return OSAI_OK;
+    return XAIOS_OK;
   }
 
   ++g_tcp_reset_count;
   packet_mark_dropped(packet);
-  return OSAI_ERR_INVALID;
+  return XAIOS_ERR_INVALID;
 }
 
 uint64_t network_stack_expire_udp_flows(uint64_t now_ns) {
@@ -979,7 +979,7 @@ uint64_t network_stack_expire_udp_flows(uint64_t now_ns) {
 uint64_t network_stack_retransmit_tcp_flows(uint64_t now_ns) {
   uint64_t retransmitted = 0;
   for (uint32_t i = 0; i < NETWORK_TCP_CONNECTIONS; ++i) {
-    if (g_tcp_flows[i].state == OSAI_NETWORK_FLOW_SYN_RECV &&
+    if (g_tcp_flows[i].state == XAIOS_NETWORK_FLOW_SYN_RECV &&
         now_ns > g_tcp_flows[i].last_seen_ns &&
         now_ns - g_tcp_flows[i].last_seen_ns >= NETWORK_TCP_RETRANSMIT_NS &&
         g_tcp_flows[i].retransmits < NETWORK_TCP_MAX_RETRANSMITS) {
@@ -999,10 +999,10 @@ uint64_t network_stack_retransmit_tcp_flows(uint64_t now_ns) {
 uint64_t network_stack_expire_tcp_flows(uint64_t now_ns) {
   uint64_t expired = 0;
   for (uint32_t i = 0; i < NETWORK_TCP_CONNECTIONS; ++i) {
-    if (g_tcp_flows[i].state == OSAI_NETWORK_FLOW_SYN_RECV &&
+    if (g_tcp_flows[i].state == XAIOS_NETWORK_FLOW_SYN_RECV &&
         now_ns > g_tcp_flows[i].last_seen_ns &&
         now_ns - g_tcp_flows[i].last_seen_ns >= NETWORK_TCP_SYN_TIMEOUT_NS) {
-      g_tcp_flows[i].state = OSAI_NETWORK_FLOW_CLOSED;
+      g_tcp_flows[i].state = XAIOS_NETWORK_FLOW_CLOSED;
       ++g_tcp_timeout_count;
       ++g_tcp_closed_count;
       ++g_packet_drop_count;
@@ -1052,7 +1052,7 @@ uint64_t network_stack_udp_expired_count(void) {
 uint64_t network_stack_tcp_connections(void) {
   uint64_t active = 0;
   for (uint32_t i = 0; i < NETWORK_TCP_CONNECTIONS; ++i) {
-    if (g_tcp_flows[i].state == OSAI_NETWORK_FLOW_ESTABLISHED) {
+    if (g_tcp_flows[i].state == XAIOS_NETWORK_FLOW_ESTABLISHED) {
       ++active;
     }
   }
@@ -1225,12 +1225,12 @@ static void build_app_tcp_frame(uint8_t *frame, uint8_t flags,
   frame[47U] = flags;
 }
 
-osai_status_t network_stack_app_udp_echo(const uint8_t *payload,
+xaios_status_t network_stack_app_udp_echo(const uint8_t *payload,
                                          uint64_t payload_len,
                                          uint64_t *echoed_bytes) {
   if (payload == 0 || echoed_bytes == 0 || payload_len == 0 ||
       payload_len > 64U) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   uint8_t frame[NETWORK_BUFFER_SIZE];
@@ -1241,23 +1241,23 @@ osai_status_t network_stack_app_udp_echo(const uint8_t *payload,
 
   const uint32_t queue_id = 3U;
   const uint32_t cell_id = 3U;
-  if (network_stack_bind_queue(cell_id, queue_id, 0x8U) != OSAI_OK) {
-    return OSAI_ERR_BUSY;
+  if (network_stack_bind_queue(cell_id, queue_id, 0x8U) != XAIOS_OK) {
+    return XAIOS_ERR_BUSY;
   }
-  osai_status_t status = network_stack_process_udp_frame(frame, 42U + payload_len);
-  kassert(network_stack_release_queue(queue_id, cell_id) == OSAI_OK);
-  if (status != OSAI_OK) {
+  xaios_status_t status = network_stack_process_udp_frame(frame, 42U + payload_len);
+  kassert(network_stack_release_queue(queue_id, cell_id) == XAIOS_OK);
+  if (status != XAIOS_OK) {
     return status;
   }
   *echoed_bytes = payload_len;
   klog("network: app udp echo payload=%lu queue=%u cell=%u\n",
        payload_len, queue_id, cell_id);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t network_stack_app_tcp_connect(uint64_t *round_trips) {
+xaios_status_t network_stack_app_tcp_connect(uint64_t *round_trips) {
   if (round_trips == 0) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   const uint32_t queue_id = 3U;
@@ -1267,28 +1267,28 @@ osai_status_t network_stack_app_tcp_connect(uint64_t *round_trips) {
   uint8_t rst[NETWORK_BUFFER_SIZE];
   const uint16_t remote_port = 0x6010U;
 
-  if (network_stack_bind_queue(cell_id, queue_id, 0x8U) != OSAI_OK) {
-    return OSAI_ERR_BUSY;
+  if (network_stack_bind_queue(cell_id, queue_id, 0x8U) != XAIOS_OK) {
+    return XAIOS_ERR_BUSY;
   }
   build_app_tcp_frame(syn, NETWORK_TCP_FLAG_SYN, remote_port);
   build_app_tcp_frame(ack, NETWORK_TCP_FLAG_ACK, remote_port);
   build_app_tcp_frame(rst, NETWORK_TCP_FLAG_RST, remote_port);
 
-  osai_status_t status = network_stack_process_tcp_frame(syn, 58U);
-  if (status == OSAI_OK) {
+  xaios_status_t status = network_stack_process_tcp_frame(syn, 58U);
+  if (status == XAIOS_OK) {
     status = network_stack_process_tcp_frame(ack, 58U);
   }
-  if (status == OSAI_OK) {
+  if (status == XAIOS_OK) {
     status = network_stack_process_tcp_frame(rst, 58U);
   }
-  kassert(network_stack_release_queue(queue_id, cell_id) == OSAI_OK);
-  if (status != OSAI_OK && status != OSAI_ERR_INVALID) {
+  kassert(network_stack_release_queue(queue_id, cell_id) == XAIOS_OK);
+  if (status != XAIOS_OK && status != XAIOS_ERR_INVALID) {
     return status;
   }
   *round_trips = 2U;
   klog("network: app tcp connect-close queue=%u cell=%u round_trips=%lu\n",
        queue_id, cell_id, *round_trips);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 static void network_append(char *output, uint64_t capacity, uint64_t *offset,
@@ -1324,7 +1324,7 @@ static void network_append_u64(char *output, uint64_t capacity,
   }
 }
 
-osai_status_t network_stack_external_session(uint64_t protocol, uint64_t port,
+xaios_status_t network_stack_external_session(uint64_t protocol, uint64_t port,
                                              const uint8_t *payload,
                                              uint64_t payload_len,
                                              char *output,
@@ -1333,15 +1333,15 @@ osai_status_t network_stack_external_session(uint64_t protocol, uint64_t port,
   if (payload == 0 || payload_len == 0 || payload_len > 64U ||
       output == 0 || output_capacity < 16U || output_bytes == 0 ||
       port == 0 || port > 65535U) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   output[0] = '\0';
   uint64_t offset = 0;
-  if (protocol == OSAI_NETWORK_PROTOCOL_UDP) {
+  if (protocol == XAIOS_NETWORK_PROTOCOL_UDP) {
     uint64_t echoed = 0;
-    if (network_stack_app_udp_echo(payload, payload_len, &echoed) != OSAI_OK) {
-      return OSAI_ERR_IO;
+    if (network_stack_app_udp_echo(payload, payload_len, &echoed) != XAIOS_OK) {
+      return XAIOS_ERR_IO;
     }
     network_append(output, output_capacity, &offset, "udp:");
     network_append_u64(output, output_capacity, &offset, port);
@@ -1351,13 +1351,13 @@ osai_status_t network_stack_external_session(uint64_t protocol, uint64_t port,
     *output_bytes = offset;
     klog("network: external host udp session port=%lu bytes=%lu echoed=%lu\n",
          port, payload_len, echoed);
-    return OSAI_OK;
+    return XAIOS_OK;
   }
 
-  if (protocol == OSAI_NETWORK_PROTOCOL_TCP) {
+  if (protocol == XAIOS_NETWORK_PROTOCOL_TCP) {
     uint64_t round_trips = 0;
-    if (network_stack_app_tcp_connect(&round_trips) != OSAI_OK) {
-      return OSAI_ERR_IO;
+    if (network_stack_app_tcp_connect(&round_trips) != XAIOS_OK) {
+      return XAIOS_ERR_IO;
     }
     network_append(output, output_capacity, &offset, "tcp:");
     network_append_u64(output, output_capacity, &offset, port);
@@ -1367,10 +1367,10 @@ osai_status_t network_stack_external_session(uint64_t protocol, uint64_t port,
     *output_bytes = offset;
     klog("network: external host tcp session port=%lu bytes=%lu round_trips=%lu\n",
          port, payload_len, round_trips);
-    return OSAI_OK;
+    return XAIOS_OK;
   }
 
-  return OSAI_ERR_INVALID;
+  return XAIOS_ERR_INVALID;
 }
 
 void network_stack_self_test(void) {
@@ -1387,13 +1387,13 @@ void network_stack_self_test(void) {
 
   network_stack_init();
 
-  kassert(network_stack_bind_queue(0, 1, 0x2U) == OSAI_OK);
-  kassert(network_stack_bind_queue(0, 1, 0x2U) == OSAI_ERR_BUSY);
-  kassert(network_stack_bind_queue(1, 2, 0x4U) == OSAI_OK);
-  kassert(network_stack_bind_queue(2, 2, 0x8U) == OSAI_ERR_BUSY);
+  kassert(network_stack_bind_queue(0, 1, 0x2U) == XAIOS_OK);
+  kassert(network_stack_bind_queue(0, 1, 0x2U) == XAIOS_ERR_BUSY);
+  kassert(network_stack_bind_queue(1, 2, 0x4U) == XAIOS_OK);
+  kassert(network_stack_bind_queue(2, 2, 0x8U) == XAIOS_ERR_BUSY);
 
-  kassert(network_stack_release_queue(2, 1) == OSAI_OK);
-  kassert(network_stack_bind_queue(1, 2, 0x4U) == OSAI_OK);
+  kassert(network_stack_release_queue(2, 1) == XAIOS_OK);
+  kassert(network_stack_bind_queue(1, 2, 0x4U) == XAIOS_OK);
 
   kassert(network_stack_queue_bindings() == 2U);
 
@@ -1432,8 +1432,8 @@ void network_stack_self_test(void) {
   frame_udp[44U] = 3;
   frame_udp[45U] = 4;
 
-  kassert(network_stack_process_udp_frame(frame_udp, 46U) == OSAI_OK);
-  kassert(network_stack_process_udp_frame(frame_udp, 46U) == OSAI_OK);
+  kassert(network_stack_process_udp_frame(frame_udp, 46U) == XAIOS_OK);
+  kassert(network_stack_process_udp_frame(frame_udp, 46U) == XAIOS_OK);
   kassert(g_udp_rx_count == 2U);
   kassert(network_stack_udp_flow_hit_count() == 1U);
   kassert(network_stack_udp_flow_count() == 1U);
@@ -1442,11 +1442,11 @@ void network_stack_self_test(void) {
           1U);
   kassert(network_stack_udp_expired_count() == 1U);
   kassert(network_stack_udp_flow_count() == 0U);
-  kassert(network_stack_process_udp_frame(frame_udp, 46U) == OSAI_OK);
+  kassert(network_stack_process_udp_frame(frame_udp, 46U) == XAIOS_OK);
   kassert(g_udp_rx_count == 3U);
   kassert(network_stack_udp_flow_count() == 1U);
   frame_udp_bad[13] = 0x06;
-  kassert(network_stack_process_udp_frame(frame_udp_bad, 4U) == OSAI_ERR_INVALID);
+  kassert(network_stack_process_udp_frame(frame_udp_bad, 4U) == XAIOS_ERR_INVALID);
   kassert(g_udp_dropped_count == 1U);
   kassert(g_udp_malformed_count == 1U);
 
@@ -1486,7 +1486,7 @@ void network_stack_self_test(void) {
   frame_tcp_syn[46] = 0x60; /* offset 6 words */
   frame_tcp_syn[47] = NETWORK_TCP_FLAG_SYN;
 
-  kassert(network_stack_process_tcp_frame(frame_tcp_syn, 58U) == OSAI_OK);
+  kassert(network_stack_process_tcp_frame(frame_tcp_syn, 58U) == XAIOS_OK);
   kassert(network_stack_tcp_handshake_count() == 1U);
   kassert(network_stack_tcp_connections() == 0U);
 
@@ -1511,7 +1511,7 @@ void network_stack_self_test(void) {
   frame_tcp_syn_ack[46] = 0x60; /* offset 6 words */
   frame_tcp_syn_ack[47] = NETWORK_TCP_FLAG_ACK;
 
-  kassert(network_stack_process_tcp_frame(frame_tcp_syn_ack, 58U) == OSAI_OK);
+  kassert(network_stack_process_tcp_frame(frame_tcp_syn_ack, 58U) == XAIOS_OK);
   kassert(network_stack_tcp_connections() == 1U);
   kassert(network_stack_tcp_established_count() == 1U);
 
@@ -1519,7 +1519,7 @@ void network_stack_self_test(void) {
     frame_tcp_timeout[i] = frame_tcp_syn[i];
   }
   frame_tcp_timeout[35] = 0x91;
-  kassert(network_stack_process_tcp_frame(frame_tcp_timeout, 58U) == OSAI_OK);
+  kassert(network_stack_process_tcp_frame(frame_tcp_timeout, 58U) == XAIOS_OK);
   kassert(network_stack_retransmit_tcp_flows(timer_now_ns() +
                                              NETWORK_TCP_RETRANSMIT_NS + 1U) ==
           1U);
@@ -1532,8 +1532,8 @@ void network_stack_self_test(void) {
   kassert(network_stack_tcp_closed_count() == 1U);
   kassert(network_stack_tcp_connections() == 1U);
 
-  kassert(network_stack_release_queue(1, 0) == OSAI_OK);
-  kassert(network_stack_release_queue(2, 1) == OSAI_OK);
+  kassert(network_stack_release_queue(1, 0) == XAIOS_OK);
+  kassert(network_stack_release_queue(2, 1) == XAIOS_OK);
   kassert(network_stack_queue_bindings() == 0U);
 
   kassert(network_stack_udp_tx_count() == 3U);
@@ -1583,7 +1583,7 @@ void network_init_persistent(void) {
   if (g_persistent_initialized != 0) {
     return;
   }
-  if (virtio_net_get_mac(g_local_mac) == OSAI_OK) {
+  if (virtio_net_get_mac(g_local_mac) == XAIOS_OK) {
     klog("network: local mac=%02x:%02x:%02x:%02x:%02x:%02x\n",
          g_local_mac[0], g_local_mac[1], g_local_mac[2],
          g_local_mac[3], g_local_mac[4], g_local_mac[5]);
@@ -1612,17 +1612,17 @@ void network_poll_tick(void) {
   }
   uint16_t ethertype = read_u16_be(rx_buf + 12U);
   if (ethertype == 0x0806U) {
-    if (frame_len >= 42U && read_u16_be(rx_buf + 20U) == OSAI_ARP_OP_REPLY) {
+    if (frame_len >= 42U && read_u16_be(rx_buf + 20U) == XAIOS_ARP_OP_REPLY) {
       arp_process_reply(rx_buf, frame_len);
     } else if (frame_len >= 42U &&
-               read_u16_be(rx_buf + 20U) == OSAI_ARP_OP_REQUEST) {
+               read_u16_be(rx_buf + 20U) == XAIOS_ARP_OP_REQUEST) {
       uint32_t target_ip = read_u32_be(rx_buf + 38U);
-      if (target_ip == OSAI_IPV4_GUEST_IP) {
+      if (target_ip == XAIOS_IPV4_GUEST_IP) {
         uint8_t reply_frame[64];
         uint64_t reply_len = 0;
         if (arp_build_reply(reply_frame, &reply_len, g_local_mac,
-                            OSAI_IPV4_GUEST_IP, rx_buf + 6,
-                            read_u32_be(rx_buf + 28U)) == OSAI_OK) {
+                            XAIOS_IPV4_GUEST_IP, rx_buf + 6,
+                            read_u32_be(rx_buf + 28U)) == XAIOS_OK) {
           virtio_net_tx(reply_frame, reply_len);
           ++g_arp_reply_count;
         }
@@ -1633,17 +1633,17 @@ void network_poll_tick(void) {
       return;
     }
     uint8_t protocol = rx_buf[23U];
-    if (protocol == OSAI_IPV4_PROTO_ICMP) {
+    if (protocol == XAIOS_IPV4_PROTO_ICMP) {
       uint16_t identifier = 0;
       uint16_t sequence = 0;
       if (icmp_process_echo_request(rx_buf, frame_len, &identifier,
-                                     &sequence) == OSAI_OK) {
+                                     &sequence) == XAIOS_OK) {
         uint8_t reply_buf[NETWORK_BUFFER_SIZE];
         uint64_t reply_len = 0;
         if (icmp_build_echo_reply(reply_buf, &reply_len, g_local_mac,
-                                   rx_buf + 6, OSAI_IPV4_GUEST_IP,
+                                   rx_buf + 6, XAIOS_IPV4_GUEST_IP,
                                    read_u32_be(rx_buf + 26U), rx_buf,
-                                   frame_len) == OSAI_OK) {
+                                   frame_len) == XAIOS_OK) {
           virtio_net_tx(reply_buf, reply_len);
           ++g_icmp_reply_count;
         }

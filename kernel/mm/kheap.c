@@ -1,8 +1,8 @@
-#include <osai/assert.h>
-#include <osai/kheap.h>
-#include <osai/klog.h>
-#include <osai/pmm.h>
-#include <osai/vmm.h>
+#include <xaios/assert.h>
+#include <xaios/kheap.h>
+#include <xaios/klog.h>
+#include <xaios/pmm.h>
+#include <xaios/vmm.h>
 
 #define PAGE_SIZE UINT64_C(4096)
 #define KHEAP_BASE UINT64_C(0x4a000000)
@@ -26,23 +26,23 @@ void kheap_init(void) {
   klog("kheap: initialized base=0x%lx size=%lu\n", KHEAP_BASE, KHEAP_SIZE);
 }
 
-static osai_status_t ensure_mapped(uint64_t end) {
+static xaios_status_t ensure_mapped(uint64_t end) {
   uint64_t mapped = g_heap_mapped_end;
   while (mapped < end) {
     void *page = pmm_alloc_page();
     if (page == 0) {
-      return OSAI_ERR_NO_MEMORY;
+      return XAIOS_ERR_NO_MEMORY;
     }
     if (vmm_map_page(mapped, (uint64_t)(uintptr_t)page,
-                     OSAI_VMM_PRESENT | OSAI_VMM_WRITABLE) != OSAI_OK) {
+                     XAIOS_VMM_PRESENT | XAIOS_VMM_WRITABLE) != XAIOS_OK) {
       pmm_free_page(page);
-      return OSAI_ERR_INVALID;
+      return XAIOS_ERR_INVALID;
     }
     mapped += PAGE_SIZE;
     ++g_heap_pages;
   }
   g_heap_mapped_end = mapped;
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 void *kheap_alloc(uint64_t size, uint64_t align) {
@@ -56,7 +56,7 @@ void *kheap_alloc(uint64_t size, uint64_t align) {
     return 0;
   }
 
-  if (ensure_mapped(align_up(end, PAGE_SIZE)) != OSAI_OK) {
+  if (ensure_mapped(align_up(end, PAGE_SIZE)) != XAIOS_OK) {
     return 0;
   }
 

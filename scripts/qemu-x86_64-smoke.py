@@ -7,13 +7,13 @@ import time
 
 
 TARGETS = [
-    "OSAI loader starting",
-    "OSAI loader target: x86_64 UEFI",
-    "OSAI loader loaded kernel.elf",
-    "OSAI loader validated ELF64 kernel",
-    "OSAI loader copied kernel segments",
-    "OSAI loader exiting boot services",
-    "OSAI x86_64 kernel starting",
+    "XAIOS loader starting",
+    "XAIOS loader target: x86_64 UEFI",
+    "XAIOS loader loaded kernel.elf",
+    "XAIOS loader validated ELF64 kernel",
+    "XAIOS loader copied kernel segments",
+    "XAIOS loader exiting boot services",
+    "XAIOS x86_64 kernel starting",
     "x86_64: UEFI boot info valid",
     "x86_64: COM1 serial online",
     "x86_64: Intel Desktop milestone 43 boot path passed",
@@ -45,9 +45,9 @@ TARGETS = [
 
 def main() -> int:
     env = os.environ.copy()
-    env.setdefault("OSAI_QEMU_X86_ACCEL", "tcg")
-    env.setdefault("OSAI_QEMU_X86_CPU", "Skylake-Client")
-    timeout = int(env.get("OSAI_QEMU_X86_SMOKE_TIMEOUT", "45"))
+    env.setdefault("XAIOS_QEMU_X86_ACCEL", "tcg")
+    env.setdefault("XAIOS_QEMU_X86_CPU", "Skylake-Client")
+    timeout = int(env.get("XAIOS_QEMU_X86_SMOKE_TIMEOUT", "45"))
 
     proc = subprocess.Popen(
         ["./scripts/run-qemu-x86_64.sh"],

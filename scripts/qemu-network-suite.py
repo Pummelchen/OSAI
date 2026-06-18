@@ -2,7 +2,7 @@
 from qemu_gate_lib import BUILD, check_markers, now, parse_telemetry, result, run, status_from_failures, write_report
 
 
-SCHEMA = "osai.qemu.network_stack_tests.v1"
+SCHEMA = "xaios.qemu.network_stack_tests.v1"
 REPORT = BUILD / "qemu-milestone-57-network-suite.json"
 
 MARKERS = {

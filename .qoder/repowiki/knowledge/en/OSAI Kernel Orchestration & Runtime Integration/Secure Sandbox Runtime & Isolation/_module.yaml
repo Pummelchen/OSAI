@@ -1,0 +1,16 @@
+schema_version: 1
+module_path: kernel/runtime_services
+title: Secure Sandbox Runtime & Isolation
+scope:
+    - kernel/runtime/
+source_files: []
+depends_on: []
+related_to:
+    - path: kernel/memory_mgmt
+    - path: kernel/user_interface
+    - path: userspace/process_runtime
+    - path: kernel/device_drivers
+    - path: kernel/core_boot
+    - path: userspace/init_system
+    - path: test_and_build_scripts
+    - path: kernel/scheduler

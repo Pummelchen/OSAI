@@ -1,8 +1,8 @@
-# OSAI Benchmark Methodology
+# XAIOS Benchmark Methodology
 
 ## Overview
 
-OSAI benchmarks measure **correctness**, not raw performance. The QEMU environment validates that all subsystems boot, self-test, and produce expected telemetry counters. Performance claims require bare-metal testing with tuned Linux/BSD baselines.
+XAIOS benchmarks measure **correctness**, not raw performance. The QEMU environment validates that all subsystems boot, self-test, and produce expected telemetry counters. Performance claims require bare-metal testing with tuned Linux/BSD baselines.
 
 ## What We Measure
 
@@ -45,7 +45,7 @@ The kernel emits a JSON telemetry payload at boot completion. Key categories:
 | CPU | `cortex-a72` × 4 |
 | RAM | 512 MB |
 | Firmware | AAVMF (UEFI) |
-| Timeout | 60s (configurable via `OSAI_QEMU_SMOKE_TIMEOUT`) |
+| Timeout | 60s (configurable via `XAIOS_QEMU_SMOKE_TIMEOUT`) |
 
 **Important**: QEMU TCG results are NOT performance indicators. They validate correctness only. A single QEMU TCG instruction may take 10-100x longer than bare metal.
 
@@ -54,13 +54,13 @@ The kernel emits a JSON telemetry payload at boot completion. Key categories:
 The `benchmark-baseline.py` script optionally boots a minimal Linux kernel in QEMU for comparison. To enable:
 
 ```sh
-export OSAI_LINUX_KERNEL=/path/to/Image.gz
-export OSAI_LINUX_INITRD=/path/to/initrd.cpio
+export XAIOS_LINUX_KERNEL=/path/to/Image.gz
+export XAIOS_LINUX_INITRD=/path/to/initrd.cpio
 make qemu-baseline
 ```
 
 For production-grade comparison (not QEMU-based):
-1. Boot OSAI on bare-metal ARM with `isolcpus` kernel parameter
+1. Boot XAIOS on bare-metal ARM with `isolcpus` kernel parameter
 2. Boot tuned Linux (5.x/6.x) on identical hardware with:
    - `isolcpus=1,2,3` for dedicated AI cores
    - `nohz_full=1,2,3` for tick-less operation
@@ -78,7 +78,7 @@ make qemu-benchmark
 make qemu-baseline
 
 # Custom output path
-OSAI_BENCHMARK_OUTPUT=/tmp/results.json make qemu-baseline
+XAIOS_BENCHMARK_OUTPUT=/tmp/results.json make qemu-baseline
 ```
 
 ## Interpretation Guide

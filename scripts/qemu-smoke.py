@@ -79,7 +79,7 @@ TARGETS = [
     "PMM 1024 page allocate/free test passed",
     "cpu-ai-runtime: model manifest loaded",
     "cpu-ai-runtime: model file loaded id=2 name=cpu-ai-mvp",
-    "cpu-ai-runtime: model file path=/models/cpu-ai-mvp.osaimodel admitted arena=2",
+    "cpu-ai-runtime: model file path=/models/cpu-ai-mvp.xaiosmodel admitted arena=2",
     "cpu-ai-runtime: tokenizer/runtime boundary self-test passed tokenizer_calls=2 runtime_calls=2",
     "cpu-ai-runtime: multi-cell shared weights self-test passed loads=2 shared_binds=2 kv_writes=8",
     "cpu-ai-runtime: model load failure self-test passed failures=3 gpu_rejects=1",
@@ -268,22 +268,22 @@ TARGETS = [
     "/service-manager: control plane complete",
     "user: /bin/service-manager exited status=0",
     "kernel: /bin/service-manager returned to kernel exit_code=0",
-    "scheduler: process pid=3 parent=2 runnable name=/bin/osai-worker",
-    "scheduler: dispatch pid=3 parent=2 name=/bin/osai-worker",
-    "kernel: /bin/osai-worker pid=3 returned to kernel exit_code=0",
-    "scheduler: process pid=4 parent=2 runnable name=/bin/osai-worker",
-    "scheduler: dispatch pid=4 parent=2 name=/bin/osai-worker",
-    "kernel: /bin/osai-worker pid=4 returned to kernel exit_code=0",
-    "scheduler: process pid=5 parent=2 runnable name=/bin/osai-worker",
-    "scheduler: dispatch pid=5 parent=2 name=/bin/osai-worker",
-    "kernel: /bin/osai-worker pid=5 returned to kernel exit_code=0",
+    "scheduler: process pid=3 parent=2 runnable name=/bin/xaios-worker",
+    "scheduler: dispatch pid=3 parent=2 name=/bin/xaios-worker",
+    "kernel: /bin/xaios-worker pid=3 returned to kernel exit_code=0",
+    "scheduler: process pid=4 parent=2 runnable name=/bin/xaios-worker",
+    "scheduler: dispatch pid=4 parent=2 name=/bin/xaios-worker",
+    "kernel: /bin/xaios-worker pid=4 returned to kernel exit_code=0",
+    "scheduler: process pid=5 parent=2 runnable name=/bin/xaios-worker",
+    "scheduler: dispatch pid=5 parent=2 name=/bin/xaios-worker",
+    "kernel: /bin/xaios-worker pid=5 returned to kernel exit_code=0",
     "/worker: scheduled child process ran",
-    "/bin/osai-shell: command surface passed 1..15 + ls variants + tar/cpio archive",
-    "kernel: /bin/osai-shell returned to kernel exit_code=0",
+    "/bin/xaios-shell: command surface passed 1..15 + ls variants + tar/cpio archive",
+    "kernel: /bin/xaios-shell returned to kernel exit_code=0",
     "/bin/hello: hello world from C userspace",
     "/bin/hello: C toolchain and EL0 runtime integration passed",
     "kernel: /bin/hello returned to kernel exit_code=0",
-    "/bin/sysinfo: OSAI qemu-macos-aarch64 dev build",
+    "/bin/sysinfo: XAIOS qemu-macos-aarch64 dev build",
     "/bin/sysinfo: complete",
     "kernel: /bin/sysinfo returned to kernel exit_code=0",
     "/bin/systest: syscall and filesystem suite passed",
@@ -355,7 +355,7 @@ def telemetry_line_complete(text):
 
 def main() -> int:
     env = os.environ.copy()
-    env["OSAI_QEMU_HOSTFWD_PORT"] = "none"
+    env["XAIOS_QEMU_HOSTFWD_PORT"] = "none"
     proc = subprocess.Popen(
         ["make", "qemu-aarch64"],
         stdout=subprocess.PIPE,
@@ -366,7 +366,7 @@ def main() -> int:
         start_new_session=True,
     )
     seen = []
-    deadline = time.time() + int(os.environ.get("OSAI_QEMU_SMOKE_TIMEOUT", "60"))
+    deadline = time.time() + int(os.environ.get("XAIOS_QEMU_SMOKE_TIMEOUT", "60"))
     try:
         fd = proc.stdout.fileno()
         while time.time() < deadline:

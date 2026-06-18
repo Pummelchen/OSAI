@@ -1,11 +1,11 @@
-#include <osai/assert.h>
-#include <osai/context.h>
-#include <osai/klog.h>
-#include <osai/scheduler.h>
-#include <osai/user.h>
+#include <xaios/assert.h>
+#include <xaios/context.h>
+#include <xaios/klog.h>
+#include <xaios/scheduler.h>
+#include <xaios/user.h>
 
-static osai_sched_task_t g_tasks[OSAI_SCHEDULER_MAX_TASKS];
-static uint32_t g_runqueue[OSAI_SCHEDULER_MAX_TASKS];
+static xaios_sched_task_t g_tasks[XAIOS_SCHEDULER_MAX_TASKS];
+static uint32_t g_runqueue[XAIOS_SCHEDULER_MAX_TASKS];
 static uint32_t g_runqueue_count;
 static uint32_t g_current_index;
 static uint32_t g_current_pid;
@@ -22,8 +22,8 @@ static void bytes_zero(void *buffer, uint64_t size) {
   }
 }
 
-static osai_sched_task_t *find_task(uint32_t pid) {
-  for (uint32_t i = 0; i < OSAI_SCHEDULER_MAX_TASKS; ++i) {
+static xaios_sched_task_t *find_task(uint32_t pid) {
+  for (uint32_t i = 0; i < XAIOS_SCHEDULER_MAX_TASKS; ++i) {
     if (g_tasks[i].active != 0 && g_tasks[i].pid == pid) {
       return &g_tasks[i];
     }
@@ -41,7 +41,7 @@ static uint32_t runqueue_index(uint32_t pid) {
 }
 
 static void runqueue_add(uint32_t pid) {
-  if (g_runqueue_count < OSAI_SCHEDULER_MAX_TASKS &&
+  if (g_runqueue_count < XAIOS_SCHEDULER_MAX_TASKS &&
       runqueue_index(pid) == UINT32_C(0xffffffff)) {
     g_runqueue[g_runqueue_count++] = pid;
   }
@@ -73,31 +73,31 @@ void scheduler_init(void) {
   g_yield_count = 0;
   g_initialized = 1;
   klog("scheduler: initialized max_tasks=%u tick_hz=%u\n",
-       OSAI_SCHEDULER_MAX_TASKS, OSAI_SCHEDULER_DEFAULT_TICK_HZ);
+       XAIOS_SCHEDULER_MAX_TASKS, XAIOS_SCHEDULER_DEFAULT_TICK_HZ);
 }
 
-osai_status_t scheduler_register(uint32_t pid) {
-  if (pid == 0 || pid > OSAI_SCHEDULER_MAX_TASKS) {
-    return OSAI_ERR_INVALID;
+xaios_status_t scheduler_register(uint32_t pid) {
+  if (pid == 0 || pid > XAIOS_SCHEDULER_MAX_TASKS) {
+    return XAIOS_ERR_INVALID;
   }
-  osai_sched_task_t *task = find_task(pid);
+  xaios_sched_task_t *task = find_task(pid);
   if (task != 0) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
-  for (uint32_t i = 0; i < OSAI_SCHEDULER_MAX_TASKS; ++i) {
+  for (uint32_t i = 0; i < XAIOS_SCHEDULER_MAX_TASKS; ++i) {
     if (g_tasks[i].active == 0) {
       bytes_zero(&g_tasks[i], sizeof(g_tasks[i]));
       g_tasks[i].pid = pid;
       g_tasks[i].active = 1;
       klog("scheduler: registered pid=%u slot=%u\n", pid, i);
-      return OSAI_OK;
+      return XAIOS_OK;
     }
   }
-  return OSAI_ERR_NO_MEMORY;
+  return XAIOS_ERR_NO_MEMORY;
 }
 
 void scheduler_unregister(uint32_t pid) {
-  osai_sched_task_t *task = find_task(pid);
+  xaios_sched_task_t *task = find_task(pid);
   if (task == 0) {
     return;
   }
@@ -106,26 +106,26 @@ void scheduler_unregister(uint32_t pid) {
   klog("scheduler: unregistered pid=%u\n", pid);
 }
 
-osai_status_t scheduler_set_runnable(uint32_t pid) {
-  osai_sched_task_t *task = find_task(pid);
+xaios_status_t scheduler_set_runnable(uint32_t pid) {
+  xaios_sched_task_t *task = find_task(pid);
   if (task == 0) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   runqueue_add(pid);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t scheduler_set_blocked(uint32_t pid) {
-  osai_sched_task_t *task = find_task(pid);
+xaios_status_t scheduler_set_blocked(uint32_t pid) {
+  xaios_sched_task_t *task = find_task(pid);
   if (task == 0) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   runqueue_remove(pid);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_context_frame_t *scheduler_task_frame(uint32_t pid) {
-  osai_sched_task_t *task = find_task(pid);
+xaios_context_frame_t *scheduler_task_frame(uint32_t pid) {
+  xaios_sched_task_t *task = find_task(pid);
   if (task == 0) {
     return 0;
   }
@@ -142,7 +142,7 @@ void scheduler_unlock(void) {
   }
 }
 
-void scheduler_tick(osai_context_frame_t *irq_frame) {
+void scheduler_tick(xaios_context_frame_t *irq_frame) {
   if (g_initialized == 0 || g_lock_depth > 0 || g_runqueue_count == 0) {
     return;
   }
@@ -150,7 +150,7 @@ void scheduler_tick(osai_context_frame_t *irq_frame) {
 
   /* save current task's IRQ frame if we have a current task */
   if (g_current_pid != 0) {
-    osai_sched_task_t *current = find_task(g_current_pid);
+    xaios_sched_task_t *current = find_task(g_current_pid);
     if (current != 0) {
       current->frame = *irq_frame;
       ++current->tick_count;
@@ -170,7 +170,7 @@ void scheduler_tick(osai_context_frame_t *irq_frame) {
   }
 
   /* context switch to next task */
-  osai_sched_task_t *next_task = find_task(next_pid);
+  xaios_sched_task_t *next_task = find_task(next_pid);
   if (next_task == 0) {
     return;
   }
@@ -199,10 +199,10 @@ void scheduler_yield(void) {
   }
   ++g_yield_count;
   /* trigger a timer-like tick by calling scheduler_tick with current frame */
-  osai_context_frame_t frame;
+  xaios_context_frame_t frame;
   bytes_zero(&frame, sizeof(frame));
   if (g_current_pid != 0) {
-    osai_sched_task_t *current = find_task(g_current_pid);
+    xaios_sched_task_t *current = find_task(g_current_pid);
     if (current != 0) {
       frame = current->frame;
     }
@@ -210,7 +210,7 @@ void scheduler_yield(void) {
   scheduler_tick(&frame);
   /* if we switched, frame now has the new task's state */
   if (g_current_pid != 0) {
-    osai_sched_task_t *current = find_task(g_current_pid);
+    xaios_sched_task_t *current = find_task(g_current_pid);
     if (current != 0) {
       current->frame = frame;
     }
@@ -226,18 +226,18 @@ uint32_t scheduler_runnable_count(void) { return g_runqueue_count; }
 
 void scheduler_self_test(void) {
   kassert(g_initialized != 0);
-  kassert(scheduler_register(1) == OSAI_OK);
-  kassert(scheduler_register(2) == OSAI_OK);
-  kassert(scheduler_register(3) == OSAI_OK);
-  kassert(scheduler_set_runnable(1) == OSAI_OK);
-  kassert(scheduler_set_runnable(2) == OSAI_OK);
-  kassert(scheduler_set_runnable(3) == OSAI_OK);
+  kassert(scheduler_register(1) == XAIOS_OK);
+  kassert(scheduler_register(2) == XAIOS_OK);
+  kassert(scheduler_register(3) == XAIOS_OK);
+  kassert(scheduler_set_runnable(1) == XAIOS_OK);
+  kassert(scheduler_set_runnable(2) == XAIOS_OK);
+  kassert(scheduler_set_runnable(3) == XAIOS_OK);
   kassert(scheduler_runnable_count() == 3);
 
   /* simulate ticks to verify round-robin */
   g_current_pid = 1;
   g_current_index = 0;
-  osai_context_frame_t dummy_frame;
+  xaios_context_frame_t dummy_frame;
   bytes_zero(&dummy_frame, sizeof(dummy_frame));
   dummy_frame.elr_el1 = 0x1000;
   scheduler_tick(&dummy_frame);
@@ -256,9 +256,9 @@ void scheduler_self_test(void) {
   scheduler_unlock();
 
   /* test blocking removes from runqueue */
-  kassert(scheduler_set_blocked(2) == OSAI_OK);
+  kassert(scheduler_set_blocked(2) == XAIOS_OK);
   kassert(scheduler_runnable_count() == 2);
-  kassert(scheduler_set_runnable(2) == OSAI_OK);
+  kassert(scheduler_set_runnable(2) == XAIOS_OK);
   kassert(scheduler_runnable_count() == 3);
 
   /* unregister cleans up */

@@ -1,7 +1,7 @@
-#include <osai/assert.h>
-#include <osai/klog.h>
-#include <osai/rtc.h>
-#include <osai/timer.h>
+#include <xaios/assert.h>
+#include <xaios/klog.h>
+#include <xaios/rtc.h>
+#include <xaios/timer.h>
 
 static uint64_t g_wall_epoch;
 static uint64_t g_wall_monotonic_base;

@@ -1,0 +1,5 @@
+- Entry Point: `kmain.c` serves as the primary orchestrator, executing a strict linear initialization sequence for memory management (PMM/VMM), interrupt controllers (GIC), timers, and subsystems (network, filesystem, scheduler) before launching user-space processes.
+- Diagnostic Layer: `klog.c` provides a freestanding, UART-backed logging implementation with custom `printf`-style formatting, initialized via `boot_info`.
+- Error Handling: `panic.c` and `assert.h` form a fatal error boundary; `kassert` macros trigger `panic_at`, which logs context and halts the CPU using `wfe`.
+- Telemetry: `telemetry.c` aggregates runtime metrics from across the kernel (memory, security, network, AI) into a structured JSON-like log output via `telemetry_emit_boot_summary`.
+- Interface Boundary: The module relies on `osai/boot_info.h` for hardware abstraction during early boot and exposes diagnostic primitives (`klog`, `kassert`) used globally by other kernel modules.

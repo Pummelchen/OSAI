@@ -6,7 +6,7 @@ from qemu_gate_lib import (BUILD, check_markers, now, parse_telemetry, result,
 
 GATES = {
     "62": {
-        "schema": "osai.qemu.filesystem_gate.v1",
+        "schema": "xaios.qemu.filesystem_gate.v1",
         "report": "qemu-milestone-62-filesystem-gate.json",
         "name": "filesystem",
         "markers": [
@@ -32,7 +32,7 @@ GATES = {
         "equals": {"mutable_fs_checksum_errors": 0},
     },
     "63": {
-        "schema": "osai.qemu.app_agent_gate.v1",
+        "schema": "xaios.qemu.app_agent_gate.v1",
         "report": "qemu-milestone-63-app-agent-gate.json",
         "name": "app_agent",
         "markers": [
@@ -56,7 +56,7 @@ GATES = {
         "equals": {},
     },
     "64": {
-        "schema": "osai.qemu.network_full_gate.v1",
+        "schema": "xaios.qemu.network_full_gate.v1",
         "report": "qemu-milestone-64-network-full-gate.json",
         "name": "network_full",
         "markers": [
@@ -94,7 +94,7 @@ GATES = {
         },
     },
     "65": {
-        "schema": "osai.qemu.cpu_ai_runtime_gate.v1",
+        "schema": "xaios.qemu.cpu_ai_runtime_gate.v1",
         "report": "qemu-milestone-65-cpu-ai-runtime-gate.json",
         "name": "cpu_ai_runtime",
         "markers": [
@@ -124,7 +124,7 @@ GATES = {
         "equals": {},
     },
     "66": {
-        "schema": "osai.qemu.ai_cell_gate.v1",
+        "schema": "xaios.qemu.ai_cell_gate.v1",
         "report": "qemu-milestone-66-ai-cell-gate.json",
         "name": "ai_cell",
         "markers": [
@@ -154,7 +154,7 @@ GATES = {
         },
     },
     "67": {
-        "schema": "osai.qemu.security_gate.v1",
+        "schema": "xaios.qemu.security_gate.v1",
         "report": "qemu-milestone-67-security-gate.json",
         "name": "security",
         "markers": [
@@ -183,14 +183,14 @@ GATES = {
         "equals": {"admin_command_denials": 0},
     },
     "68": {
-        "schema": "osai.qemu.update_gate.v1",
+        "schema": "xaios.qemu.update_gate.v1",
         "report": "qemu-milestone-68-update-gate.json",
         "name": "update",
         "markers": [
-            "update: transaction begin generation=2 target=/system/osai rollback=update-rp",
+            "update: transaction begin generation=2 target=/system/xaios rollback=update-rp",
             "update: boot fallback recovered generation=2 rollback=update-rp",
-            "update: committed generation=3 target=/system/osai",
-            "update: rollback complete generation=3 target=/system/osai",
+            "update: committed generation=3 target=/system/xaios",
+            "update: rollback complete generation=3 target=/system/xaios",
             "update: self-test passed transactions=2 staged=2 committed=1 failed=1 recovered=1 rollbacks=1 boot_fallbacks=1 records=8 rollback_points=2 rejects=2",
         ],
         "minimums": {

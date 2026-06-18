@@ -1,58 +1,58 @@
-#include <osai/assert.h>
-#include <osai/agent_protocol.h>
-#include <osai/ai_cell.h>
-#include <osai/arena.h>
-#include <osai/arp.h>
-#include <osai/boot_info.h>
-#include <osai/core_lease.h>
-#include <osai/elf_loader.h>
-#include <osai/exception.h>
-#include <osai/gic.h>
-#include <osai/icmp.h>
-#include <osai/initramfs.h>
-#include <osai/cpu_ai_runtime.h>
-#include <osai/ipv4.h>
-#include <osai/kheap.h>
-#include <osai/klog_ring.h>
-#include <osai/git_workspace.h>
-#include <osai/klog.h>
-#include <osai/model_arena.h>
-#include <osai/mutable_fs.h>
-#include <osai/pmm.h>
-#include <osai/persistence.h>
-#include <osai/rate_limit.h>
-#include <osai/remote_login.h>
-#include <osai/rtc.h>
-#include <osai/sandbox.h>
-#include <osai/scheduler.h>
-#include <osai/security.h>
-#include <osai/sha256.h>
-#include <osai/source_index.h>
-#include <osai/service.h>
-#include <osai/smp.h>
-#include <osai/network_stack.h>
-#include <osai/numa.h>
-#include <osai/pci.h>
-#include <osai/smmu.h>
-#include <osai/stack_canary.h>
-#include <osai/syscall.h>
-#include <osai/telemetry.h>
-#include <osai/timer.h>
-#include <osai/update.h>
-#include <osai/user.h>
-#include <osai/virtio_blk.h>
-#include <osai/virtio_net.h>
-#include <osai/vmm.h>
-#include <osai/watchdog.h>
+#include <xaios/assert.h>
+#include <xaios/agent_protocol.h>
+#include <xaios/ai_cell.h>
+#include <xaios/arena.h>
+#include <xaios/arp.h>
+#include <xaios/boot_info.h>
+#include <xaios/core_lease.h>
+#include <xaios/elf_loader.h>
+#include <xaios/exception.h>
+#include <xaios/gic.h>
+#include <xaios/icmp.h>
+#include <xaios/initramfs.h>
+#include <xaios/cpu_ai_runtime.h>
+#include <xaios/ipv4.h>
+#include <xaios/kheap.h>
+#include <xaios/klog_ring.h>
+#include <xaios/git_workspace.h>
+#include <xaios/klog.h>
+#include <xaios/model_arena.h>
+#include <xaios/mutable_fs.h>
+#include <xaios/pmm.h>
+#include <xaios/persistence.h>
+#include <xaios/rate_limit.h>
+#include <xaios/remote_login.h>
+#include <xaios/rtc.h>
+#include <xaios/sandbox.h>
+#include <xaios/scheduler.h>
+#include <xaios/security.h>
+#include <xaios/sha256.h>
+#include <xaios/source_index.h>
+#include <xaios/service.h>
+#include <xaios/smp.h>
+#include <xaios/network_stack.h>
+#include <xaios/numa.h>
+#include <xaios/pci.h>
+#include <xaios/smmu.h>
+#include <xaios/stack_canary.h>
+#include <xaios/syscall.h>
+#include <xaios/telemetry.h>
+#include <xaios/timer.h>
+#include <xaios/update.h>
+#include <xaios/user.h>
+#include <xaios/virtio_blk.h>
+#include <xaios/virtio_net.h>
+#include <xaios/vmm.h>
+#include <xaios/watchdog.h>
 
 static const char g_vmm_rodata_probe[] = "vmm-rodata";
 static uint64_t g_vmm_data_probe;
 
 static void run_user_app(const char *path, uint32_t pid, uint64_t capabilities) {
-  const osai_initramfs_file_t *file = 0;
-  osai_user_process_t process;
-  kassert(initramfs_lookup(path, &file) == OSAI_OK);
-  kassert(user_load_process(file, pid, capabilities, &process) == OSAI_OK);
+  const xaios_initramfs_file_t *file = 0;
+  xaios_user_process_t process;
+  kassert(initramfs_lookup(path, &file) == XAIOS_OK);
+  kassert(user_load_process(file, pid, capabilities, &process) == XAIOS_OK);
   int exit_code = user_process_run(&process);
   kassert(exit_code == 0);
   klog("kernel: %s returned to kernel exit_code=%u\n",
@@ -66,17 +66,17 @@ static void map_mmio_range(uint64_t start, uint64_t size) {
   uint64_t end = (start + size + page_size - 1U) & ~(page_size - 1U);
   while (page < end) {
     kassert(vmm_map_page(page, page,
-                         OSAI_VMM_PRESENT | OSAI_VMM_WRITABLE |
-                             OSAI_VMM_DEVICE) == OSAI_OK);
+                         XAIOS_VMM_PRESENT | XAIOS_VMM_WRITABLE |
+                             XAIOS_VMM_DEVICE) == XAIOS_OK);
     page += page_size;
   }
 }
 
-void kmain(const osai_boot_info_t *boot) {
+void kmain(const xaios_boot_info_t *boot) {
   klog_init(boot);
-  klog("OSAI kernel starting\n");
-  kassert(boot->magic == OSAI_BOOT_INFO_MAGIC);
-  kassert(boot->version == OSAI_BOOT_INFO_VERSION);
+  klog("XAIOS kernel starting\n");
+  kassert(boot->magic == XAIOS_BOOT_INFO_MAGIC);
+  kassert(boot->version == XAIOS_BOOT_INFO_VERSION);
 
   klog("boot: memory_map=0x%lx size=%lu desc_size=%lu\n",
        boot->memory_map, boot->memory_map_size, boot->memory_descriptor_size);
@@ -100,8 +100,8 @@ void kmain(const osai_boot_info_t *boot) {
   vmm_self_test();
 
   /* Map SMMU MMIO and initialize */
-  map_mmio_range(OSAI_SMMU_MMIO_BASE, 0x10000);
-  map_mmio_range(OSAI_SMMU_MMIO_PAGE1, 0x10000);
+  map_mmio_range(XAIOS_SMMU_MMIO_BASE, 0x10000);
+  map_mmio_range(XAIOS_SMMU_MMIO_PAGE1, 0x10000);
   smmu_init();
   smmu_self_test();
 
@@ -114,7 +114,7 @@ void kmain(const osai_boot_info_t *boot) {
   pci_self_test();
 
   /* Map RTC MMIO and initialize real-time clock */
-  map_mmio_range(OSAI_PL031_RTC_BASE, 4096);
+  map_mmio_range(XAIOS_PL031_RTC_BASE, 4096);
   rtc_init();
   wall_time_calibrate();
   rtc_self_test();
@@ -139,22 +139,22 @@ void kmain(const osai_boot_info_t *boot) {
   core_lease_self_test();
   uint64_t translated = 0;
   uint32_t flags = 0;
-  kassert(vmm_translate((uint64_t)(uintptr_t)&kmain, &translated, &flags) == OSAI_OK);
+  kassert(vmm_translate((uint64_t)(uintptr_t)&kmain, &translated, &flags) == XAIOS_OK);
   kassert(translated == (uint64_t)(uintptr_t)&kmain);
-  kassert((flags & OSAI_VMM_EXECUTABLE) != 0);
-  kassert((flags & OSAI_VMM_DEVICE) == 0);
-  kassert(vmm_translate((uint64_t)(uintptr_t)g_vmm_rodata_probe, &translated, &flags) == OSAI_OK);
+  kassert((flags & XAIOS_VMM_EXECUTABLE) != 0);
+  kassert((flags & XAIOS_VMM_DEVICE) == 0);
+  kassert(vmm_translate((uint64_t)(uintptr_t)g_vmm_rodata_probe, &translated, &flags) == XAIOS_OK);
   kassert(translated == (uint64_t)(uintptr_t)g_vmm_rodata_probe);
-  kassert((flags & OSAI_VMM_WRITABLE) == 0);
-  kassert((flags & OSAI_VMM_EXECUTABLE) == 0);
-  kassert(vmm_translate((uint64_t)(uintptr_t)&g_vmm_data_probe, &translated, &flags) == OSAI_OK);
+  kassert((flags & XAIOS_VMM_WRITABLE) == 0);
+  kassert((flags & XAIOS_VMM_EXECUTABLE) == 0);
+  kassert(vmm_translate((uint64_t)(uintptr_t)&g_vmm_data_probe, &translated, &flags) == XAIOS_OK);
   kassert(translated == (uint64_t)(uintptr_t)&g_vmm_data_probe);
-  kassert((flags & OSAI_VMM_WRITABLE) != 0);
-  kassert((flags & OSAI_VMM_EXECUTABLE) == 0);
-  kassert(vmm_translate(boot->uart_base, &translated, &flags) == OSAI_OK);
+  kassert((flags & XAIOS_VMM_WRITABLE) != 0);
+  kassert((flags & XAIOS_VMM_EXECUTABLE) == 0);
+  kassert(vmm_translate(boot->uart_base, &translated, &flags) == XAIOS_OK);
   kassert(translated == boot->uart_base);
-  kassert((flags & OSAI_VMM_DEVICE) != 0);
-  kassert((flags & OSAI_VMM_EXECUTABLE) == 0);
+  kassert((flags & XAIOS_VMM_DEVICE) != 0);
+  kassert((flags & XAIOS_VMM_EXECUTABLE) == 0);
   klog("VMM translation test passed\n");
   gic_init_qemu_virt();
   gic_self_test();
@@ -163,9 +163,9 @@ void kmain(const osai_boot_info_t *boot) {
   persistence_self_test();
   mutable_fs_self_test();
   /* mount persistent filesystem on 3rd VirtIO block device (slot 2) */
-  osai_status_t persistent_status = mutable_fs_mount_persistent(2);
-  if (persistent_status == OSAI_OK) {
-    osai_mfs_fsck_result_t fsck = mutable_fs_fsck();
+  xaios_status_t persistent_status = mutable_fs_mount_persistent(2);
+  if (persistent_status == XAIOS_OK) {
+    xaios_mfs_fsck_result_t fsck = mutable_fs_fsck();
     klog("kernel: persistent fsck valid=%u v%u files=%lu dirs=%lu\n",
          fsck.valid, fsck.version, fsck.files, fsck.directories);
     /* Initialize persistent log ring buffer */
@@ -209,13 +209,13 @@ void kmain(const osai_boot_info_t *boot) {
   /* Boot completed successfully -- reset boot counter */
   boot_counter_reset();
 
-#if defined(OSAI_FAULT_TEST_PAGE)
+#if defined(XAIOS_FAULT_TEST_PAGE)
   exception_trigger_page_fault_for_test();
-#elif defined(OSAI_FAULT_TEST_RO)
+#elif defined(XAIOS_FAULT_TEST_RO)
   klog("exceptions: triggering controlled rodata write fault\n");
   volatile char *ro = (volatile char *)(uintptr_t)g_vmm_rodata_probe;
   *ro = 'X';
-#elif defined(OSAI_FAULT_TEST_NX)
+#elif defined(XAIOS_FAULT_TEST_NX)
   klog("exceptions: triggering controlled NX execute fault\n");
   void (*bad_exec)(void) = (void (*)(void))(uintptr_t)&g_vmm_data_probe;
   bad_exec();
@@ -232,18 +232,18 @@ void kmain(const osai_boot_info_t *boot) {
 
   klog("PMM 1024 page allocate/free test passed\n");
 
-  const osai_initramfs_file_t *init_file = 0;
-  const osai_initramfs_file_t *manager_file = 0;
-  const osai_initramfs_file_t *worker_file = 0;
-  osai_user_process_t init_process;
-  osai_user_process_t manager_process;
-  const osai_initramfs_config_t *init_config = initramfs_config();
+  const xaios_initramfs_file_t *init_file = 0;
+  const xaios_initramfs_file_t *manager_file = 0;
+  const xaios_initramfs_file_t *worker_file = 0;
+  xaios_user_process_t init_process;
+  xaios_user_process_t manager_process;
+  const xaios_initramfs_config_t *init_config = initramfs_config();
   kassert(init_config != 0);
-  kassert(initramfs_lookup(init_config->service_path, &init_file) == OSAI_OK);
+  kassert(initramfs_lookup(init_config->service_path, &init_file) == XAIOS_OK);
   kassert(initramfs_lookup(init_config->service_manager_path, &manager_file) ==
-          OSAI_OK);
-  kassert(initramfs_lookup("/bin/osai-worker", &worker_file) == OSAI_OK);
-  kassert(user_load_init(init_file, &init_process) == OSAI_OK);
+          XAIOS_OK);
+  kassert(initramfs_lookup("/bin/xaios-worker", &worker_file) == XAIOS_OK);
+  kassert(user_load_init(init_file, &init_process) == XAIOS_OK);
   int init_exit_code = user_process_run(&init_process);
   kassert(init_exit_code == 0);
   klog("kernel: /init returned to kernel exit_code=%u\n",
@@ -251,11 +251,11 @@ void kmain(const osai_boot_info_t *boot) {
   user_process_reclaim_address_space(&init_process);
 
   kassert(user_load_process(manager_file, 2,
-                            OSAI_CAP_LOG | OSAI_CAP_EXIT | OSAI_CAP_OSCTL |
-                                OSAI_CAP_FS_READ | OSAI_CAP_SERVICE_CONTROL |
-                                OSAI_CAP_ADMIN | OSAI_CAP_FS_WRITE,
-                            &manager_process) == OSAI_OK);
-  kassert(service_start(init_config->service_manager_path) == OSAI_OK);
+                            XAIOS_CAP_LOG | XAIOS_CAP_EXIT | XAIOS_CAP_OSCTL |
+                                XAIOS_CAP_FS_READ | XAIOS_CAP_SERVICE_CONTROL |
+                                XAIOS_CAP_ADMIN | XAIOS_CAP_FS_WRITE,
+                            &manager_process) == XAIOS_OK);
+  kassert(service_start(init_config->service_manager_path) == XAIOS_OK);
   int manager_exit_code = user_process_run(&manager_process);
   kassert(manager_exit_code == 0);
   klog("kernel: /bin/service-manager returned to kernel exit_code=%u\n",
@@ -263,7 +263,7 @@ void kmain(const osai_boot_info_t *boot) {
   user_process_reclaim_address_space(&manager_process);
 
   /* Initialize persistent network for real TX/RX */
-  if (virtio_net_init_persistent() == OSAI_OK) {
+  if (virtio_net_init_persistent() == XAIOS_OK) {
     network_init_persistent();
     klog("kernel: persistent network stack enabled\n");
   } else {
@@ -272,19 +272,19 @@ void kmain(const osai_boot_info_t *boot) {
 
   /* Initialize preemptive scheduler infrastructure */
   gic_enable_full();
-  timer_enable_periodic(OSAI_SCHEDULER_DEFAULT_TICK_HZ);
+  timer_enable_periodic(XAIOS_SCHEDULER_DEFAULT_TICK_HZ);
   klog("kernel: preemptive scheduler infrastructure enabled\n");
 
   for (uint32_t pid = 3; pid <= 5; ++pid) {
-    osai_user_process_t worker_process;
-    kassert(user_load_process(worker_file, pid, OSAI_CAP_LOG | OSAI_CAP_EXIT,
-                              &worker_process) == OSAI_OK);
-    kassert(user_process_make_runnable(pid, 2) == OSAI_OK);
-    kassert(user_process_snapshot(pid, &worker_process) == OSAI_OK);
-    kassert(service_start("/bin/osai-worker") == OSAI_OK);
+    xaios_user_process_t worker_process;
+    kassert(user_load_process(worker_file, pid, XAIOS_CAP_LOG | XAIOS_CAP_EXIT,
+                              &worker_process) == XAIOS_OK);
+    kassert(user_process_make_runnable(pid, 2) == XAIOS_OK);
+    kassert(user_process_snapshot(pid, &worker_process) == XAIOS_OK);
+    kassert(service_start("/bin/xaios-worker") == XAIOS_OK);
     int worker_exit_code = user_process_run(&worker_process);
     kassert(worker_exit_code == 0);
-    klog("kernel: /bin/osai-worker pid=%u returned to kernel exit_code=%u\n",
+    klog("kernel: /bin/xaios-worker pid=%u returned to kernel exit_code=%u\n",
          pid, (unsigned)worker_exit_code);
     user_process_reclaim_address_space(&worker_process);
   }
@@ -293,13 +293,13 @@ void kmain(const osai_boot_info_t *boot) {
   timer_disable();
   gic_disable_full();
 
-  const uint64_t app_caps = OSAI_CAP_LOG | OSAI_CAP_EXIT | OSAI_CAP_OSCTL |
-                            OSAI_CAP_FS_READ | OSAI_CAP_FS_WRITE |
-                            OSAI_CAP_TIME | OSAI_CAP_NET | OSAI_CAP_SMP |
-                            OSAI_CAP_CPU_AI | OSAI_CAP_REMOTE_LOGIN |
-                            OSAI_CAP_THREADS | OSAI_CAP_ML |
-                            OSAI_CAP_NET_SOCKET | OSAI_CAP_AGENT;
-  run_user_app("/bin/osai-shell", 6, app_caps);
+  const uint64_t app_caps = XAIOS_CAP_LOG | XAIOS_CAP_EXIT | XAIOS_CAP_OSCTL |
+                            XAIOS_CAP_FS_READ | XAIOS_CAP_FS_WRITE |
+                            XAIOS_CAP_TIME | XAIOS_CAP_NET | XAIOS_CAP_SMP |
+                            XAIOS_CAP_CPU_AI | XAIOS_CAP_REMOTE_LOGIN |
+                            XAIOS_CAP_THREADS | XAIOS_CAP_ML |
+                            XAIOS_CAP_NET_SOCKET | XAIOS_CAP_AGENT;
+  run_user_app("/bin/xaios-shell", 6, app_caps);
   run_user_app("/bin/hello", 7, app_caps);
   run_user_app("/bin/sysinfo", 8, app_caps);
   run_user_app("/bin/systest", 9, app_caps);

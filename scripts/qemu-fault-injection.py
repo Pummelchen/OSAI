@@ -2,7 +2,7 @@
 from qemu_gate_lib import BUILD, check_markers, now, result, run, status_from_failures, write_report
 
 
-SCHEMA = "osai.qemu.fault_injection.v1"
+SCHEMA = "xaios.qemu.fault_injection.v1"
 REPORT = BUILD / "qemu-milestone-53-fault-injection.json"
 
 SMOKE_FAILURE_MARKERS = {

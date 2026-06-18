@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-PROJECT_NAME="OSAI"
+PROJECT_NAME="XAIOS"
 HOST_OS="$(uname -s 2>/dev/null || printf unknown)"
 HOST_ARCH="$(uname -m 2>/dev/null || printf unknown)"
 
@@ -91,9 +91,9 @@ check_output_contains() {
 }
 
 find_aavmf_firmware() {
-  if [ "${OSAI_AAVMF_CODE:-}" != "" ]; then
-    if [ -f "$OSAI_AAVMF_CODE" ]; then
-      printf '%s\n' "$OSAI_AAVMF_CODE"
+  if [ "${XAIOS_AAVMF_CODE:-}" != "" ]; then
+    if [ -f "$XAIOS_AAVMF_CODE" ]; then
+      printf '%s\n' "$XAIOS_AAVMF_CODE"
       return 0
     fi
     return 1
@@ -235,7 +235,7 @@ fi
 if firmware_path="$(find_aavmf_firmware)"; then
   ok "AArch64 UEFI firmware: $firmware_path"
 else
-  fail "AArch64 UEFI firmware not found. Install an EDK2/AAVMF package or set OSAI_AAVMF_CODE=/path/to/QEMU_EFI.fd."
+  fail "AArch64 UEFI firmware not found. Install an EDK2/AAVMF package or set XAIOS_AAVMF_CODE=/path/to/QEMU_EFI.fd."
 fi
 
 if [ "$failures" -eq 0 ]; then
@@ -246,5 +246,5 @@ fi
 printf '\n%s\n' "Bootstrap failed with $failures required problem(s) and $warnings warning(s)."
 printf '%s\n' "Recommended first fixes on Apple Silicon:"
 printf '%s\n' "  brew install qemu llvm lld"
-printf '%s\n' "  install AArch64 EDK2/AAVMF firmware, then export OSAI_AAVMF_CODE=/path/to/QEMU_EFI.fd"
+printf '%s\n' "  install AArch64 EDK2/AAVMF firmware, then export XAIOS_AAVMF_CODE=/path/to/QEMU_EFI.fd"
 exit 1

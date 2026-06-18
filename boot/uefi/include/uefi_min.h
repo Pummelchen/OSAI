@@ -1,5 +1,5 @@
-#ifndef OSAI_UEFI_MIN_H
-#define OSAI_UEFI_MIN_H
+#ifndef XAIOS_UEFI_MIN_H
+#define XAIOS_UEFI_MIN_H
 
 #include <stdint.h>
 

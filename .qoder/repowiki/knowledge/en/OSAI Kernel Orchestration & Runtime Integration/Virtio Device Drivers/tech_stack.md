@@ -1,0 +1,1 @@
+Virtio MMIO transport (Version 2) with manual vring management and ARM64 memory barriers (`dsb sy`) for DMA synchronization.

@@ -1,9 +1,9 @@
-#include <osai/assert.h>
-#include <osai/arena.h>
-#include <osai/cpu_ai_runtime.h>
-#include <osai/initramfs.h>
-#include <osai/klog.h>
-#include <osai/model_arena.h>
+#include <xaios/assert.h>
+#include <xaios/arena.h>
+#include <xaios/cpu_ai_runtime.h>
+#include <xaios/initramfs.h>
+#include <xaios/klog.h>
+#include <xaios/model_arena.h>
 
 #define CPU_AI_MAGIC UINT32_C(0x4941494d)
 #define CPU_AI_VERSION UINT16_C(1)
@@ -19,8 +19,8 @@
 #define FNV1A64_OFFSET UINT64_C(14695981039346656037)
 #define FNV1A64_PRIME UINT64_C(1099511628211)
 
-#define OSAI_CPU_AI_RUNTIME_STATE_EMPTY 0U
-#define OSAI_CPU_AI_RUNTIME_STATE_BOUND 1U
+#define XAIOS_CPU_AI_RUNTIME_STATE_EMPTY 0U
+#define XAIOS_CPU_AI_RUNTIME_STATE_BOUND 1U
 
 typedef struct {
   uint32_t magic;
@@ -69,9 +69,9 @@ typedef struct {
   uint8_t key;
   uint8_t stride;
   const char *model_name;
-} osai_cpu_ai_runtime_cell_t;
+} xaios_cpu_ai_runtime_cell_t;
 
-static osai_cpu_ai_runtime_cell_t g_cells[OSAI_CPU_AI_RUNTIME_MAX_CELLS];
+static xaios_cpu_ai_runtime_cell_t g_cells[XAIOS_CPU_AI_RUNTIME_MAX_CELLS];
 static const char k_hex[] = "0123456789ABCDEF";
 static uint64_t g_model_load_count;
 static uint64_t g_model_load_failure_count;
@@ -91,7 +91,7 @@ static uint64_t g_checksum_failure_count;
 static uint64_t g_inference_count;
 
 static int validate_cell_id(uint32_t cell_id) {
-  return cell_id < OSAI_CPU_AI_RUNTIME_MAX_CELLS;
+  return cell_id < XAIOS_CPU_AI_RUNTIME_MAX_CELLS;
 }
 
 static void bytes_zero(void *bytes, uint64_t size) {
@@ -141,13 +141,13 @@ static uint64_t model_payload_hash(const uint8_t *base,
   return hash;
 }
 
-static osai_status_t validate_model_image(const void *base, uint64_t size,
+static xaios_status_t validate_model_image(const void *base, uint64_t size,
                                           uint32_t require_read_only,
     const cpu_ai_model_manifest_t **manifest_out) {
   if (base == 0 || size < sizeof(cpu_ai_model_manifest_t) ||
       require_read_only == 0) {
     ++g_admission_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   const cpu_ai_model_manifest_t *manifest =
@@ -172,64 +172,64 @@ static osai_status_t validate_model_image(const void *base, uint64_t size,
     if ((manifest->flags & CPU_AI_FLAG_GPU_REQUIRED) != 0) {
       ++g_gpu_reject_count;
     }
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   if ((manifest->flags & CPU_AI_FLAG_GPU_REQUIRED) != 0) {
     ++g_gpu_reject_count;
     ++g_admission_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   const uint64_t hash = model_payload_hash((const uint8_t *)base, manifest);
   if (hash != manifest->payload_hash) {
     ++g_checksum_failure_count;
     ++g_admission_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   const uint8_t *weights = (const uint8_t *)base + manifest->weights_offset;
   if (weights[0] != manifest->key || weights[1] != manifest->stride) {
     ++g_admission_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   if (manifest_out != 0) {
     *manifest_out = manifest;
   }
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t validate_model_manifest(
-    const osai_model_arena_t *model,
+static xaios_status_t validate_model_manifest(
+    const xaios_model_arena_t *model,
     const cpu_ai_model_manifest_t **manifest_out) {
   if (model == 0 || model->base == 0 || model->read_only == 0) {
     ++g_admission_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   return validate_model_image(model->base, model->size, model->read_only,
                               manifest_out);
 }
 
-static osai_status_t register_model_bytes(uint32_t model_arena_id,
+static xaios_status_t register_model_bytes(uint32_t model_arena_id,
                                           const char *name, const void *base,
                                           uint64_t size) {
   const cpu_ai_model_manifest_t *manifest = 0;
-  if (validate_model_image(base, size, 1, &manifest) != OSAI_OK) {
+  if (validate_model_image(base, size, 1, &manifest) != XAIOS_OK) {
     ++g_model_file_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
-  if (model_arena_register(model_arena_id, name, base, size) != OSAI_OK) {
+  if (model_arena_register(model_arena_id, name, base, size) != XAIOS_OK) {
     ++g_model_file_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   ++g_model_file_load_count;
   g_model_bytes_loaded += size;
   klog("cpu-ai-runtime: model file loaded id=%u name=%s bytes=%lu weights=%lu tokenizer=%lu checksum=0x%lx\n",
        model_arena_id, name, size, manifest->weights_size,
        manifest->tokenizer_size, manifest->payload_hash);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t tokenizer_encode(osai_cpu_ai_runtime_cell_t *cell,
+static xaios_status_t tokenizer_encode(xaios_cpu_ai_runtime_cell_t *cell,
                                       const uint8_t *piece,
                                       uint64_t piece_bytes,
                                       cpu_ai_token_t *tokens,
@@ -240,7 +240,7 @@ static osai_status_t tokenizer_encode(osai_cpu_ai_runtime_cell_t *cell,
       cell->tokenizer_base == 0 ||
       cell->tokenizer_size < CPU_AI_TOKENIZER_BYTES ||
       piece_bytes > token_capacity) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   for (uint64_t i = 0; i < piece_bytes; ++i) {
@@ -249,23 +249,23 @@ static osai_status_t tokenizer_encode(osai_cpu_ai_runtime_cell_t *cell,
   }
   *token_count = piece_bytes;
   ++g_tokenizer_call_count;
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t kv_record_tokens(osai_cpu_ai_runtime_cell_t *cell,
+static xaios_status_t kv_record_tokens(xaios_cpu_ai_runtime_cell_t *cell,
                                       const cpu_ai_token_t *tokens,
                                       uint64_t token_count) {
   if (cell == 0 || tokens == 0 || token_count == 0) {
-    return OSAI_OK;
+    return XAIOS_OK;
   }
   if (cell->kv_base == 0 || cell->kv_bytes == 0) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   const uint64_t record_bytes = token_count * sizeof(uint32_t);
   if (record_bytes > cell->kv_bytes ||
       cell->kv_cursor > cell->kv_bytes - record_bytes) {
-    return OSAI_ERR_NO_MEMORY;
+    return XAIOS_ERR_NO_MEMORY;
   }
 
   uint32_t *kv = (uint32_t *)(uintptr_t)(cell->kv_base + cell->kv_cursor);
@@ -275,10 +275,10 @@ static osai_status_t kv_record_tokens(osai_cpu_ai_runtime_cell_t *cell,
   cell->kv_cursor += record_bytes;
   cell->kv_writes += token_count;
   g_kv_write_count += token_count;
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t deterministic_cpu_kernel(osai_cpu_ai_runtime_cell_t *cell,
+static xaios_status_t deterministic_cpu_kernel(xaios_cpu_ai_runtime_cell_t *cell,
                                               const cpu_ai_token_t *tokens,
                                               uint64_t token_count,
                                               char *output,
@@ -286,16 +286,16 @@ static osai_status_t deterministic_cpu_kernel(osai_cpu_ai_runtime_cell_t *cell,
                                               uint64_t *output_bytes) {
   if (cell == 0 || tokens == 0 || output == 0 || output_bytes == 0 ||
       cell->weights_base == 0 || cell->weights_size < CPU_AI_MIN_WEIGHT_BYTES) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   const uint64_t required_output = token_count * 2U;
   if (required_output + 1U > output_capacity) {
-    return OSAI_ERR_NO_MEMORY;
+    return XAIOS_ERR_NO_MEMORY;
   }
 
-  if (kv_record_tokens(cell, tokens, token_count) != OSAI_OK) {
-    return OSAI_ERR_NO_MEMORY;
+  if (kv_record_tokens(cell, tokens, token_count) != XAIOS_OK) {
+    return XAIOS_ERR_NO_MEMORY;
   }
 
   for (uint64_t i = 0; i < token_count; ++i) {
@@ -311,7 +311,7 @@ static osai_status_t deterministic_cpu_kernel(osai_cpu_ai_runtime_cell_t *cell,
   output[required_output] = '\0';
   *output_bytes = required_output;
   ++g_runtime_call_count;
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 static void matmul_q88(const int16_t *mat_a, const int16_t *mat_b,
@@ -348,13 +348,13 @@ static void forward_pass_q88(const int16_t *input, const int16_t *weights,
   }
 }
 
-static osai_status_t runtime_decode_tokens(osai_cpu_ai_runtime_cell_t *cell,
+static xaios_status_t runtime_decode_tokens(xaios_cpu_ai_runtime_cell_t *cell,
                                            const cpu_ai_token_t *tokens,
                                            uint64_t token_count, char *output,
                                            uint64_t output_capacity,
                                            uint64_t *output_bytes) {
   if (cell == 0 || tokens == 0 || output == 0 || output_bytes == 0) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   ++g_kernel_dispatch_count;
@@ -363,11 +363,11 @@ static osai_status_t runtime_decode_tokens(osai_cpu_ai_runtime_cell_t *cell,
                                     output_capacity, output_bytes);
   }
 
-  return OSAI_ERR_INVALID;
+  return XAIOS_ERR_INVALID;
 }
 
 void cpu_ai_runtime_init(void) {
-  for (uint32_t i = 0; i < OSAI_CPU_AI_RUNTIME_MAX_CELLS; ++i) {
+  for (uint32_t i = 0; i < XAIOS_CPU_AI_RUNTIME_MAX_CELLS; ++i) {
     bytes_zero(&g_cells[i], sizeof(g_cells[i]));
   }
   g_model_load_count = 0;
@@ -387,74 +387,74 @@ void cpu_ai_runtime_init(void) {
   g_checksum_failure_count = 0;
   g_inference_count = 0;
   klog("cpu-ai-runtime: initialized cells=%u\n",
-       OSAI_CPU_AI_RUNTIME_MAX_CELLS);
+       XAIOS_CPU_AI_RUNTIME_MAX_CELLS);
 }
 
-osai_status_t cpu_ai_runtime_load_model_file(uint32_t model_arena_id,
+xaios_status_t cpu_ai_runtime_load_model_file(uint32_t model_arena_id,
                                              const char *name,
                                              const char *path) {
   if (name == 0 || path == 0) {
     ++g_model_file_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
-  const osai_initramfs_file_t *file = 0;
-  if (initramfs_lookup(path, &file) != OSAI_OK || file == 0 ||
+  const xaios_initramfs_file_t *file = 0;
+  if (initramfs_lookup(path, &file) != XAIOS_OK || file == 0 ||
       file->base == 0 || file->size == 0 || file->executable != 0 ||
       file->manifest != 0) {
     ++g_model_file_reject_count;
     ++g_admission_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
-  osai_status_t status =
+  xaios_status_t status =
       register_model_bytes(model_arena_id, name, file->base, file->size);
-  if (status == OSAI_OK) {
+  if (status == XAIOS_OK) {
     klog("cpu-ai-runtime: model file path=%s admitted arena=%u\n", path,
          model_arena_id);
   }
   return status;
 }
 
-osai_status_t cpu_ai_runtime_bind_model(uint32_t cell_id,
+xaios_status_t cpu_ai_runtime_bind_model(uint32_t cell_id,
                                         uint32_t model_arena_id) {
   return cpu_ai_runtime_bind_model_with_kv(cell_id, model_arena_id,
                                            UINT64_C(0), UINT64_C(0));
 }
 
-osai_status_t cpu_ai_runtime_bind_model_with_kv(uint32_t cell_id,
+xaios_status_t cpu_ai_runtime_bind_model_with_kv(uint32_t cell_id,
                                                 uint32_t model_arena_id,
                                                 uint64_t kv_base,
                                                 uint64_t kv_bytes) {
   if (!validate_cell_id(cell_id)) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
-  osai_cpu_ai_runtime_cell_t *cell = &g_cells[cell_id];
-  if (cell->state != OSAI_CPU_AI_RUNTIME_STATE_EMPTY) {
-    return OSAI_ERR_BUSY;
+  xaios_cpu_ai_runtime_cell_t *cell = &g_cells[cell_id];
+  if (cell->state != XAIOS_CPU_AI_RUNTIME_STATE_EMPTY) {
+    return XAIOS_ERR_BUSY;
   }
 
-  const osai_model_arena_t *model = 0;
-  if (model_arena_acquire(model_arena_id, &model) != OSAI_OK) {
+  const xaios_model_arena_t *model = 0;
+  if (model_arena_acquire(model_arena_id, &model) != XAIOS_OK) {
     ++g_model_load_failure_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   const cpu_ai_model_manifest_t *manifest = 0;
-  if (validate_model_manifest(model, &manifest) != OSAI_OK) {
+  if (validate_model_manifest(model, &manifest) != XAIOS_OK) {
     ++g_model_load_failure_count;
-    kassert(model_arena_release(model_arena_id) == OSAI_OK);
-    return OSAI_ERR_INVALID;
+    kassert(model_arena_release(model_arena_id) == XAIOS_OK);
+    return XAIOS_ERR_INVALID;
   }
   if (kv_base == 0 || kv_bytes < manifest->kv_bytes_required) {
     ++g_admission_reject_count;
     ++g_model_load_failure_count;
-    kassert(model_arena_release(model_arena_id) == OSAI_OK);
-    return OSAI_ERR_INVALID;
+    kassert(model_arena_release(model_arena_id) == XAIOS_OK);
+    return XAIOS_ERR_INVALID;
   }
 
-  cell->state = OSAI_CPU_AI_RUNTIME_STATE_BOUND;
+  cell->state = XAIOS_CPU_AI_RUNTIME_STATE_BOUND;
   cell->model_arena_id = model_arena_id;
   cell->model_base = (const uint8_t *)model->base;
   cell->model_size = model->size;
@@ -489,39 +489,39 @@ osai_status_t cpu_ai_runtime_bind_model_with_kv(uint32_t cell_id,
        cell->model_name != 0 ? cell->model_name : "<anonymous>",
        cell->model_size, cell->quantization, cell->stride, cell->kv_base,
        cell->kv_bytes);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t cpu_ai_runtime_unbind_model(uint32_t cell_id) {
+xaios_status_t cpu_ai_runtime_unbind_model(uint32_t cell_id) {
   if (!validate_cell_id(cell_id)) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
-  osai_cpu_ai_runtime_cell_t *cell = &g_cells[cell_id];
-  if (cell->state != OSAI_CPU_AI_RUNTIME_STATE_BOUND) {
-    return OSAI_ERR_INVALID;
+  xaios_cpu_ai_runtime_cell_t *cell = &g_cells[cell_id];
+  if (cell->state != XAIOS_CPU_AI_RUNTIME_STATE_BOUND) {
+    return XAIOS_ERR_INVALID;
   }
 
   const uint32_t model_arena_id = cell->model_arena_id;
-  kassert(model_arena_release(model_arena_id) == OSAI_OK);
+  kassert(model_arena_release(model_arena_id) == XAIOS_OK);
   bytes_zero(cell, sizeof(*cell));
   klog("cpu-ai-runtime: cell=%u unbound model_id=%u\n", cell_id,
        model_arena_id);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t cpu_ai_runtime_decode_piece(uint32_t cell_id, const uint8_t *piece,
+xaios_status_t cpu_ai_runtime_decode_piece(uint32_t cell_id, const uint8_t *piece,
                                          uint64_t piece_bytes, char *output,
                                          uint64_t output_capacity,
                                          uint64_t *output_bytes) {
   if (!validate_cell_id(cell_id) || piece == 0 || output == 0 ||
       output_bytes == 0 || output_capacity == 0) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
-  osai_cpu_ai_runtime_cell_t *cell = &g_cells[cell_id];
-  if (cell->state != OSAI_CPU_AI_RUNTIME_STATE_BOUND) {
-    return OSAI_ERR_INVALID;
+  xaios_cpu_ai_runtime_cell_t *cell = &g_cells[cell_id];
+  if (cell->state != XAIOS_CPU_AI_RUNTIME_STATE_BOUND) {
+    return XAIOS_ERR_INVALID;
   }
 
   if (piece_bytes == 0) {
@@ -529,23 +529,23 @@ osai_status_t cpu_ai_runtime_decode_piece(uint32_t cell_id, const uint8_t *piece
     if (output_capacity > 0) {
       output[0] = '\0';
     }
-    return OSAI_OK;
+    return XAIOS_OK;
   }
 
   if (piece_bytes > CPU_AI_MAX_TOKENS) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   cpu_ai_token_t tokens[CPU_AI_MAX_TOKENS];
   uint64_t token_count = 0;
   if (tokenizer_encode(cell, piece, piece_bytes, tokens, CPU_AI_MAX_TOKENS,
-                       &token_count) != OSAI_OK) {
-    return OSAI_ERR_INVALID;
+                       &token_count) != XAIOS_OK) {
+    return XAIOS_ERR_INVALID;
   }
 
   if (runtime_decode_tokens(cell, tokens, token_count, output, output_capacity,
-                            output_bytes) != OSAI_OK) {
-    return OSAI_ERR_NO_MEMORY;
+                            output_bytes) != XAIOS_OK) {
+    return XAIOS_ERR_NO_MEMORY;
   }
 
   ++cell->decode_calls;
@@ -554,7 +554,7 @@ osai_status_t cpu_ai_runtime_decode_piece(uint32_t cell_id, const uint8_t *piece
 
   klog("cpu-ai-runtime: cell=%u decode piece_len=%lu output_len=%lu\n", cell_id,
        piece_bytes, *output_bytes);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 static void runtime_append(char *output, uint64_t capacity, uint64_t *offset,
@@ -590,19 +590,19 @@ static void runtime_append_u64(char *output, uint64_t capacity,
   }
 }
 
-osai_status_t cpu_ai_runtime_run_model(uint32_t cell_id, uint64_t model_kind,
+xaios_status_t cpu_ai_runtime_run_model(uint32_t cell_id, uint64_t model_kind,
                                        const uint8_t *input,
                                        uint64_t input_bytes, char *output,
                                        uint64_t output_capacity,
                                        uint64_t *output_bytes) {
   if (input == 0 || input_bytes == 0 || output == 0 || output_capacity < 2U ||
       output_bytes == 0) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   output[0] = '\0';
   *output_bytes = 0;
 
-  if (model_kind == OSAI_ML_MODEL_DECODE) {
+  if (model_kind == XAIOS_ML_MODEL_DECODE) {
     return cpu_ai_runtime_decode_piece(cell_id, input, input_bytes, output,
                                        output_capacity, output_bytes);
   }
@@ -610,48 +610,48 @@ osai_status_t cpu_ai_runtime_run_model(uint32_t cell_id, uint64_t model_kind,
   ++g_kernel_dispatch_count;
   ++g_runtime_call_count;
   uint64_t offset = 0;
-  if (model_kind == OSAI_ML_MODEL_XOR) {
+  if (model_kind == XAIOS_ML_MODEL_XOR) {
     if (input_bytes < 2U) {
-      return OSAI_ERR_INVALID;
+      return XAIOS_ERR_INVALID;
     }
     const uint8_t lhs = (uint8_t)(input[0] & 1U);
     const uint8_t rhs = (uint8_t)(input[1] & 1U);
     runtime_append(output, output_capacity, &offset,
                    ((lhs ^ rhs) != 0U) ? "1" : "0");
-  } else if (model_kind == OSAI_ML_MODEL_SUM) {
+  } else if (model_kind == XAIOS_ML_MODEL_SUM) {
     uint64_t sum = 0;
     for (uint64_t i = 0; i < input_bytes; ++i) {
       sum += input[i];
     }
     runtime_append_u64(output, output_capacity, &offset, sum);
-  } else if (model_kind == OSAI_ML_MODEL_PARITY) {
+  } else if (model_kind == XAIOS_ML_MODEL_PARITY) {
     uint8_t parity = 0;
     for (uint64_t i = 0; i < input_bytes; ++i) {
       parity ^= (uint8_t)(input[i] & 1U);
     }
     runtime_append(output, output_capacity, &offset,
                    parity != 0U ? "odd" : "even");
-  } else if (model_kind == OSAI_ML_MODEL_MATMUL) {
+  } else if (model_kind == XAIOS_ML_MODEL_MATMUL) {
     if (input_bytes < 12U) {
-      return OSAI_ERR_INVALID;
+      return XAIOS_ERR_INVALID;
     }
     uint32_t rows_a = (uint32_t)input[0];
     uint32_t cols_a = (uint32_t)input[1];
     uint32_t cols_b = (uint32_t)input[2];
     if (rows_a == 0 || cols_a == 0 || cols_b == 0 ||
-        rows_a > OSAI_CPU_AI_MAX_MATRIX_DIM ||
-        cols_a > OSAI_CPU_AI_MAX_MATRIX_DIM ||
-        cols_b > OSAI_CPU_AI_MAX_MATRIX_DIM) {
-      return OSAI_ERR_INVALID;
+        rows_a > XAIOS_CPU_AI_MAX_MATRIX_DIM ||
+        cols_a > XAIOS_CPU_AI_MAX_MATRIX_DIM ||
+        cols_b > XAIOS_CPU_AI_MAX_MATRIX_DIM) {
+      return XAIOS_ERR_INVALID;
     }
     uint64_t mat_bytes =
         (uint64_t)(rows_a * cols_a + cols_a * cols_b) * sizeof(int16_t);
     if (12U + mat_bytes > input_bytes) {
-      return OSAI_ERR_INVALID;
+      return XAIOS_ERR_INVALID;
     }
     uint64_t out_bytes = (uint64_t)(rows_a * cols_b) * sizeof(int16_t);
     if (out_bytes > output_capacity) {
-      return OSAI_ERR_NO_MEMORY;
+      return XAIOS_ERR_NO_MEMORY;
     }
     const int16_t *mat_a = (const int16_t *)(input + 12U);
     const int16_t *mat_b =
@@ -660,32 +660,32 @@ osai_status_t cpu_ai_runtime_run_model(uint32_t cell_id, uint64_t model_kind,
     matmul_q88(mat_a, mat_b, (int16_t *)output, rows_a, cols_a, cols_b);
     offset = out_bytes;
     ++g_inference_count;
-  } else if (model_kind == OSAI_ML_MODEL_FORWARD) {
+  } else if (model_kind == XAIOS_ML_MODEL_FORWARD) {
     if (input_bytes < 12U) {
-      return OSAI_ERR_INVALID;
+      return XAIOS_ERR_INVALID;
     }
     uint32_t batch = (uint32_t)input[0];
     uint32_t in_dim = (uint32_t)input[1];
     uint32_t out_dim = (uint32_t)input[2];
     if (batch == 0 || in_dim == 0 || out_dim == 0 ||
-        batch > OSAI_CPU_AI_MAX_MATRIX_DIM ||
-        in_dim > OSAI_CPU_AI_MAX_MATRIX_DIM ||
-        out_dim > OSAI_CPU_AI_MAX_MATRIX_DIM) {
-      return OSAI_ERR_INVALID;
+        batch > XAIOS_CPU_AI_MAX_MATRIX_DIM ||
+        in_dim > XAIOS_CPU_AI_MAX_MATRIX_DIM ||
+        out_dim > XAIOS_CPU_AI_MAX_MATRIX_DIM) {
+      return XAIOS_ERR_INVALID;
     }
     uint64_t input_mat_bytes =
         (uint64_t)(batch * in_dim) * sizeof(int16_t);
     if (12U + input_mat_bytes > input_bytes) {
-      return OSAI_ERR_INVALID;
+      return XAIOS_ERR_INVALID;
     }
     uint64_t out_bytes = (uint64_t)(batch * out_dim) * sizeof(int16_t);
     if (out_bytes > output_capacity) {
-      return OSAI_ERR_NO_MEMORY;
+      return XAIOS_ERR_NO_MEMORY;
     }
     const int16_t *input_mat = (const int16_t *)(input + 12U);
-    const osai_cpu_ai_runtime_cell_t *fwd_cell = 0;
+    const xaios_cpu_ai_runtime_cell_t *fwd_cell = 0;
     if (validate_cell_id(cell_id) &&
-        g_cells[cell_id].state == OSAI_CPU_AI_RUNTIME_STATE_BOUND) {
+        g_cells[cell_id].state == XAIOS_CPU_AI_RUNTIME_STATE_BOUND) {
       fwd_cell = &g_cells[cell_id];
     }
     const int16_t *layer_weights =
@@ -699,13 +699,13 @@ osai_status_t cpu_ai_runtime_run_model(uint32_t cell_id, uint64_t model_kind,
     offset = out_bytes;
     ++g_inference_count;
   } else {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   *output_bytes = offset;
   klog("cpu-ai-runtime: generic ml model kind=%lu input=%lu output=%lu cpu_only=1\n",
        model_kind, input_bytes, offset);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 uint64_t cpu_ai_runtime_decode_count(uint32_t cell_id) {
@@ -826,11 +826,11 @@ void cpu_ai_runtime_self_test(void) {
 
   kassert(sizeof(cpu_ai_model_manifest_t) == CPU_AI_HEADER_BYTES);
   kassert(cpu_ai_runtime_load_model_file(2, "cpu-ai-mvp",
-                                         "/models/cpu-ai-mvp.osaimodel") ==
-          OSAI_OK);
+                                         "/models/cpu-ai-mvp.xaiosmodel") ==
+          XAIOS_OK);
   kassert(cpu_ai_runtime_load_model_file(3, "missing-model",
-                                         "/models/missing.osaimodel") ==
-          OSAI_ERR_INVALID);
+                                         "/models/missing.xaiosmodel") ==
+          XAIOS_ERR_INVALID);
 
   cpu_ai_test_model_image_t bad_checksum_image;
   cpu_ai_test_model_image_t bad_tokenizer_image;
@@ -843,47 +843,47 @@ void cpu_ai_runtime_self_test(void) {
                         CPU_AI_TOKENIZER_BYTES, 0);
   kassert(register_model_bytes(3, "bad-checksum-model", &bad_checksum_image,
                                sizeof(bad_checksum_image)) ==
-          OSAI_ERR_INVALID);
+          XAIOS_ERR_INVALID);
   kassert(register_model_bytes(3, "bad-tokenizer-model", &bad_tokenizer_image,
                                sizeof(bad_tokenizer_image)) ==
-          OSAI_ERR_INVALID);
+          XAIOS_ERR_INVALID);
   kassert(model_arena_register(3, "gpu-rejected-model", &gpu_model_image,
-                               sizeof(gpu_model_image)) == OSAI_OK);
+                               sizeof(gpu_model_image)) == XAIOS_OK);
 
-  const osai_arena_t *kv0 = 0;
-  const osai_arena_t *kv1 = 0;
-  kassert(arena_create(5, OSAI_ARENA_KV_CACHE, 0, "cpu-ai-kv-0", 4096, 0,
-                       &kv0) == OSAI_OK);
-  kassert(arena_create(6, OSAI_ARENA_KV_CACHE, 1, "cpu-ai-kv-1", 4096, 0,
-                       &kv1) == OSAI_OK);
+  const xaios_arena_t *kv0 = 0;
+  const xaios_arena_t *kv1 = 0;
+  kassert(arena_create(5, XAIOS_ARENA_KV_CACHE, 0, "cpu-ai-kv-0", 4096, 0,
+                       &kv0) == XAIOS_OK);
+  kassert(arena_create(6, XAIOS_ARENA_KV_CACHE, 1, "cpu-ai-kv-1", 4096, 0,
+                       &kv1) == XAIOS_OK);
 
   kassert(cpu_ai_runtime_bind_model_with_kv(0, 2, kv0->base, kv0->size) ==
-          OSAI_OK);
+          XAIOS_OK);
   kassert(cpu_ai_runtime_bind_model_with_kv(1, 2, kv1->base, kv1->size) ==
-          OSAI_OK);
+          XAIOS_OK);
   kassert(cpu_ai_runtime_bind_model_with_kv(2, 99, kv1->base, kv1->size) ==
-          OSAI_ERR_INVALID);
+          XAIOS_ERR_INVALID);
   kassert(cpu_ai_runtime_bind_model_with_kv(2, 3, kv1->base, kv1->size) ==
-          OSAI_ERR_INVALID);
-  kassert(model_arena_unregister(3) == OSAI_OK);
+          XAIOS_ERR_INVALID);
+  kassert(model_arena_unregister(3) == XAIOS_OK);
   kassert(cpu_ai_runtime_bind_model_with_kv(2, 2, kv1->base, 16) ==
-          OSAI_ERR_INVALID);
+          XAIOS_ERR_INVALID);
 
-  const osai_model_arena_t *shared = 0;
-  kassert(model_arena_acquire(2, &shared) == OSAI_OK);
+  const xaios_model_arena_t *shared = 0;
+  kassert(model_arena_acquire(2, &shared) == XAIOS_OK);
   kassert(shared->ref_count == 3);
-  kassert(model_arena_release(2) == OSAI_OK);
+  kassert(model_arena_release(2) == XAIOS_OK);
   const uint8_t piece[] = {'A', 'B', 'C', 'D'};
   char output[32];
   char output1[32];
   uint64_t out = 0;
   kassert(cpu_ai_runtime_decode_piece(0, piece, sizeof(piece), output,
-                                     sizeof(output), &out) == OSAI_OK);
+                                     sizeof(output), &out) == XAIOS_OK);
   kassert(out == 8);
   kassert(cpu_ai_runtime_decode_count(0) == 1);
   kassert(bytes_equal(output, "1B1F2327"));
   kassert(cpu_ai_runtime_decode_piece(1, piece, sizeof(piece), output1,
-                                     sizeof(output1), &out) == OSAI_OK);
+                                     sizeof(output1), &out) == XAIOS_OK);
   kassert(bytes_equal(output1, "1B1F2327"));
   kassert(cpu_ai_runtime_tokenizer_call_count() == 2);
   kassert(cpu_ai_runtime_runtime_call_count() == 2);
@@ -898,14 +898,14 @@ void cpu_ai_runtime_self_test(void) {
   kassert(cpu_ai_runtime_kernel_dispatch_count() == 2);
   kassert(cpu_ai_runtime_admission_reject_count() == 5);
   kassert(cpu_ai_runtime_checksum_failure_count() == 1);
-  kassert(cpu_ai_runtime_unbind_model(0) == OSAI_OK);
-  kassert(cpu_ai_runtime_unbind_model(1) == OSAI_OK);
+  kassert(cpu_ai_runtime_unbind_model(0) == XAIOS_OK);
+  kassert(cpu_ai_runtime_unbind_model(1) == XAIOS_OK);
   klog("cpu-ai-runtime: deterministic decode fixture input=ABCD output=%s\n",
        output);
   kassert(cpu_ai_runtime_decode_piece(0, piece, sizeof(piece), output,
-                                     sizeof(output), &out) == OSAI_ERR_INVALID);
-  kassert(arena_destroy(5) == OSAI_OK);
-  kassert(arena_destroy(6) == OSAI_OK);
+                                     sizeof(output), &out) == XAIOS_ERR_INVALID);
+  kassert(arena_destroy(5) == XAIOS_OK);
+  kassert(arena_destroy(6) == XAIOS_OK);
   klog("cpu-ai-runtime: tokenizer/runtime boundary self-test passed tokenizer_calls=%lu runtime_calls=%lu\n",
        cpu_ai_runtime_tokenizer_call_count(),
        cpu_ai_runtime_runtime_call_count());
@@ -936,9 +936,9 @@ void cpu_ai_runtime_self_test(void) {
     ma[0] = 256; ma[1] = 0; ma[2] = 0; ma[3] = 256;
     char mo[64];
     uint64_t mout = 0;
-    kassert(cpu_ai_runtime_run_model(0, OSAI_ML_MODEL_MATMUL, mm,
+    kassert(cpu_ai_runtime_run_model(0, XAIOS_ML_MODEL_MATMUL, mm,
                                      sizeof(mm), mo, sizeof(mo),
-                                     &mout) == OSAI_OK);
+                                     &mout) == XAIOS_OK);
     kassert(mout == 8);
     int16_t *mr = (int16_t *)mo;
     kassert(mr[0] == 256 && mr[1] == 0 && mr[2] == 0 && mr[3] == 256);
@@ -953,9 +953,9 @@ void cpu_ai_runtime_self_test(void) {
     fi[0] = 256; fi[1] = 256; fi[2] = 0; fi[3] = 256;
     char fo[64];
     uint64_t fout = 0;
-    kassert(cpu_ai_runtime_run_model(0, OSAI_ML_MODEL_FORWARD, fp,
+    kassert(cpu_ai_runtime_run_model(0, XAIOS_ML_MODEL_FORWARD, fp,
                                      sizeof(fp), fo, sizeof(fo),
-                                     &fout) == OSAI_OK);
+                                     &fout) == XAIOS_OK);
     kassert(fout == 4);
   }
 

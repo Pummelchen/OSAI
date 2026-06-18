@@ -3,7 +3,7 @@ from pathlib import Path
 from qemu_gate_lib import BUILD, ROOT, now, result, run, status_from_failures, write_report
 
 
-SCHEMA = "osai.qemu.developer_ux.v1"
+SCHEMA = "xaios.qemu.developer_ux.v1"
 REPORT = BUILD / "qemu-milestone-59-developer-ux.json"
 
 REQUIRED_MAKE_TARGETS = [

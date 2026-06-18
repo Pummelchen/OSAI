@@ -5,7 +5,7 @@ ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 BUILD_DIR="$ROOT_DIR/build"
 EFI_BUILD_DIR="$BUILD_DIR/uefi-x86_64"
 KERNEL_BUILD_DIR="$BUILD_DIR/kernel-x86_64"
-IMAGE_PATH="${OSAI_X86_64_IMAGE:-$BUILD_DIR/osai-x86_64.img}"
+IMAGE_PATH="${XAIOS_X86_64_IMAGE:-$BUILD_DIR/xaios-x86_64.img}"
 LOADER_OBJ="$EFI_BUILD_DIR/loader_main.obj"
 LOADER_EFI="$EFI_BUILD_DIR/BOOTX64.EFI"
 KERNEL_ENTRY_OBJ="$KERNEL_BUILD_DIR/entry.o"
@@ -78,7 +78,7 @@ mkdir -p "$EFI_BUILD_DIR" "$KERNEL_BUILD_DIR"
 printf '%s\n' "Building x86_64 UEFI loader..."
 "$CLANG" \
   --target=x86_64-unknown-windows \
-  -DOSAI_UEFI_TARGET_X86_64=1 \
+  -DXAIOS_UEFI_TARGET_X86_64=1 \
   -ffreestanding \
   -fno-stack-protector \
   -fno-builtin \
@@ -130,11 +130,11 @@ mkdir -p "$(dirname -- "$IMAGE_PATH")"
 
 printf '%s\n' "Creating x86_64 FAT boot image: $IMAGE_PATH"
 dd if=/dev/zero of="$IMAGE_PATH" bs=1m count=64 status=none
-"$MFORMAT" -i "$IMAGE_PATH" -F -v OSAIX64 ::
+"$MFORMAT" -i "$IMAGE_PATH" -F -v XAIOSX64 ::
 "$MMD" -i "$IMAGE_PATH" ::/EFI
 "$MMD" -i "$IMAGE_PATH" ::/EFI/BOOT
-"$MMD" -i "$IMAGE_PATH" ::/EFI/OSAI
+"$MMD" -i "$IMAGE_PATH" ::/EFI/XAIOS
 "$MCOPY" -i "$IMAGE_PATH" "$LOADER_EFI" ::/EFI/BOOT/BOOTX64.EFI
-"$MCOPY" -i "$IMAGE_PATH" "$KERNEL_ELF" ::/EFI/OSAI/kernel.elf
+"$MCOPY" -i "$IMAGE_PATH" "$KERNEL_ELF" ::/EFI/XAIOS/kernel.elf
 
 printf '%s\n' "Created $IMAGE_PATH"

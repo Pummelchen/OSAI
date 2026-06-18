@@ -1,0 +1,1 @@
+Provides a freestanding C library for AArch64 userspace applications to interact with the OSAI kernel via synchronous system calls.

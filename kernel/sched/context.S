@@ -73,8 +73,8 @@ irq_entry_full:
   eret
 .size irq_entry_full, . - irq_entry_full
 
-/* void context_switch(osai_context_frame_t *old,
- *                     const osai_context_frame_t *new_frame)
+/* void context_switch(xaios_context_frame_t *old,
+ *                     const xaios_context_frame_t *new_frame)
  * Cooperative context switch: saves callee-saved state to *old,
  * restores from *new_frame. Returns to caller in the NEW context.
  */
@@ -102,7 +102,7 @@ context_switch:
   ret /* returns via new frame's x30 */
 .size context_switch, . - context_switch
 
-/* uint64_t context_save(osai_context_frame_t *frame)
+/* uint64_t context_save(xaios_context_frame_t *frame)
  * Saves callee-saved regs and sp. Returns 0 (initial save). */
 .global context_save
 .type context_save, %function
@@ -119,7 +119,7 @@ context_save:
   ret
 .size context_save, . - context_save
 
-/* void context_restore(const osai_context_frame_t *frame)
+/* void context_restore(const xaios_context_frame_t *frame)
  * Restores callee-saved regs and sp. Returns via saved x30. */
 .global context_restore
 .type context_restore, %function

@@ -1,0 +1,1 @@
+Implement userspace SSH daemon with custom freestanding crypto — Implement SSH-2 protocol support in a userspace daemon (`sshd`) using custom, freestanding C implementations of SHA-256, HMAC-SHA256, AES-128-CTR, and Curve25519.

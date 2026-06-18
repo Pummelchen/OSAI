@@ -1,15 +1,15 @@
 #include <stdarg.h>
-#include <osai/klog.h>
-#include <osai/klog_ring.h>
-#include <osai/timer.h>
-#include <osai/types.h>
+#include <xaios/klog.h>
+#include <xaios/klog_ring.h>
+#include <xaios/timer.h>
+#include <xaios/types.h>
 
 #define PL011_UARTDR 0x00U
 
 static volatile uint32_t *g_uart_base;
 
 /* Line buffer for ring capture */
-static char g_klog_line[OSAI_KLOG_LINE_MAX];
+static char g_klog_line[XAIOS_KLOG_LINE_MAX];
 static uint32_t g_klog_line_pos;
 
 static void uart_putc(char c) {
@@ -27,7 +27,7 @@ static void klog_char(char c) {
   uart_putc(c);
 
   /* Also capture to line buffer for ring */
-  if (g_klog_line_pos < OSAI_KLOG_LINE_MAX - 1U) {
+  if (g_klog_line_pos < XAIOS_KLOG_LINE_MAX - 1U) {
     g_klog_line[g_klog_line_pos++] = c;
   }
 }
@@ -39,7 +39,7 @@ static void klog_line_flush(void) {
   }
 }
 
-void klog_init(const osai_boot_info_t *boot) {
+void klog_init(const xaios_boot_info_t *boot) {
   g_uart_base = (volatile uint32_t *)(uintptr_t)boot->uart_base;
 }
 
@@ -118,23 +118,23 @@ void klog(const char *fmt, ...) {
   va_end(args);
 }
 
-static const char *log_level_str(osai_log_level_t level) {
+static const char *log_level_str(xaios_log_level_t level) {
   switch (level) {
-  case OSAI_LOG_DEBUG:
+  case XAIOS_LOG_DEBUG:
     return "DEBUG";
-  case OSAI_LOG_INFO:
+  case XAIOS_LOG_INFO:
     return "INFO";
-  case OSAI_LOG_WARN:
+  case XAIOS_LOG_WARN:
     return "WARN";
-  case OSAI_LOG_ERROR:
+  case XAIOS_LOG_ERROR:
     return "ERROR";
-  case OSAI_LOG_PANIC:
+  case XAIOS_LOG_PANIC:
     return "PANIC";
   }
   return "?";
 }
 
-void klog_level(osai_log_level_t level, const char *fmt, ...) {
+void klog_level(xaios_log_level_t level, const char *fmt, ...) {
   uint64_t wall_ns = wall_time_now_ns();
   uint64_t sec = wall_ns / UINT64_C(1000000000);
   uint64_t nsec = wall_ns % UINT64_C(1000000000);
@@ -182,7 +182,7 @@ void klog_level(osai_log_level_t level, const char *fmt, ...) {
   va_end(args);
 
   /* Flush ring immediately on panic */
-  if (level == OSAI_LOG_PANIC) {
+  if (level == XAIOS_LOG_PANIC) {
     klog_flush();
   }
 }

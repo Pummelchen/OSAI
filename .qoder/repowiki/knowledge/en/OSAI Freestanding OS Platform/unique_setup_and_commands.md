@@ -1,0 +1,1 @@
+The platform uses a unified `make image` command to produce a bootable FAT disk containing the UEFI loader, kernel ELF, and initramfs, followed by `make qemu-smoke` or specific `make qemu-*-gate` targets to run contract-validated integration suites.

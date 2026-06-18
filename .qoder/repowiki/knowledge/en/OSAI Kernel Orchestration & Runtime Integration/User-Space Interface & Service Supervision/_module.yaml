@@ -1,0 +1,16 @@
+schema_version: 1
+module_path: kernel/user_interface
+title: User-Space Interface & Service Supervision
+scope:
+    - kernel/user/
+source_files: []
+depends_on: []
+related_to:
+    - path: userspace/process_runtime
+    - path: userspace/osai_user_lib
+    - path: kernel/runtime_services
+    - path: kernel/scheduler
+    - path: userspace/init_system
+    - path: kernel/memory_mgmt
+    - path: userspace/sshd
+    - path: test_and_build_scripts

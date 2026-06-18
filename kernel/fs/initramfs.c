@@ -1,11 +1,11 @@
-#include <osai/assert.h>
-#include <osai/initramfs.h>
-#include <osai/kheap.h>
-#include <osai/klog.h>
-#include <osai/virtio_blk.h>
+#include <xaios/assert.h>
+#include <xaios/initramfs.h>
+#include <xaios/kheap.h>
+#include <xaios/klog.h>
+#include <xaios/virtio_blk.h>
 
 #define INITFS_SECTOR UINT64_C(1)
-#define INITFS_MAGIC "OSAIROFS2"
+#define INITFS_MAGIC "XAIOSROFS2"
 #define INITFS_MAGIC_LEN 9U
 #define INITFS_MAX_FILES 16U
 #define INITFS_PATH_MAX 64U
@@ -43,7 +43,7 @@ typedef struct initfs_disk_header {
   initfs_disk_entry_t entries[INITFS_MAX_FILES];
 } initfs_disk_header_t;
 
-static osai_initramfs_file_t g_files[INITFS_MAX_FILES];
+static xaios_initramfs_file_t g_files[INITFS_MAX_FILES];
 static char g_file_paths[INITFS_MAX_FILES][INITFS_PATH_MAX];
 static char g_config_service_path[INITFS_PATH_MAX];
 static char g_config_service_manager_path[INITFS_PATH_MAX];
@@ -52,7 +52,7 @@ static char g_config_mode[INITFS_MODE_MAX];
 static char g_config_child_service_path[INITFS_PATH_MAX];
 static char g_config_child_service_parent[INITFS_PATH_MAX];
 static char g_config_child_service_restart[INITFS_MODE_MAX];
-static osai_initramfs_config_t g_config;
+static xaios_initramfs_config_t g_config;
 static uint32_t g_file_count;
 
 static int str_eq(const char *a, const char *b) {
@@ -112,25 +112,25 @@ static void copy_path(char *dst, const char *src) {
   dst[INITFS_PATH_MAX - 1U] = '\0';
 }
 
-static osai_status_t copy_config_value(char *dst, uint32_t capacity,
+static xaios_status_t copy_config_value(char *dst, uint32_t capacity,
                                        const char *src, uint64_t size) {
   if (capacity == 0 || size == 0 || size >= capacity) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   for (uint64_t i = 0; i < size; ++i) {
     char c = src[i];
     if (c == '\r' || c == '\n' || c == '\0') {
-      return OSAI_ERR_INVALID;
+      return XAIOS_ERR_INVALID;
     }
     dst[i] = c;
   }
   dst[size] = '\0';
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t parse_config_line(const char *line, uint64_t len) {
+static xaios_status_t parse_config_line(const char *line, uint64_t len) {
   if (len == 0 || line[0] == '#') {
-    return OSAI_OK;
+    return XAIOS_OK;
   }
   if (len > 8 && bytes_eq(line, "service=", 8)) {
     return copy_config_value(g_config_service_path, INITFS_PATH_MAX, line + 8,
@@ -161,13 +161,13 @@ static osai_status_t parse_config_line(const char *line, uint64_t len) {
                              line + 14, len - 14);
   }
   klog("initramfs: rejected config line len=%lu\n", len);
-  return OSAI_ERR_INVALID;
+  return XAIOS_ERR_INVALID;
 }
 
-static osai_status_t parse_config_manifest(const osai_initramfs_file_t *file) {
+static xaios_status_t parse_config_manifest(const xaios_initramfs_file_t *file) {
   if (file == 0 || file->base == 0 || file->size == 0 ||
       file->manifest == 0) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   g_config_service_path[0] = '\0';
@@ -185,8 +185,8 @@ static osai_status_t parse_config_manifest(const osai_initramfs_file_t *file) {
       if (line_len != 0 && bytes[line_start + line_len - 1U] == '\r') {
         --line_len;
       }
-      if (parse_config_line(bytes + line_start, line_len) != OSAI_OK) {
-        return OSAI_ERR_INVALID;
+      if (parse_config_line(bytes + line_start, line_len) != XAIOS_OK) {
+        return XAIOS_ERR_INVALID;
       }
       line_start = i + 1U;
     }
@@ -200,7 +200,7 @@ static osai_status_t parse_config_manifest(const osai_initramfs_file_t *file) {
       g_config_child_service_parent[0] == '\0' ||
       g_config_child_service_restart[0] == '\0') {
     klog("initramfs: config missing required service/mode/child descriptor\n");
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   g_config.service_path = g_config_service_path;
@@ -218,42 +218,42 @@ static osai_status_t parse_config_manifest(const osai_initramfs_file_t *file) {
   klog("initramfs: child service=%s parent=%s restart=%s\n",
        g_config.child_service_path, g_config.child_service_parent,
        g_config.child_service_restart);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t validate_executable_target(const char *path) {
+static xaios_status_t validate_executable_target(const char *path) {
   for (uint32_t i = 0; i < g_file_count; ++i) {
     if (str_eq(g_files[i].path, path)) {
       if (g_files[i].executable == 0) {
         klog("initramfs: config service target is not executable path=%s\n",
              path);
-        return OSAI_ERR_INVALID;
+        return XAIOS_ERR_INVALID;
       }
-      return OSAI_OK;
+      return XAIOS_OK;
     }
   }
   klog("initramfs: config service target missing path=%s\n",
        path);
-  return OSAI_ERR_NOT_FOUND;
+  return XAIOS_ERR_NOT_FOUND;
 }
 
-static osai_status_t validate_descriptor_target(void) {
+static xaios_status_t validate_descriptor_target(void) {
   for (uint32_t i = 0; i < g_file_count; ++i) {
     if (str_eq(g_files[i].path, g_config.service_descriptor_path)) {
       if (g_files[i].executable != 0 || g_files[i].manifest != 0) {
         klog("initramfs: descriptor has invalid flags path=%s\n",
              g_config.service_descriptor_path);
-        return OSAI_ERR_INVALID;
+        return XAIOS_ERR_INVALID;
       }
-      return OSAI_OK;
+      return XAIOS_OK;
     }
   }
   klog("initramfs: descriptor target missing path=%s\n",
        g_config.service_descriptor_path);
-  return OSAI_ERR_NOT_FOUND;
+  return XAIOS_ERR_NOT_FOUND;
 }
 
-static osai_status_t read_file_bytes(uint64_t offset, uint64_t size,
+static xaios_status_t read_file_bytes(uint64_t offset, uint64_t size,
                                      void *buffer) {
   uint8_t sector[SECTOR_SIZE];
   uint8_t *out = (uint8_t *)buffer;
@@ -268,17 +268,17 @@ static osai_status_t read_file_bytes(uint64_t offset, uint64_t size,
       chunk = size - copied;
     }
     if (virtio_block_read_sector(sector_index, sector, sizeof(sector)) !=
-        OSAI_OK) {
-      return OSAI_ERR_IO;
+        XAIOS_OK) {
+      return XAIOS_ERR_IO;
     }
     bytes_copy(out + copied, sector + sector_offset, chunk);
     copied += chunk;
   }
 
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t validate_header(const initfs_disk_header_t *header) {
+static xaios_status_t validate_header(const initfs_disk_header_t *header) {
   if (!magic_ok(header->magic) || header->version != INITFS_VERSION ||
       header->header_bytes != INITFS_HEADER_BYTES ||
       header->block_size != SECTOR_SIZE ||
@@ -288,12 +288,12 @@ static osai_status_t validate_header(const initfs_disk_header_t *header) {
       header->data_offset < INITFS_DATA_OFFSET ||
       header->image_size < header->data_offset ||
       header->image_size > virtio_block_capacity_sectors() * SECTOR_SIZE) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t validate_entry(const initfs_disk_header_t *header,
+static xaios_status_t validate_entry(const initfs_disk_header_t *header,
                                     const initfs_disk_entry_t *entry,
                                     uint32_t index) {
   if (entry->path[0] != '/' || entry->size == 0 ||
@@ -306,49 +306,49 @@ static osai_status_t validate_entry(const initfs_disk_header_t *header,
     klog("initramfs: bad entry index=%u path0=0x%x offset=%lu size=%lu type=%u\n",
          index, (unsigned)entry->path[0], entry->offset, entry->size,
          entry->type);
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   for (uint32_t i = 0; i < INITFS_PATH_MAX; ++i) {
     if (entry->path[i] == '\0') {
-      return OSAI_OK;
+      return XAIOS_OK;
     }
   }
-  return OSAI_ERR_INVALID;
+  return XAIOS_ERR_INVALID;
 }
 
-osai_status_t initramfs_init(void) {
+xaios_status_t initramfs_init(void) {
   uint8_t header_bytes[INITFS_HEADER_BYTES];
   for (uint64_t i = 0; i < INITFS_HEADER_BYTES / SECTOR_SIZE; ++i) {
     if (virtio_block_read_sector(INITFS_SECTOR + i,
                                  header_bytes + (i * SECTOR_SIZE),
-                                 SECTOR_SIZE) != OSAI_OK) {
+                                 SECTOR_SIZE) != XAIOS_OK) {
       klog("initramfs: failed to read header sector=%lu\n",
            INITFS_SECTOR + i);
-      return OSAI_ERR_IO;
+      return XAIOS_ERR_IO;
     }
   }
 
   const initfs_disk_header_t *header =
       (const initfs_disk_header_t *)(const void *)header_bytes;
-  if (validate_header(header) != OSAI_OK) {
+  if (validate_header(header) != XAIOS_OK) {
     klog("initramfs: bad rofs header magic='%c%c%c%c' version=%u entries=%u header_bytes=%u block=%u\n",
          header->magic[0], header->magic[1], header->magic[2],
          header->magic[3], header->version, header->entry_count,
          header->header_bytes, header->block_size);
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   g_file_count = 0;
   g_config.valid = 0;
   for (uint32_t i = 0; i < header->entry_count; ++i) {
     const initfs_disk_entry_t *entry = &header->entries[i];
-    if (validate_entry(header, entry, i) != OSAI_OK) {
-      return OSAI_ERR_INVALID;
+    if (validate_entry(header, entry, i) != XAIOS_OK) {
+      return XAIOS_ERR_INVALID;
     }
     for (uint32_t existing = 0; existing < g_file_count; ++existing) {
       if (str_eq(entry->path, g_files[existing].path)) {
         klog("initramfs: duplicate path=%s\n", entry->path);
-        return OSAI_ERR_INVALID;
+        return XAIOS_ERR_INVALID;
       }
     }
 
@@ -356,18 +356,18 @@ osai_status_t initramfs_init(void) {
     if (content == 0) {
       klog("initramfs: allocation failed path=%s size=%lu\n",
            entry->path, entry->size);
-      return OSAI_ERR_NO_MEMORY;
+      return XAIOS_ERR_NO_MEMORY;
     }
-    if (read_file_bytes(entry->offset, entry->size, content) != OSAI_OK) {
+    if (read_file_bytes(entry->offset, entry->size, content) != XAIOS_OK) {
       klog("initramfs: failed to read path=%s offset=%lu size=%lu\n",
            entry->path, entry->offset, entry->size);
-      return OSAI_ERR_IO;
+      return XAIOS_ERR_IO;
     }
     uint64_t hash = fnv1a64(content, entry->size);
     if (hash != entry->content_hash) {
       klog("initramfs: hash mismatch path=%s expected=0x%lx actual=0x%lx\n",
            entry->path, entry->content_hash, hash);
-      return OSAI_ERR_INVALID;
+      return XAIOS_ERR_INVALID;
     }
 
     copy_path(g_file_paths[g_file_count], entry->path);
@@ -384,52 +384,52 @@ osai_status_t initramfs_init(void) {
 
   if ((header->entries[header->manifest_index].flags &
        INITFS_ENTRY_FLAG_MANIFEST) == 0 ||
-      parse_config_manifest(&g_files[header->manifest_index]) != OSAI_OK ||
-      validate_executable_target(g_config.service_path) != OSAI_OK ||
-      validate_executable_target(g_config.service_manager_path) != OSAI_OK ||
-      validate_descriptor_target() != OSAI_OK) {
-    return OSAI_ERR_INVALID;
+      parse_config_manifest(&g_files[header->manifest_index]) != XAIOS_OK ||
+      validate_executable_target(g_config.service_path) != XAIOS_OK ||
+      validate_executable_target(g_config.service_manager_path) != XAIOS_OK ||
+      validate_descriptor_target() != XAIOS_OK) {
+    return XAIOS_ERR_INVALID;
   }
 
   klog("initramfs: mounted rofs version=%u files=%u manifest=%s source=virtio-blk\n",
        header->version, g_file_count, g_files[header->manifest_index].path);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t initramfs_lookup(const char *path,
-                               const osai_initramfs_file_t **file) {
+xaios_status_t initramfs_lookup(const char *path,
+                               const xaios_initramfs_file_t **file) {
   if (path == 0 || file == 0) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   for (uint32_t i = 0; i < g_file_count; ++i) {
     if (str_eq(path, g_files[i].path)) {
       *file = &g_files[i];
-      return OSAI_OK;
+      return XAIOS_OK;
     }
   }
-  return OSAI_ERR_NOT_FOUND;
+  return XAIOS_ERR_NOT_FOUND;
 }
 
-const osai_initramfs_config_t *initramfs_config(void) {
+const xaios_initramfs_config_t *initramfs_config(void) {
   return g_config.valid != 0 ? &g_config : 0;
 }
 
 void initramfs_self_test(void) {
-  kassert(initramfs_init() == OSAI_OK);
-  const osai_initramfs_file_t *init = 0;
-  const osai_initramfs_file_t *config = 0;
-  kassert(initramfs_lookup("/init", &init) == OSAI_OK);
+  kassert(initramfs_init() == XAIOS_OK);
+  const xaios_initramfs_file_t *init = 0;
+  const xaios_initramfs_file_t *config = 0;
+  kassert(initramfs_lookup("/init", &init) == XAIOS_OK);
   kassert(init != 0);
   kassert(init->base != 0);
   kassert(init->size != 0);
   kassert(init->executable != 0);
-  kassert(initramfs_lookup("/etc/osai-init.conf", &config) == OSAI_OK);
+  kassert(initramfs_lookup("/etc/xaios-init.conf", &config) == XAIOS_OK);
   kassert(config != 0);
   kassert(config->base != 0);
   kassert(config->size != 0);
   kassert(config->manifest != 0);
   kassert(config->content_hash != 0);
-  const osai_initramfs_config_t *parsed = initramfs_config();
+  const xaios_initramfs_config_t *parsed = initramfs_config();
   kassert(parsed != 0);
   kassert(parsed->valid != 0);
   kassert(str_eq(parsed->service_path, "/init"));
@@ -440,24 +440,24 @@ void initramfs_self_test(void) {
   kassert(str_eq(parsed->child_service_path, "/svc/source-index"));
   kassert(str_eq(parsed->child_service_parent, "/init"));
   kassert(str_eq(parsed->child_service_restart, "never"));
-  kassert(initramfs_lookup("/bin/service-manager", &init) == OSAI_OK);
+  kassert(initramfs_lookup("/bin/service-manager", &init) == XAIOS_OK);
   kassert(init != 0);
   kassert(init->executable != 0);
-  kassert(initramfs_lookup("/bin/osai-worker", &init) == OSAI_OK);
+  kassert(initramfs_lookup("/bin/xaios-worker", &init) == XAIOS_OK);
   kassert(init != 0);
   kassert(init->executable != 0);
   kassert(initramfs_lookup("/etc/services/source-index.svc", &config) ==
-          OSAI_OK);
+          XAIOS_OK);
   kassert(config != 0);
   kassert(config->manifest == 0);
   kassert(config->executable == 0);
-  kassert(initramfs_lookup("/models/cpu-ai-mvp.osaimodel", &config) ==
-          OSAI_OK);
+  kassert(initramfs_lookup("/models/cpu-ai-mvp.xaiosmodel", &config) ==
+          XAIOS_OK);
   kassert(config != 0);
   kassert(config->base != 0);
   kassert(config->size > 256U);
   kassert(config->manifest == 0);
   kassert(config->executable == 0);
-  kassert(initramfs_lookup("/missing", &init) == OSAI_ERR_NOT_FOUND);
+  kassert(initramfs_lookup("/missing", &init) == XAIOS_ERR_NOT_FOUND);
   klog("initramfs: rofs metadata/config self-test passed\n");
 }

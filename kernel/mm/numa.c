@@ -1,11 +1,11 @@
-#include <osai/assert.h>
-#include <osai/klog.h>
-#include <osai/numa.h>
-#include <osai/smp.h>
+#include <xaios/assert.h>
+#include <xaios/klog.h>
+#include <xaios/numa.h>
+#include <xaios/smp.h>
 
 #define PAGE_SIZE UINT64_C(4096)
 
-static osai_numa_node_t g_numa_nodes[OSAI_NUMA_MAX_NODES];
+static xaios_numa_node_t g_numa_nodes[XAIOS_NUMA_MAX_NODES];
 static uint32_t g_numa_node_count;
 
 static uint64_t align_up(uint64_t value, uint64_t align) {
@@ -21,7 +21,7 @@ static int overlaps(uint64_t start, uint64_t end, uint64_t used_start,
   return start < used_end && used_start < end;
 }
 
-static int page_is_reserved(const osai_boot_info_t *boot, uint64_t page) {
+static int page_is_reserved(const xaios_boot_info_t *boot, uint64_t page) {
   uint64_t page_end = page + PAGE_SIZE;
   uint64_t map_start = boot->memory_map;
   uint64_t map_end = boot->memory_map + boot->memory_map_size;
@@ -34,8 +34,8 @@ static int page_is_reserved(const osai_boot_info_t *boot, uint64_t page) {
   return 0;
 }
 
-void numa_init(const osai_boot_info_t *boot) {
-  for (uint32_t i = 0; i < OSAI_NUMA_MAX_NODES; ++i) {
+void numa_init(const xaios_boot_info_t *boot) {
+  for (uint32_t i = 0; i < XAIOS_NUMA_MAX_NODES; ++i) {
     g_numa_nodes[i].node_id = i;
     g_numa_nodes[i].online = 0;
     g_numa_nodes[i].phys_start = 0;
@@ -50,10 +50,10 @@ void numa_init(const osai_boot_info_t *boot) {
   uint64_t lowest = UINT64_C(0xffffffffffffffff);
   uint64_t highest = 0;
   uint64_t offset = 0;
-  while (offset + sizeof(osai_memory_descriptor_t) <= boot->memory_map_size) {
-    const osai_memory_descriptor_t *desc =
-        (const osai_memory_descriptor_t *)(uintptr_t)(boot->memory_map + offset);
-    if (desc->type == OSAI_MEMORY_TYPE_CONVENTIONAL) {
+  while (offset + sizeof(xaios_memory_descriptor_t) <= boot->memory_map_size) {
+    const xaios_memory_descriptor_t *desc =
+        (const xaios_memory_descriptor_t *)(uintptr_t)(boot->memory_map + offset);
+    if (desc->type == XAIOS_MEMORY_TYPE_CONVENTIONAL) {
       uint64_t region_start = desc->physical_start;
       uint64_t region_end =
           region_start + (desc->number_of_pages * PAGE_SIZE);
@@ -73,7 +73,7 @@ void numa_init(const osai_boot_info_t *boot) {
   }
 
   /* Create single node 0 spanning all conventional memory */
-  osai_numa_node_t *node = &g_numa_nodes[0];
+  xaios_numa_node_t *node = &g_numa_nodes[0];
   node->node_id = 0;
   node->online = 1;
   node->phys_start = lowest;
@@ -87,10 +87,10 @@ void numa_init(const osai_boot_info_t *boot) {
   node->total_pages = 0;
   node->free_count = 0;
   offset = 0;
-  while (offset + sizeof(osai_memory_descriptor_t) <= boot->memory_map_size) {
-    const osai_memory_descriptor_t *desc =
-        (const osai_memory_descriptor_t *)(uintptr_t)(boot->memory_map + offset);
-    if (desc->type == OSAI_MEMORY_TYPE_CONVENTIONAL) {
+  while (offset + sizeof(xaios_memory_descriptor_t) <= boot->memory_map_size) {
+    const xaios_memory_descriptor_t *desc =
+        (const xaios_memory_descriptor_t *)(uintptr_t)(boot->memory_map + offset);
+    if (desc->type == XAIOS_MEMORY_TYPE_CONVENTIONAL) {
       uint64_t region_start = desc->physical_start;
       uint64_t region_end =
           region_start + (desc->number_of_pages * PAGE_SIZE);
@@ -100,7 +100,7 @@ void numa_init(const osai_boot_info_t *boot) {
         ++node->total_pages;
         if (page_is_reserved(boot, page)) {
           /* reserved -- skip */
-        } else if (node->free_count < OSAI_NUMA_MAX_FREE_PER_NODE) {
+        } else if (node->free_count < XAIOS_NUMA_MAX_FREE_PER_NODE) {
           node->free_stack[node->free_count++] = page;
         }
         page += PAGE_SIZE;
@@ -117,7 +117,7 @@ void numa_init(const osai_boot_info_t *boot) {
 
 uint32_t numa_node_count(void) { return g_numa_node_count; }
 
-const osai_numa_node_t *numa_node(uint32_t node_id) {
+const xaios_numa_node_t *numa_node(uint32_t node_id) {
   if (node_id >= g_numa_node_count) {
     return 0;
   }
@@ -139,7 +139,7 @@ void *numa_alloc_page_on_node(uint32_t node_id) {
   if (node_id >= g_numa_node_count) {
     return 0;
   }
-  osai_numa_node_t *node = &g_numa_nodes[node_id];
+  xaios_numa_node_t *node = &g_numa_nodes[node_id];
   if (node->free_count == 0) {
     return 0;
   }
@@ -157,15 +157,15 @@ void numa_free_page(void *page) {
   if (node_id == UINT32_C(0xffffffff)) {
     return;
   }
-  osai_numa_node_t *node = &g_numa_nodes[node_id];
-  if (node->free_count < OSAI_NUMA_MAX_FREE_PER_NODE) {
+  xaios_numa_node_t *node = &g_numa_nodes[node_id];
+  if (node->free_count < XAIOS_NUMA_MAX_FREE_PER_NODE) {
     node->free_stack[node->free_count++] = phys;
   }
 }
 
 void numa_self_test(void) {
   kassert(g_numa_node_count >= 1);
-  const osai_numa_node_t *node0 = numa_node(0);
+  const xaios_numa_node_t *node0 = numa_node(0);
   kassert(node0 != 0);
   kassert(node0->online == 1);
   kassert(node0->free_count > 0);

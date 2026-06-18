@@ -1,4 +1,4 @@
-#include <osai_user.h>
+#include <xaios_user.h>
 
 #define SCALE 1024
 #define HIDDEN 2
@@ -68,8 +68,8 @@ static int forward(lstm_layer_t *l0, lstm_layer_t *l1, int a, int b,
 }
 
 static void init_layers(lstm_layer_t *l0, lstm_layer_t *l1) {
-  osai_memzero(l0, sizeof(*l0));
-  osai_memzero(l1, sizeof(*l1));
+  xaios_memzero(l0, sizeof(*l0));
+  xaios_memzero(l1, sizeof(*l1));
   l0->wf[0] = -SCALE;
   l0->wf[1] = -SCALE;
   l0->wi[0] = 4 * SCALE;
@@ -117,20 +117,20 @@ int main(void) {
   };
 
   init_layers(&l0, &l1);
-  osai_memzero(cpu_ai_output, sizeof(cpu_ai_output));
-  osai_log("/bin/lstm-xor: CPU-only two-hidden-layer LSTM XOR example starting\n");
-  osai_log("/bin/lstm-xor: model_arenas=shared_weights kv_cache=private no_gpu=true ai_cell_contract=app_local\n");
-  if (osai_cpu_ai_decode("XOR", 3, cpu_ai_output, sizeof(cpu_ai_output),
+  xaios_memzero(cpu_ai_output, sizeof(cpu_ai_output));
+  xaios_log("/bin/lstm-xor: CPU-only two-hidden-layer LSTM XOR example starting\n");
+  xaios_log("/bin/lstm-xor: model_arenas=shared_weights kv_cache=private no_gpu=true ai_cell_contract=app_local\n");
+  if (xaios_cpu_ai_decode("XOR", 3, cpu_ai_output, sizeof(cpu_ai_output),
                          &cpu_ai_output_size) < 0 ||
       cpu_ai_output_size == 0) {
-    osai_log("/bin/lstm-xor: cpu-ai runtime decode failed\n");
+    xaios_log("/bin/lstm-xor: cpu-ai runtime decode failed\n");
     return 1;
   }
-  osai_log("/bin/lstm-xor: cpu-ai runtime decode=");
-  osai_log(cpu_ai_output);
-  osai_log("\n");
+  xaios_log("/bin/lstm-xor: cpu-ai runtime decode=");
+  xaios_log(cpu_ai_output);
+  xaios_log("\n");
 
-  u64 train_start = osai_clock_nanos();
+  u64 train_start = xaios_clock_nanos();
   int last_errors = 4;
   for (int epoch = 0; epoch < EPOCHS; ++epoch) {
     int errors = 0;
@@ -147,7 +147,7 @@ int main(void) {
     }
     last_errors = errors;
   }
-  u64 train_end = osai_clock_nanos();
+  u64 train_end = xaios_clock_nanos();
 
   int passed = 1;
   for (int i = 0; i < 4; ++i) {
@@ -160,7 +160,7 @@ int main(void) {
 
   u64 run_total = 0;
   for (int run = 0; run < 3; ++run) {
-    u64 start = osai_clock_nanos();
+    u64 start = xaios_clock_nanos();
     volatile int sink = 0;
     for (int repeat = 0; repeat < 128; ++repeat) {
       for (int i = 0; i < 4; ++i) {
@@ -168,17 +168,17 @@ int main(void) {
                         out_w0, out_w1, out_b);
       }
     }
-    u64 end = osai_clock_nanos();
+    u64 end = xaios_clock_nanos();
     run_total += end - start;
   }
 
-  osai_log_u64("/bin/lstm-xor: train_ns=", train_end - train_start, "\n");
-  osai_log_u64("/bin/lstm-xor: run3_avg_ns=", run_total / 3ULL, "\n");
-  osai_log_u64("/bin/lstm-xor: final_errors=", (u64)last_errors, "\n");
+  xaios_log_u64("/bin/lstm-xor: train_ns=", train_end - train_start, "\n");
+  xaios_log_u64("/bin/lstm-xor: run3_avg_ns=", run_total / 3ULL, "\n");
+  xaios_log_u64("/bin/lstm-xor: final_errors=", (u64)last_errors, "\n");
   if (!passed) {
-    osai_log("/bin/lstm-xor: xor solve failed\n");
+    xaios_log("/bin/lstm-xor: xor solve failed\n");
     return 1;
   }
-  osai_log("/bin/lstm-xor: xor solve passed predictions=0,1,1,0\n");
+  xaios_log("/bin/lstm-xor: xor solve passed predictions=0,1,1,0\n");
   return 0;
 }

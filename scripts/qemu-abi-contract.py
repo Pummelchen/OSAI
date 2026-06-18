@@ -5,13 +5,13 @@ from qemu_gate_lib import (BUILD, CONTRACT_PATH, ROOT, contract, now, result,
                            write_report)
 
 
-SCHEMA = "osai.qemu.abi_contract.v1"
+SCHEMA = "xaios.qemu.abi_contract.v1"
 REPORT = BUILD / "qemu-milestone-54-abi-contract.json"
 
 
 def validate_contract_shape(rc_contract):
     failures = []
-    if rc_contract.get("schema") != "osai.qemu.release_candidate_contract.v1":
+    if rc_contract.get("schema") != "xaios.qemu.release_candidate_contract.v1":
         failures.append("release candidate contract schema mismatch")
     if rc_contract.get("status") != "frozen":
         failures.append("release candidate contract is not frozen")

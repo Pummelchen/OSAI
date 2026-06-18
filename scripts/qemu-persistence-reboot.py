@@ -28,7 +28,7 @@ SECOND_BOOT_TARGETS = [
 
 def run_boot(label: str, targets: List[str], timeout_seconds: int) -> int:
     env = os.environ.copy()
-    env["OSAI_QEMU_HOSTFWD_PORT"] = "none"
+    env["XAIOS_QEMU_HOSTFWD_PORT"] = "none"
     proc = subprocess.Popen(
         ["./scripts/run-qemu-aarch64.sh"],
         stdout=subprocess.PIPE,
@@ -75,7 +75,7 @@ def run_boot(label: str, targets: List[str], timeout_seconds: int) -> int:
 
 
 def main() -> int:
-    timeout = int(os.environ.get("OSAI_QEMU_PERSISTENCE_TIMEOUT", "60"))
+    timeout = int(os.environ.get("XAIOS_QEMU_PERSISTENCE_TIMEOUT", "60"))
     first = run_boot("first boot", FIRST_BOOT_TARGETS, timeout)
     if first != 0:
         return first

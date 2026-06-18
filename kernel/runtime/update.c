@@ -1,34 +1,34 @@
-#include <osai/assert.h>
-#include <osai/klog.h>
-#include <osai/mutable_fs.h>
-#include <osai/persistence.h>
-#include <osai/security.h>
-#include <osai/sha256.h>
-#include <osai/syscall.h>
-#include <osai/update.h>
+#include <xaios/assert.h>
+#include <xaios/klog.h>
+#include <xaios/mutable_fs.h>
+#include <xaios/persistence.h>
+#include <xaios/security.h>
+#include <xaios/sha256.h>
+#include <xaios/syscall.h>
+#include <xaios/update.h>
 
 #define UPDATE_TARGET_MAX 32U
 #define UPDATE_LABEL_MAX 32U
 
-typedef enum osai_update_state {
-  OSAI_UPDATE_IDLE = 0,
-  OSAI_UPDATE_PENDING = 1,
-  OSAI_UPDATE_STAGED = 2,
-  OSAI_UPDATE_COMMITTED = 3,
-  OSAI_UPDATE_FAILED = 4,
-  OSAI_UPDATE_RECOVERED = 5,
-  OSAI_UPDATE_ROLLED_BACK = 6,
-} osai_update_state_t;
+typedef enum xaios_update_state {
+  XAIOS_UPDATE_IDLE = 0,
+  XAIOS_UPDATE_PENDING = 1,
+  XAIOS_UPDATE_STAGED = 2,
+  XAIOS_UPDATE_COMMITTED = 3,
+  XAIOS_UPDATE_FAILED = 4,
+  XAIOS_UPDATE_RECOVERED = 5,
+  XAIOS_UPDATE_ROLLED_BACK = 6,
+} xaios_update_state_t;
 
-typedef struct osai_update_transaction {
+typedef struct xaios_update_transaction {
   uint32_t active;
   uint32_t generation;
-  osai_update_state_t state;
+  xaios_update_state_t state;
   char target[UPDATE_TARGET_MAX];
   char rollback_label[UPDATE_LABEL_MAX];
-} osai_update_transaction_t;
+} xaios_update_transaction_t;
 
-static osai_update_transaction_t g_update;
+static xaios_update_transaction_t g_update;
 static uint64_t g_transactions;
 static uint64_t g_stages;
 static uint64_t g_commits;
@@ -41,8 +41,8 @@ static uint64_t g_rollback_points;
 static uint64_t g_rejects;
 
 /* Delivery tracking */
-static osai_update_delivery_status_t g_delivery;
-static osai_sha256_ctx_t g_chunk_hash_ctx;
+static xaios_update_delivery_status_t g_delivery;
+static xaios_sha256_ctx_t g_chunk_hash_ctx;
 static uint32_t g_chunk_staging_active;
 
 static void bytes_zero(void *buffer, uint64_t size) {
@@ -108,35 +108,35 @@ static void copy_token(char *dst, uint64_t capacity, const char *src) {
   dst[i] = '\0';
 }
 
-static const char *state_name(osai_update_state_t state) {
+static const char *state_name(xaios_update_state_t state) {
   switch (state) {
-    case OSAI_UPDATE_IDLE:
+    case XAIOS_UPDATE_IDLE:
       return "idle";
-    case OSAI_UPDATE_PENDING:
+    case XAIOS_UPDATE_PENDING:
       return "pending";
-    case OSAI_UPDATE_STAGED:
+    case XAIOS_UPDATE_STAGED:
       return "staged";
-    case OSAI_UPDATE_COMMITTED:
+    case XAIOS_UPDATE_COMMITTED:
       return "committed";
-    case OSAI_UPDATE_FAILED:
+    case XAIOS_UPDATE_FAILED:
       return "failed";
-    case OSAI_UPDATE_RECOVERED:
+    case XAIOS_UPDATE_RECOVERED:
       return "recovered";
-    case OSAI_UPDATE_ROLLED_BACK:
+    case XAIOS_UPDATE_ROLLED_BACK:
       return "rolled-back";
   }
   return "invalid";
 }
 
-static osai_status_t persist_update_state(void) {
+static xaios_status_t persist_update_state(void) {
   if (mutable_fs_record_update_transaction(
           g_update.generation, state_name(g_update.state), g_update.target,
-          g_update.rollback_label) != OSAI_OK) {
+          g_update.rollback_label) != XAIOS_OK) {
     ++g_rejects;
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
   ++g_records_persisted;
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 void update_runtime_init(void) {
@@ -155,140 +155,140 @@ void update_runtime_init(void) {
   g_delivery.bytes_expected = 0;
   g_delivery.chunks_written = 0;
   g_delivery.hash_verified = 0;
-  g_delivery.last_error = OSAI_OK;
+  g_delivery.last_error = XAIOS_OK;
   g_chunk_staging_active = 0;
   mutable_fs_mkdir("/update");
   klog("update: runtime initialized\n");
 }
 
-osai_status_t update_begin(uint32_t generation, const char *target,
+xaios_status_t update_begin(uint32_t generation, const char *target,
                            const char *signature) {
   if (g_update.active != 0 || generation == 0 ||
       !target_valid(target) ||
       security_authorize_update_signature(
-          signature, OSAI_CAP_UPDATE | OSAI_CAP_ADMIN) != OSAI_OK) {
+          signature, XAIOS_CAP_UPDATE | XAIOS_CAP_ADMIN) != XAIOS_OK) {
     ++g_rejects;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   g_update.active = 1;
   g_update.generation = generation;
-  g_update.state = OSAI_UPDATE_PENDING;
+  g_update.state = XAIOS_UPDATE_PENDING;
   copy_token(g_update.target, sizeof(g_update.target), target);
   copy_token(g_update.rollback_label, sizeof(g_update.rollback_label),
              "update-rp");
-  if (persistence_snapshot_create(OSAI_SNAPSHOT_UPDATE, 0,
-                                  g_update.rollback_label) != OSAI_OK) {
+  if (persistence_snapshot_create(XAIOS_SNAPSHOT_UPDATE, 0,
+                                  g_update.rollback_label) != XAIOS_OK) {
     reset_transaction();
     ++g_rejects;
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
-  if (persist_update_state() != OSAI_OK) {
+  if (persist_update_state() != XAIOS_OK) {
     reset_transaction();
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
 
   ++g_transactions;
   ++g_rollback_points;
   klog("update: transaction begin generation=%u target=%s rollback=%s\n",
        generation, g_update.target, g_update.rollback_label);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t update_stage(void) {
-  if (g_update.active == 0 || g_update.state != OSAI_UPDATE_PENDING) {
+xaios_status_t update_stage(void) {
+  if (g_update.active == 0 || g_update.state != XAIOS_UPDATE_PENDING) {
     ++g_rejects;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
-  g_update.state = OSAI_UPDATE_STAGED;
-  if (persist_update_state() != OSAI_OK ||
-      mutable_fs_commit("update-stage") != OSAI_OK) {
+  g_update.state = XAIOS_UPDATE_STAGED;
+  if (persist_update_state() != XAIOS_OK ||
+      mutable_fs_commit("update-stage") != XAIOS_OK) {
     ++g_rejects;
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
   ++g_stages;
   klog("update: staged generation=%u target=%s\n", g_update.generation,
        g_update.target);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t update_commit(void) {
-  if (g_update.active == 0 || g_update.state != OSAI_UPDATE_STAGED) {
+xaios_status_t update_commit(void) {
+  if (g_update.active == 0 || g_update.state != XAIOS_UPDATE_STAGED) {
     ++g_rejects;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
-  g_update.state = OSAI_UPDATE_COMMITTED;
-  if (persist_update_state() != OSAI_OK ||
-      mutable_fs_commit("update-commit") != OSAI_OK) {
+  g_update.state = XAIOS_UPDATE_COMMITTED;
+  if (persist_update_state() != XAIOS_OK ||
+      mutable_fs_commit("update-commit") != XAIOS_OK) {
     ++g_rejects;
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
   ++g_commits;
   klog("update: committed generation=%u target=%s\n", g_update.generation,
        g_update.target);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t update_fail(void) {
-  if (g_update.active == 0 || g_update.state != OSAI_UPDATE_STAGED) {
+xaios_status_t update_fail(void) {
+  if (g_update.active == 0 || g_update.state != XAIOS_UPDATE_STAGED) {
     ++g_rejects;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
-  g_update.state = OSAI_UPDATE_FAILED;
-  if (persist_update_state() != OSAI_OK) {
+  g_update.state = XAIOS_UPDATE_FAILED;
+  if (persist_update_state() != XAIOS_OK) {
     ++g_rejects;
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
   ++g_failures;
   klog("update: failed generation=%u target=%s\n", g_update.generation,
        g_update.target);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t update_recover_boot(void) {
-  if (g_update.active == 0 || g_update.state != OSAI_UPDATE_FAILED) {
+xaios_status_t update_recover_boot(void) {
+  if (g_update.active == 0 || g_update.state != XAIOS_UPDATE_FAILED) {
     ++g_rejects;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
-  if (persistence_rollback(OSAI_SNAPSHOT_UPDATE, 0) != OSAI_OK ||
-      mutable_fs_rollback() != OSAI_OK) {
+  if (persistence_rollback(XAIOS_SNAPSHOT_UPDATE, 0) != XAIOS_OK ||
+      mutable_fs_rollback() != XAIOS_OK) {
     ++g_rejects;
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
-  g_update.state = OSAI_UPDATE_RECOVERED;
-  if (persist_update_state() != OSAI_OK) {
+  g_update.state = XAIOS_UPDATE_RECOVERED;
+  if (persist_update_state() != XAIOS_OK) {
     ++g_rejects;
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
   ++g_recoveries;
   ++g_boot_fallbacks;
   klog("update: boot fallback recovered generation=%u rollback=%s\n",
        g_update.generation, g_update.rollback_label);
   g_update.active = 0;
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t update_rollback(void) {
-  if (g_update.active == 0 || g_update.state != OSAI_UPDATE_COMMITTED ||
-      security_authorize_rollback(g_update.target, 1) != OSAI_OK) {
+xaios_status_t update_rollback(void) {
+  if (g_update.active == 0 || g_update.state != XAIOS_UPDATE_COMMITTED ||
+      security_authorize_rollback(g_update.target, 1) != XAIOS_OK) {
     ++g_rejects;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
-  if (persistence_rollback(OSAI_SNAPSHOT_UPDATE, 0) != OSAI_OK ||
-      mutable_fs_rollback() != OSAI_OK) {
+  if (persistence_rollback(XAIOS_SNAPSHOT_UPDATE, 0) != XAIOS_OK ||
+      mutable_fs_rollback() != XAIOS_OK) {
     ++g_rejects;
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
-  g_update.state = OSAI_UPDATE_ROLLED_BACK;
-  if (persist_update_state() != OSAI_OK) {
+  g_update.state = XAIOS_UPDATE_ROLLED_BACK;
+  if (persist_update_state() != XAIOS_OK) {
     ++g_rejects;
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
   ++g_rollbacks;
   klog("update: rollback complete generation=%u target=%s\n",
        g_update.generation, g_update.target);
   g_update.active = 0;
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 uint64_t update_transaction_count(void) { return g_transactions; }
@@ -304,37 +304,37 @@ uint64_t update_reject_count(void) { return g_rejects; }
 
 /* ---- Chunked delivery ---- */
 
-osai_status_t update_stage_chunk(const void *data, uint32_t size) {
-  if (g_update.active == 0 || g_update.state != OSAI_UPDATE_PENDING) {
+xaios_status_t update_stage_chunk(const void *data, uint32_t size) {
+  if (g_update.active == 0 || g_update.state != XAIOS_UPDATE_PENDING) {
     ++g_rejects;
-    g_delivery.last_error = OSAI_ERR_INVALID;
-    return OSAI_ERR_INVALID;
+    g_delivery.last_error = XAIOS_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
-  if (data == 0 || size == 0 || size > OSAI_UPDATE_CHUNK_MAX) {
+  if (data == 0 || size == 0 || size > XAIOS_UPDATE_CHUNK_MAX) {
     ++g_rejects;
-    g_delivery.last_error = OSAI_ERR_INVALID;
-    return OSAI_ERR_INVALID;
+    g_delivery.last_error = XAIOS_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   if (g_delivery.bytes_expected > 0 &&
       g_delivery.bytes_received + size > g_delivery.bytes_expected) {
     ++g_rejects;
-    g_delivery.last_error = OSAI_ERR_INVALID;
-    return OSAI_ERR_INVALID;
+    g_delivery.last_error = XAIOS_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   /* Initialize hash context on first chunk */
   if (g_chunk_staging_active == 0) {
-    osai_sha256_init(&g_chunk_hash_ctx);
+    xaios_sha256_init(&g_chunk_hash_ctx);
     g_chunk_staging_active = 1;
   }
 
   /* Append chunk to staging file */
-  int64_t fd = mutable_fs_open(OSAI_UPDATE_STAGING_PATH,
-                                OSAI_MFS_OPEN_WRITE | OSAI_MFS_OPEN_CREATE);
+  int64_t fd = mutable_fs_open(XAIOS_UPDATE_STAGING_PATH,
+                                XAIOS_MFS_OPEN_WRITE | XAIOS_MFS_OPEN_CREATE);
   if (fd < 0) {
     ++g_rejects;
-    g_delivery.last_error = OSAI_ERR_IO;
-    return OSAI_ERR_IO;
+    g_delivery.last_error = XAIOS_ERR_IO;
+    return XAIOS_ERR_IO;
   }
 
   int64_t written = mutable_fs_write_fd((uint32_t)fd, data, size);
@@ -342,30 +342,30 @@ osai_status_t update_stage_chunk(const void *data, uint32_t size) {
 
   if (written < 0 || (uint32_t)written != size) {
     ++g_rejects;
-    g_delivery.last_error = OSAI_ERR_IO;
-    return OSAI_ERR_IO;
+    g_delivery.last_error = XAIOS_ERR_IO;
+    return XAIOS_ERR_IO;
   }
 
   /* Update running hash */
-  osai_sha256_update(&g_chunk_hash_ctx, data, size);
+  xaios_sha256_update(&g_chunk_hash_ctx, data, size);
   g_delivery.bytes_received += size;
   ++g_delivery.chunks_written;
 
   klog("update: chunk staged size=%u total=%lu chunks=%u\n",
        size, g_delivery.bytes_received, g_delivery.chunks_written);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t update_verify_hash(const uint8_t expected_hash[32]) {
+xaios_status_t update_verify_hash(const uint8_t expected_hash[32]) {
   if (g_update.active == 0 || g_chunk_staging_active == 0 ||
       expected_hash == 0) {
     ++g_rejects;
-    g_delivery.last_error = OSAI_ERR_INVALID;
-    return OSAI_ERR_INVALID;
+    g_delivery.last_error = XAIOS_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   uint8_t computed[32];
-  osai_sha256_final(&g_chunk_hash_ctx, computed);
+  xaios_sha256_final(&g_chunk_hash_ctx, computed);
   g_chunk_staging_active = 0;
 
   int match = 1;
@@ -378,27 +378,27 @@ osai_status_t update_verify_hash(const uint8_t expected_hash[32]) {
 
   if (match == 0) {
     g_delivery.hash_verified = 0;
-    g_delivery.last_error = OSAI_ERR_INVALID;
-    g_update.state = OSAI_UPDATE_FAILED;
+    g_delivery.last_error = XAIOS_ERR_INVALID;
+    g_update.state = XAIOS_UPDATE_FAILED;
     persist_update_state();
     ++g_rejects;
     klog("update: hash verification FAILED\n");
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   g_delivery.hash_verified = 1;
-  g_update.state = OSAI_UPDATE_STAGED;
-  if (persist_update_state() != OSAI_OK ||
-      mutable_fs_commit("update-stage-verified") != OSAI_OK) {
+  g_update.state = XAIOS_UPDATE_STAGED;
+  if (persist_update_state() != XAIOS_OK ||
+      mutable_fs_commit("update-stage-verified") != XAIOS_OK) {
     ++g_rejects;
-    g_delivery.last_error = OSAI_ERR_IO;
-    return OSAI_ERR_IO;
+    g_delivery.last_error = XAIOS_ERR_IO;
+    return XAIOS_ERR_IO;
   }
   ++g_stages;
   klog("update: hash verified generation=%u chunks=%u bytes=%lu\n",
        g_update.generation, g_delivery.chunks_written,
        g_delivery.bytes_received);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 static int hex_digit(char ch) {
@@ -414,10 +414,10 @@ static int hex_digit(char ch) {
   return -1;
 }
 
-osai_status_t update_parse_manifest(const char *manifest_data, uint32_t size,
-                                     osai_update_manifest_t *out) {
+xaios_status_t update_parse_manifest(const char *manifest_data, uint32_t size,
+                                     xaios_update_manifest_t *out) {
   if (manifest_data == 0 || size == 0 || out == 0) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   bytes_zero(out, sizeof(*out));
@@ -470,9 +470,9 @@ osai_status_t update_parse_manifest(const char *manifest_data, uint32_t size,
       fields_seen |= 1U;
     } else if (key_len == 6 && key[0] == 't' && key[1] == 'a') {
       /* target */
-      uint32_t copy_len = val_len < OSAI_UPDATE_TARGET_MAX - 1U
+      uint32_t copy_len = val_len < XAIOS_UPDATE_TARGET_MAX - 1U
                               ? val_len
-                              : OSAI_UPDATE_TARGET_MAX - 1U;
+                              : XAIOS_UPDATE_TARGET_MAX - 1U;
       for (uint32_t i = 0; i < copy_len; ++i) {
         out->target[i] = val[i];
       }
@@ -495,7 +495,7 @@ osai_status_t update_parse_manifest(const char *manifest_data, uint32_t size,
           int hi = hex_digit(val[i * 2U]);
           int lo = hex_digit(val[i * 2U + 1U]);
           if (hi < 0 || lo < 0) {
-            return OSAI_ERR_INVALID;
+            return XAIOS_ERR_INVALID;
           }
           out->payload_hash[i] = (uint8_t)((hi << 4) | lo);
         }
@@ -515,16 +515,16 @@ osai_status_t update_parse_manifest(const char *manifest_data, uint32_t size,
   }
 
   if ((fields_seen & 31U) != 31U) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   g_delivery.bytes_expected = out->payload_size;
   klog("update: manifest parsed version=%u target=%s size=%lu generation=%u\n",
        out->version, out->target, out->payload_size, out->generation);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_update_delivery_status_t update_delivery_status(void) {
+xaios_update_delivery_status_t update_delivery_status(void) {
   return g_delivery;
 }
 
@@ -533,10 +533,10 @@ void update_delivery_self_test(void) {
   sha256_self_test();
 
   /* Test manifest parsing */
-  osai_update_manifest_t manifest;
+  xaios_update_manifest_t manifest;
   static const char test_manifest[] =
       "version=1\n"
-      "target=/system/osai\n"
+      "target=/system/xaios\n"
       "size=1024\n"
       "hash=ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\n"
       "generation=42\n";
@@ -544,7 +544,7 @@ void update_delivery_self_test(void) {
   for (uint32_t i = 0; test_manifest[i] != '\0'; ++i) {
     ++mlen;
   }
-  kassert(update_parse_manifest(test_manifest, mlen, &manifest) == OSAI_OK);
+  kassert(update_parse_manifest(test_manifest, mlen, &manifest) == XAIOS_OK);
   kassert(manifest.version == 1);
   kassert(manifest.generation == 42);
   kassert(manifest.payload_size == 1024);
@@ -554,49 +554,49 @@ void update_delivery_self_test(void) {
   /* Test chunked staging + hash verification */
   update_runtime_init();
   static const char k_sig_test[] =
-      "osai-update:v1:gen=10:sha256=ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad:key=OSAI-QEMU-DEV-PUBKEY:sig=ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
-  kassert(update_begin(10, "/system/osai", k_sig_test) == OSAI_OK);
-  kassert(update_stage_chunk("abc", 3) == OSAI_OK);
+      "xaios-update:v1:gen=10:sha256=ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad:key=XAIOS-QEMU-DEV-PUBKEY:sig=ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+  kassert(update_begin(10, "/system/xaios", k_sig_test) == XAIOS_OK);
+  kassert(update_stage_chunk("abc", 3) == XAIOS_OK);
 
   /* Verify with correct hash */
   static const uint8_t correct_hash[32] = {
       0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40,
       0xde, 0x5d, 0xae, 0x22, 0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17,
       0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad};
-  kassert(update_verify_hash(correct_hash) == OSAI_OK);
+  kassert(update_verify_hash(correct_hash) == XAIOS_OK);
 
-  osai_update_delivery_status_t status = update_delivery_status();
+  xaios_update_delivery_status_t status = update_delivery_status();
   kassert(status.bytes_received == 3);
   kassert(status.chunks_written == 1);
   kassert(status.hash_verified == 1);
 
   /* Test bad hash rejection */
   update_runtime_init();
-  kassert(update_begin(11, "/system/osai", k_sig_test) == OSAI_OK);
-  kassert(update_stage_chunk("abc", 3) == OSAI_OK);
+  kassert(update_begin(11, "/system/xaios", k_sig_test) == XAIOS_OK);
+  kassert(update_stage_chunk("abc", 3) == XAIOS_OK);
   static const uint8_t bad_hash[32] = {0};
-  kassert(update_verify_hash(bad_hash) == OSAI_ERR_INVALID);
+  kassert(update_verify_hash(bad_hash) == XAIOS_ERR_INVALID);
 
   klog("update: delivery self-test passed\n");
 }
 
 void update_self_test(void) {
   static const char k_sig2[] =
-      "osai-update:v1:gen=2:sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:key=OSAI-QEMU-DEV-PUBKEY:sig=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+      "xaios-update:v1:gen=2:sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:key=XAIOS-QEMU-DEV-PUBKEY:sig=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
   static const char k_sig3[] =
-      "osai-update:v1:gen=3:sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:key=OSAI-QEMU-DEV-PUBKEY:sig=abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+      "xaios-update:v1:gen=3:sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:key=XAIOS-QEMU-DEV-PUBKEY:sig=abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
 
   update_runtime_init();
-  kassert(update_stage() == OSAI_ERR_INVALID);
-  kassert(update_begin(2, "/", k_sig2) == OSAI_ERR_INVALID);
-  kassert(update_begin(2, "/system/osai", k_sig2) == OSAI_OK);
-  kassert(update_stage() == OSAI_OK);
-  kassert(update_fail() == OSAI_OK);
-  kassert(update_recover_boot() == OSAI_OK);
-  kassert(update_begin(3, "/system/osai", k_sig3) == OSAI_OK);
-  kassert(update_stage() == OSAI_OK);
-  kassert(update_commit() == OSAI_OK);
-  kassert(update_rollback() == OSAI_OK);
+  kassert(update_stage() == XAIOS_ERR_INVALID);
+  kassert(update_begin(2, "/", k_sig2) == XAIOS_ERR_INVALID);
+  kassert(update_begin(2, "/system/xaios", k_sig2) == XAIOS_OK);
+  kassert(update_stage() == XAIOS_OK);
+  kassert(update_fail() == XAIOS_OK);
+  kassert(update_recover_boot() == XAIOS_OK);
+  kassert(update_begin(3, "/system/xaios", k_sig3) == XAIOS_OK);
+  kassert(update_stage() == XAIOS_OK);
+  kassert(update_commit() == XAIOS_OK);
+  kassert(update_rollback() == XAIOS_OK);
 
   kassert(g_transactions == 2);
   kassert(g_stages == 2);

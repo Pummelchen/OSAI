@@ -1,8 +1,8 @@
-# OSAI System Architecture
+# XAIOS System Architecture
 
 ## Overview
 
-OSAI is a freestanding AArch64 operating system designed for CPU-only embedded AI agents. It boots via UEFI, runs on QEMU virt (macOS host), and targets Intel Desktop/Xeon and ARM N1X-class SoCs. The kernel is single-binary, monolithic, and written in C99 with no libc dependency.
+XAIOS is a freestanding AArch64 operating system designed for CPU-only embedded AI agents. It boots via UEFI, runs on QEMU virt (macOS host), and targets Intel Desktop/Xeon and ARM N1X-class SoCs. The kernel is single-binary, monolithic, and written in C99 with no libc dependency.
 
 ## Boot Flow
 
@@ -10,7 +10,7 @@ OSAI is a freestanding AArch64 operating system designed for CPU-only embedded A
 UEFI firmware (AAVMF)
   └─ BOOTAA64.EFI (loader_main.c)
        └─ Loads kernel.elf from FAT partition
-       └─ Passes osai_boot_info_t (memory map, UART base, kernel phys range)
+       └─ Passes xaios_boot_info_t (memory map, UART base, kernel phys range)
             └─ kmain(boot_info)
 ```
 
@@ -55,7 +55,7 @@ After initialization, the kernel runs userspace processes sequentially, then ent
 ## Directory Layout
 
 ```
-OSAI/
+XAIOS/
 ├── boot/uefi/            — UEFI bootloader (PE/COFF, AArch64)
 │   ├── loader_main.c     — EFI entry, ELF loader, page table setup
 │   └── linker.ld         — PE section layout
@@ -121,10 +121,10 @@ OSAI/
 │   │   ├── persistence.c — Disk persistence layer
 │   │   ├── update.c      — Package update/rollback
 │   │   └── sha256.c      — FIPS 180-4 SHA-256
-│   └── include/osai/     — Kernel headers
+│   └── include/xaios/     — Kernel headers
 ├── userspace/
-│   ├── include/          — Userspace SDK header (osai_user.h)
-│   ├── lib/              — Userspace C library (start.S, osai_user.c)
+│   ├── include/          — Userspace SDK header (xaios_user.h)
+│   ├── lib/              — Userspace C library (start.S, xaios_user.c)
 │   ├── init/             — /init process, service-manager, worker
 │   ├── apps/             — User applications (hello, systest, etc.)
 │   └── sshd/             — Userspace SSH daemon

@@ -1,0 +1,4 @@
+- Test scripts use a 'marker-based' validation approach, checking for specific string literals in QEMU output to confirm subsystem functionality.
+- Build scripts enforce strict compiler flags (`-ffreestanding`, `-fno-builtin`, `-Werror`) to ensure a clean, dependency-free freestanding environment.
+- Python automation scripts utilize a shared library (`qemu_gate_lib.py`) for consistent subprocess management, telemetry parsing, and report generation.
+- Image generation scripts define filesystem and model format constants (magic numbers, versions) that are cross-validated against a central JSON contract file.

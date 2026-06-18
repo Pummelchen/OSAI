@@ -1,0 +1,1 @@
+Implements core IPv4 networking protocols including ARP, ICMP, and basic IP header construction for the OSAI kernel.

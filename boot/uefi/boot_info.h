@@ -1,6 +1,6 @@
-#ifndef OSAI_UEFI_BOOT_INFO_WRAPPER_H
-#define OSAI_UEFI_BOOT_INFO_WRAPPER_H
+#ifndef XAIOS_UEFI_BOOT_INFO_WRAPPER_H
+#define XAIOS_UEFI_BOOT_INFO_WRAPPER_H
 
-#include "../../kernel/include/osai/boot_info.h"
+#include "../../kernel/include/xaios/boot_info.h"
 
 #endif

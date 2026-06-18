@@ -2,14 +2,14 @@
 from qemu_gate_lib import BUILD, check_markers, now, parse_telemetry, result, run, status_from_failures, write_report
 
 
-SCHEMA = "osai.qemu.cpu_ai_runtime_simulator.v1"
+SCHEMA = "xaios.qemu.cpu_ai_runtime_simulator.v1"
 REPORT = BUILD / "qemu-milestone-58-cpu-ai-suite.json"
 
 MARKERS = {
     "model_loader_boundary": [
         "cpu-ai-runtime: model manifest loaded",
         "cpu-ai-runtime: model file loaded id=2 name=cpu-ai-mvp",
-        "cpu-ai-runtime: model file path=/models/cpu-ai-mvp.osaimodel admitted arena=2",
+        "cpu-ai-runtime: model file path=/models/cpu-ai-mvp.xaiosmodel admitted arena=2",
         "cpu-ai-runtime: model file loader self-test passed file_loads=1 file_rejects=3",
     ],
     "tokenizer_runtime_boundary": [

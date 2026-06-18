@@ -39,8 +39,8 @@ brew_prefix() {
 }
 
 find_aavmf_firmware() {
-  if [ "${OSAI_AAVMF_CODE:-}" != "" ]; then
-    [ -f "$OSAI_AAVMF_CODE" ] && printf '%s\n' "$OSAI_AAVMF_CODE" && return 0
+  if [ "${XAIOS_AAVMF_CODE:-}" != "" ]; then
+    [ -f "$XAIOS_AAVMF_CODE" ] && printf '%s\n' "$XAIOS_AAVMF_CODE" && return 0
     return 1
   fi
 
@@ -91,11 +91,11 @@ if ! qemu="$(find_tool qemu-system-aarch64 "$QEMU_BIN/qemu-system-aarch64")"; th
 fi
 
 if ! firmware="$(find_aavmf_firmware)"; then
-  printf '%s\n' "error: AArch64 UEFI firmware not found. Set OSAI_AAVMF_CODE=/path/to/edk2-aarch64-code.fd." >&2
+  printf '%s\n' "error: AArch64 UEFI firmware not found. Set XAIOS_AAVMF_CODE=/path/to/edk2-aarch64-code.fd." >&2
   exit 1
 fi
 
-accel="${OSAI_QEMU_ACCEL:-}"
+accel="${XAIOS_QEMU_ACCEL:-}"
 if [ "$accel" = "" ]; then
   accel_help="$("$qemu" -accel help 2>/dev/null || true)"
   if printf '%s\n' "$accel_help" | grep -q '^hvf$'; then
@@ -106,27 +106,27 @@ if [ "$accel" = "" ]; then
 fi
 
 case "$accel" in
-  hvf) cpu="${OSAI_QEMU_CPU:-host}" ;;
-  *) cpu="${OSAI_QEMU_CPU:-cortex-a72}" ;;
+  hvf) cpu="${XAIOS_QEMU_CPU:-host}" ;;
+  *) cpu="${XAIOS_QEMU_CPU:-cortex-a72}" ;;
 esac
 
-machine="${OSAI_QEMU_MACHINE:-virt}"
-memory="${OSAI_QEMU_MEMORY:-2G}"
-smp="${OSAI_QEMU_SMP:-4}"
-image="${OSAI_AARCH64_IMAGE:-build/osai-aarch64.img}"
-test_block_image="${OSAI_TEST_BLOCK_IMAGE:-build/osai-virtio-test.img}"
-persistent_image="${OSAI_PERSISTENT_IMAGE:-build/osai-persistent.img}"
-hostfwd_port="${OSAI_QEMU_HOSTFWD_PORT:-2222}"
+machine="${XAIOS_QEMU_MACHINE:-virt}"
+memory="${XAIOS_QEMU_MEMORY:-2G}"
+smp="${XAIOS_QEMU_SMP:-4}"
+image="${XAIOS_AARCH64_IMAGE:-build/xaios-aarch64.img}"
+test_block_image="${XAIOS_TEST_BLOCK_IMAGE:-build/xaios-virtio-test.img}"
+persistent_image="${XAIOS_PERSISTENT_IMAGE:-build/xaios-persistent.img}"
+hostfwd_port="${XAIOS_QEMU_HOSTFWD_PORT:-2222}"
 
 if [ "$dry_run" -eq 0 ] && [ ! -f "$image" ]; then
   printf '%s\n' "error: missing AArch64 boot image: $image" >&2
-  printf '%s\n' "       Complete WP-003/WP-004 image creation first, or set OSAI_AARCH64_IMAGE=/path/to/image.img." >&2
+  printf '%s\n' "       Complete WP-003/WP-004 image creation first, or set XAIOS_AARCH64_IMAGE=/path/to/image.img." >&2
   exit 1
 fi
 
 if [ "$dry_run" -eq 0 ] && [ ! -f "$test_block_image" ]; then
   printf '%s\n' "error: missing VirtIO test block image: $test_block_image" >&2
-  printf '%s\n' "       Run make image first, or set OSAI_TEST_BLOCK_IMAGE=/path/to/image.img." >&2
+  printf '%s\n' "       Run make image first, or set XAIOS_TEST_BLOCK_IMAGE=/path/to/image.img." >&2
   exit 1
 fi
 
@@ -145,10 +145,10 @@ set -- "$qemu" \
   -serial mon:stdio \
   -drive "if=pflash,format=raw,readonly=on,file=$firmware" \
   -drive "if=virtio,format=raw,file=$image" \
-  -drive "if=none,format=raw,id=osai_test_block,file=$test_block_image" \
-  -device virtio-blk-device,drive=osai_test_block \
-  -drive "if=none,format=raw,id=osai_persistent,file=$persistent_image" \
-  -device virtio-blk-device,drive=osai_persistent
+  -drive "if=none,format=raw,id=xaios_test_block,file=$test_block_image" \
+  -device virtio-blk-device,drive=xaios_test_block \
+  -drive "if=none,format=raw,id=xaios_persistent,file=$persistent_image" \
+  -device virtio-blk-device,drive=xaios_persistent
 
 if [ "$hostfwd_port" = "none" ]; then
   set -- "$@" -netdev user,id=net0

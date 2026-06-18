@@ -8,12 +8,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 
-REPORT_SCHEMA = "osai.qemu.full_os_release_candidate.v1"
-READINESS_SCHEMA = "osai.qemu.hardware_readiness_gate.v1"
-BENCHMARK_SCHEMA = "osai.qemu.correctness_benchmark.v1"
-PREVIEW_SCHEMA = "osai.qemu.preview.v1"
-CPU_MATRIX_SCHEMA = "osai.qemu.cpu_matrix.v1"
-CONTRACT_SCHEMA = "osai.qemu.release_candidate_contract.v1"
+REPORT_SCHEMA = "xaios.qemu.full_os_release_candidate.v1"
+READINESS_SCHEMA = "xaios.qemu.hardware_readiness_gate.v1"
+BENCHMARK_SCHEMA = "xaios.qemu.correctness_benchmark.v1"
+PREVIEW_SCHEMA = "xaios.qemu.preview.v1"
+CPU_MATRIX_SCHEMA = "xaios.qemu.cpu_matrix.v1"
+CONTRACT_SCHEMA = "xaios.qemu.release_candidate_contract.v1"
 CONTRACT_PATH = "contracts/qemu-rc-v1.json"
 
 EXPECTED_BENCHMARK_GATES = [
@@ -91,15 +91,15 @@ def syscall_define_to_name(symbol: str) -> str:
 def parse_syscall_header(root: Path,
                          failures: List[str]) -> Tuple[Dict[str, int],
                                                        Dict[str, int]]:
-    header = root / "kernel/include/osai/syscall.h"
+    header = root / "kernel/include/xaios/syscall.h"
     if not header.exists():
         failures.append("missing syscall ABI header")
         return {}, {}
     text = header.read_text(encoding="utf-8")
     syscalls: Dict[str, int] = {}
     capabilities: Dict[str, int] = {}
-    syscall_re = re.compile(r"#define\s+OSAI_SYSCALL_([A-Z0-9_]+)\s+UINT64_C\((\d+)\)")
-    cap_re = re.compile(r"#define\s+(OSAI_CAP_[A-Z0-9_]+)\s+UINT64_C\((\d+)\)")
+    syscall_re = re.compile(r"#define\s+XAIOS_SYSCALL_([A-Z0-9_]+)\s+UINT64_C\((\d+)\)")
+    cap_re = re.compile(r"#define\s+(XAIOS_CAP_[A-Z0-9_]+)\s+UINT64_C\((\d+)\)")
     for match in syscall_re.finditer(text):
         syscalls[syscall_define_to_name(match.group(1))] = int(match.group(2))
     for match in cap_re.finditer(text):
@@ -250,7 +250,7 @@ def validate_docs(root: Path, failures: List[str]) -> Dict[str, bool]:
     required = {
         "HARDWARE-READINESS.md": [
             "make qemu-full-os-rc",
-            "osai.qemu.full_os_release_candidate.v1",
+            "xaios.qemu.full_os_release_candidate.v1",
             "build/qemu-full-os-rc-report.json",
         ],
         "QEMU-FULL-OS-PLAN.md": [
@@ -285,11 +285,11 @@ def main() -> int:
     root = Path.cwd()
     build_dir = root / "build"
     build_dir.mkdir(exist_ok=True)
-    output_path = Path(os.environ.get("OSAI_QEMU_FULL_OS_RC_OUTPUT",
+    output_path = Path(os.environ.get("XAIOS_QEMU_FULL_OS_RC_OUTPUT",
                                       str(build_dir / "qemu-full-os-rc-report.json")))
 
     env = os.environ.copy()
-    env.setdefault("OSAI_QEMU_SMOKE_TIMEOUT", "60")
+    env.setdefault("XAIOS_QEMU_SMOKE_TIMEOUT", "60")
 
     gate_rc = run(["make", "qemu-readiness-gate"], env)
     failures: List[str] = []

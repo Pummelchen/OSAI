@@ -1,16 +1,16 @@
-# OSAI
+# XAIOS
 
-**OSAI is a server-only operating system for CPU-only embedded AI agents.**
+**XAIOS is a server-only operating system for CPU-only embedded AI agents.**
 
 ## Purpose
 
-OSAI is designed for applications that embed small CPU-only AI agents directly into their own runtime and development workflow. The goal is to make those agents fast, predictable, isolated, and close to the source code they improve.
+XAIOS is designed for applications that embed small CPU-only AI agents directly into their own runtime and development workflow. The goal is to make those agents fast, predictable, isolated, and close to the source code they improve.
 
-OSAI is not a Linux distribution, a BSD fork, a desktop OS, or a GPU AI runtime. It is a specialized server OS architecture for CPU-bound AI workloads and app-local automation.
+XAIOS is not a Linux distribution, a BSD fork, a desktop OS, or a GPU AI runtime. It is a specialized server OS architecture for CPU-bound AI workloads and app-local automation.
 
-## Why OSAI Exists
+## Why XAIOS Exists
 
-Most applications are still operationally dumb: they run business logic, expose APIs, store data, and wait for humans to improve them. OSAI targets a different model where normal applications can become smart applications.
+Most applications are still operationally dumb: they run business logic, expose APIs, store data, and wait for humans to improve them. XAIOS targets a different model where normal applications can become smart applications.
 
 In that model, each application can host an embedded AI agent that:
 
@@ -21,7 +21,7 @@ In that model, each application can host an embedded AI agent that:
 - reviews and syncs changes with Git;
 - hot reloads or redeploys the improved service where appropriate.
 
-The operating system is designed around making that loop fast and predictable. OSAI reduces avoidable interference from scheduling, memory duplication, background work, generic network paths, and cross-core movement on hot AI paths.
+The operating system is designed around making that loop fast and predictable. XAIOS reduces avoidable interference from scheduling, memory duplication, background work, generic network paths, and cross-core movement on hot AI paths.
 
 ## Target Benefits
 
@@ -34,7 +34,7 @@ These are design targets, not guaranteed benchmark claims.
 | Sustained usable CPU-core performance | 2-12% higher |
 | Scheduler jitter/migration | Near-zero on hot AI paths |
 
-OSAI cannot exceed physical silicon limits. It cannot make DRAM, LPDDR, cache fabric, or CPU cores faster than the underlying hardware. The expected gains come from removing avoidable OS interference: scheduler migration, context switching, post-warmup page faults, generic socket overhead, memory duplication, poor NUMA placement, and unrelated interrupts.
+XAIOS cannot exceed physical silicon limits. It cannot make DRAM, LPDDR, cache fabric, or CPU cores faster than the underlying hardware. The expected gains come from removing avoidable OS interference: scheduler migration, context switching, post-warmup page faults, generic socket overhead, memory duplication, poor NUMA placement, and unrelated interrupts.
 
 ## Target Platforms
 
@@ -45,20 +45,20 @@ The implementation order is:
 3. Intel Xeon CPUs for multi-agent, NUMA-aware server deployments.
 4. ARM/NVIDIA N1X/GB10-class systems for CPU-only AI on AArch64 SoCs.
 
-OSAI has no CUDA, Metal, GPU, or vendor accelerator dependency.
+XAIOS has no CUDA, Metal, GPU, or vendor accelerator dependency.
 
 ## Documentation
 
 Detailed design documentation lives in the GitHub Wiki:
 
-- [Wiki Home](https://github.com/Pummelchen/OSAI/wiki)
-- [Architecture](https://github.com/Pummelchen/OSAI/wiki/Architecture)
-- [Implementation Plan](https://github.com/Pummelchen/OSAI/wiki/Implementation-Plan)
-- [Platform Ports](https://github.com/Pummelchen/OSAI/wiki/QEMU-on-macOS)
-- [Performance Targets](https://github.com/Pummelchen/OSAI/wiki/Performance-Targets)
-- [Codex Work Packages](https://github.com/Pummelchen/OSAI/wiki/Codex-Work-Packages)
-- [Project Tracker](https://github.com/Pummelchen/OSAI/wiki/Project-Tracker)
-- [QEMU 100 Completion Plan](https://github.com/Pummelchen/OSAI/wiki/QEMU-100-Completion-Plan)
+- [Wiki Home](https://github.com/Pummelchen/XAIOS/wiki)
+- [Architecture](https://github.com/Pummelchen/XAIOS/wiki/Architecture)
+- [Implementation Plan](https://github.com/Pummelchen/XAIOS/wiki/Implementation-Plan)
+- [Platform Ports](https://github.com/Pummelchen/XAIOS/wiki/QEMU-on-macOS)
+- [Performance Targets](https://github.com/Pummelchen/XAIOS/wiki/Performance-Targets)
+- [Codex Work Packages](https://github.com/Pummelchen/XAIOS/wiki/Codex-Work-Packages)
+- [Project Tracker](https://github.com/Pummelchen/XAIOS/wiki/Project-Tracker)
+- [QEMU 100 Completion Plan](https://github.com/Pummelchen/XAIOS/wiki/QEMU-100-Completion-Plan)
 
 Current local QEMU correctness completion is checked with:
 
@@ -70,13 +70,13 @@ make qemu-readiness-gate
 For local SSH access to the current QEMU remote-login surface:
 
 ```sh
-make osai-ssh-bridge
+make xaios-ssh-bridge
 ssh -p 2222 admin@localhost
 ```
 
 ## Status
 
-OSAI is in design and QEMU bring-up. The macOS/QEMU correctness target now has a bootable AArch64 UEFI path, EL0 userspace, service management, mutable filesystem APIs, VirtIO block/network drivers, AI Cell resource checks, CPU-only runtime fixtures, update/rollback checks, telemetry, and aggregate QEMU gates.
+XAIOS is in design and QEMU bring-up. The macOS/QEMU correctness target now has a bootable AArch64 UEFI path, EL0 userspace, service management, mutable filesystem APIs, VirtIO block/network drivers, AI Cell resource checks, CPU-only runtime fixtures, update/rollback checks, telemetry, and aggregate QEMU gates.
 
 This QEMU status does not mean physical hardware support is complete and does not authorize performance claims. Production-oriented targets still follow in this order: Intel Desktop, Intel Xeon, and ARM/NVIDIA N1X-compatible SoCs.
 

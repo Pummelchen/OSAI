@@ -3,12 +3,12 @@ import os
 from qemu_gate_lib import BUILD, now, result, run, status_from_failures, write_report
 
 
-SCHEMA = "osai.qemu.soak_gate.v1"
+SCHEMA = "xaios.qemu.soak_gate.v1"
 REPORT = BUILD / "qemu-milestone-69-soak-gate.json"
 
 
 def main() -> int:
-    iterations = int(os.environ.get("OSAI_QEMU_SOAK_BOOTS", "5"))
+    iterations = int(os.environ.get("XAIOS_QEMU_SOAK_BOOTS", "5"))
     failures = []
     checks = []
     for index in range(iterations):

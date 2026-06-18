@@ -1,4 +1,4 @@
-#include <osai_user.h>
+#include <xaios_user.h>
 
 static int text_equal(const char *lhs, const char *rhs) {
   if (lhs == 0 || rhs == 0) {
@@ -21,42 +21,42 @@ int main(void) {
   const unsigned char sum_input[4] = {1, 2, 3, 4};
   const unsigned char parity_input[3] = {1, 1, 1};
 
-  osai_log("/bin/mltest: validating general CPU-only ML runtime dispatcher\n");
-  osai_memzero(output, sizeof(output));
-  if (osai_ml_run(OSAI_ML_MODEL_XOR, xor_input, sizeof(xor_input), output,
+  xaios_log("/bin/mltest: validating general CPU-only ML runtime dispatcher\n");
+  xaios_memzero(output, sizeof(output));
+  if (xaios_ml_run(XAIOS_ML_MODEL_XOR, xor_input, sizeof(xor_input), output,
                   sizeof(output), &out) < 0 ||
       !text_equal(output, "1")) {
-    osai_log("/bin/mltest: xor model failed\n");
+    xaios_log("/bin/mltest: xor model failed\n");
     return 1;
   }
-  osai_log("/bin/mltest: xor output=");
-  osai_log(output);
-  osai_log("\n");
+  xaios_log("/bin/mltest: xor output=");
+  xaios_log(output);
+  xaios_log("\n");
 
-  osai_memzero(output, sizeof(output));
-  if (osai_ml_run(OSAI_ML_MODEL_SUM, sum_input, sizeof(sum_input), output,
+  xaios_memzero(output, sizeof(output));
+  if (xaios_ml_run(XAIOS_ML_MODEL_SUM, sum_input, sizeof(sum_input), output,
                   sizeof(output), &out) < 0 ||
       !text_equal(output, "10")) {
-    osai_log("/bin/mltest: sum model failed\n");
+    xaios_log("/bin/mltest: sum model failed\n");
     return 1;
   }
-  osai_log("/bin/mltest: sum output=");
-  osai_log(output);
-  osai_log("\n");
+  xaios_log("/bin/mltest: sum output=");
+  xaios_log(output);
+  xaios_log("\n");
 
-  osai_memzero(output, sizeof(output));
-  if (osai_ml_run(OSAI_ML_MODEL_PARITY, parity_input, sizeof(parity_input),
+  xaios_memzero(output, sizeof(output));
+  if (xaios_ml_run(XAIOS_ML_MODEL_PARITY, parity_input, sizeof(parity_input),
                   output, sizeof(output), &out) < 0 ||
       !text_equal(output, "odd")) {
-    osai_log("/bin/mltest: parity model failed\n");
+    xaios_log("/bin/mltest: parity model failed\n");
     return 1;
   }
-  osai_log("/bin/mltest: parity output=");
-  osai_log(output);
-  osai_log("\n");
+  xaios_log("/bin/mltest: parity output=");
+  xaios_log(output);
+  xaios_log("\n");
 
   /* Q8.8 matmul test: I_2x2 * I_2x2 = I_2x2 */
-  osai_memzero(output, sizeof(output));
+  xaios_memzero(output, sizeof(output));
   {
     unsigned char mm[20];
     mm[0] = 2; mm[1] = 2; mm[2] = 2;
@@ -64,20 +64,20 @@ int main(void) {
     /* Q8.8 identity: 256=1.0 */
     short *ma = (short *)&mm[12];
     ma[0] = 256; ma[1] = 0; ma[2] = 0; ma[3] = 256;
-    if (osai_ml_run(OSAI_ML_MODEL_MATMUL, mm, sizeof(mm), output,
+    if (xaios_ml_run(XAIOS_ML_MODEL_MATMUL, mm, sizeof(mm), output,
                     sizeof(output), &out) < 0) {
-      osai_log("/bin/mltest: matmul model failed\n");
+      xaios_log("/bin/mltest: matmul model failed\n");
       return 1;
     }
     short *mr = (short *)output;
     if (mr[0] != 256 || mr[1] != 0 || mr[2] != 0 || mr[3] != 256) {
-      osai_log("/bin/mltest: matmul result mismatch\n");
+      xaios_log("/bin/mltest: matmul result mismatch\n");
       return 1;
     }
   }
-  osai_log("/bin/mltest: matmul I*I=I passed\n");
+  xaios_log("/bin/mltest: matmul I*I=I passed\n");
 
-  osai_log("/bin/mltest: multi-model CPU-only ML runtime passed\n");
-  osai_log("/bin/mltest: complete\n");
+  xaios_log("/bin/mltest: multi-model CPU-only ML runtime passed\n");
+  xaios_log("/bin/mltest: complete\n");
   return 0;
 }

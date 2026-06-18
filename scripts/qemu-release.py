@@ -5,12 +5,12 @@ from pathlib import Path
 from qemu_gate_lib import BUILD, ROOT, now, status_from_failures, write_report
 
 
-SCHEMA = "osai.qemu.release_manifest.v1"
+SCHEMA = "xaios.qemu.release_manifest.v1"
 REPORT = BUILD / "qemu-release-manifest.json"
 
 ARTIFACTS = [
-    "build/osai-aarch64.img",
-    "build/osai-virtio-test.img",
+    "build/xaios-aarch64.img",
+    "build/xaios-virtio-test.img",
     "contracts/qemu-rc-v1.json",
 ]
 

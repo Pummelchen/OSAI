@@ -1,0 +1,1 @@
+Restrict preemptive scheduling to CPU 0 only — Configure the AArch64 generic timer and GICv3 to drive a round-robin preemptive scheduler exclusively on CPU 0.

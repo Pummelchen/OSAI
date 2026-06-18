@@ -81,12 +81,12 @@ def validate_telemetry_against_contract(telemetry: Dict[str, Any],
 
 
 def parse_syscall_header() -> Tuple[Dict[str, int], Dict[str, int]]:
-    header = ROOT / "kernel/include/osai/syscall.h"
+    header = ROOT / "kernel/include/xaios/syscall.h"
     text = header.read_text(encoding="utf-8")
     syscalls: Dict[str, int] = {}
     capabilities: Dict[str, int] = {}
-    syscall_re = re.compile(r"#define\s+OSAI_SYSCALL_([A-Z0-9_]+)\s+UINT64_C\((\d+)\)")
-    cap_re = re.compile(r"#define\s+(OSAI_CAP_[A-Z0-9_]+)\s+UINT64_C\((\d+)\)")
+    syscall_re = re.compile(r"#define\s+XAIOS_SYSCALL_([A-Z0-9_]+)\s+UINT64_C\((\d+)\)")
+    cap_re = re.compile(r"#define\s+(XAIOS_CAP_[A-Z0-9_]+)\s+UINT64_C\((\d+)\)")
     for match in syscall_re.finditer(text):
         syscalls[match.group(1).lower()] = int(match.group(2))
     for match in cap_re.finditer(text):

@@ -1,0 +1,1 @@
+Minimal UEFI bootloader that loads, validates, and transfers control to an ELF64 kernel image while passing boot information including memory map and UART base address.

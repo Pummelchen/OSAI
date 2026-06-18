@@ -3,7 +3,7 @@ set -eu
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 BUILD_DIR="$ROOT_DIR/build"
-PERSISTENT_IMAGE="${OSAI_PERSISTENT_IMAGE:-$BUILD_DIR/osai-persistent.img}"
+PERSISTENT_IMAGE="${XAIOS_PERSISTENT_IMAGE:-$BUILD_DIR/xaios-persistent.img}"
 
 mkdir -p "$BUILD_DIR"
 

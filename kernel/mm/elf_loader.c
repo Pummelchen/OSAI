@@ -1,8 +1,8 @@
-#include <osai/assert.h>
-#include <osai/elf_loader.h>
-#include <osai/klog.h>
-#include <osai/pmm.h>
-#include <osai/vmm.h>
+#include <xaios/assert.h>
+#include <xaios/elf_loader.h>
+#include <xaios/klog.h>
+#include <xaios/pmm.h>
+#include <xaios/vmm.h>
 
 #define PAGE_SIZE UINT64_C(4096)
 #define ELF_MAGIC UINT32_C(0x464c457f)
@@ -69,11 +69,11 @@ static uint32_t elf_magic_value(const uint8_t *ident) {
          ((uint32_t)ident[2] << 16U) | ((uint32_t)ident[3] << 24U);
 }
 
-static osai_status_t validate_elf(const osai_initramfs_file_t *file,
+static xaios_status_t validate_elf(const xaios_initramfs_file_t *file,
                                   const elf64_ehdr_t **out) {
   if (file == 0 || file->base == 0 || file->size < sizeof(elf64_ehdr_t) ||
       file->executable == 0) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   const elf64_ehdr_t *ehdr = (const elf64_ehdr_t *)file->base;
@@ -82,48 +82,48 @@ static osai_status_t validate_elf(const osai_initramfs_file_t *file,
       ehdr->machine != EM_AARCH64 ||
       ehdr->phentsize != sizeof(elf64_phdr_t) || ehdr->phnum == 0 ||
       ehdr->phoff + ((uint64_t)ehdr->phnum * ehdr->phentsize) > file->size) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
-  if (ehdr->entry < OSAI_USER_BASE || ehdr->entry >= OSAI_USER_LIMIT) {
-    return OSAI_ERR_INVALID;
+  if (ehdr->entry < XAIOS_USER_BASE || ehdr->entry >= XAIOS_USER_LIMIT) {
+    return XAIOS_ERR_INVALID;
   }
 
   *out = ehdr;
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 static uint32_t vmm_flags_from_phdr(const elf64_phdr_t *phdr) {
-  uint32_t flags = OSAI_VMM_PRESENT | OSAI_VMM_USER | OSAI_VMM_NG;
+  uint32_t flags = XAIOS_VMM_PRESENT | XAIOS_VMM_USER | XAIOS_VMM_NG;
   if ((phdr->flags & PF_W) != 0) {
-    flags |= OSAI_VMM_WRITABLE;
+    flags |= XAIOS_VMM_WRITABLE;
   }
   if ((phdr->flags & PF_X) != 0) {
-    flags |= OSAI_VMM_EXECUTABLE;
+    flags |= XAIOS_VMM_EXECUTABLE;
   }
   (void)PF_R;
   return flags;
 }
 
-static osai_status_t track_page(osai_process_aspace_t *aspace, uint64_t va,
+static xaios_status_t track_page(xaios_process_aspace_t *aspace, uint64_t va,
                                 uint64_t pa) {
-  if (aspace->page_count >= OSAI_ELF_LOADER_MAX_PAGES) {
-    return OSAI_ERR_NO_MEMORY;
+  if (aspace->page_count >= XAIOS_ELF_LOADER_MAX_PAGES) {
+    return XAIOS_ERR_NO_MEMORY;
   }
   aspace->page_va[aspace->page_count] = va;
   aspace->page_pa[aspace->page_count] = pa;
   ++aspace->page_count;
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t load_segment(const osai_initramfs_file_t *file,
+static xaios_status_t load_segment(const xaios_initramfs_file_t *file,
                                   const elf64_phdr_t *phdr,
-                                  osai_process_aspace_t *aspace) {
+                                  xaios_process_aspace_t *aspace) {
   if (phdr->memsz < phdr->filesz ||
       phdr->offset + phdr->filesz > file->size ||
-      phdr->vaddr < OSAI_USER_BASE ||
+      phdr->vaddr < XAIOS_USER_BASE ||
       phdr->vaddr + phdr->memsz < phdr->vaddr ||
-      phdr->vaddr + phdr->memsz > OSAI_USER_LIMIT) {
-    return OSAI_ERR_INVALID;
+      phdr->vaddr + phdr->memsz > XAIOS_USER_LIMIT) {
+    return XAIOS_ERR_INVALID;
   }
 
   uint64_t map_start = align_down(phdr->vaddr, PAGE_SIZE);
@@ -133,7 +133,7 @@ static osai_status_t load_segment(const osai_initramfs_file_t *file,
   for (uint64_t va = map_start; va < map_end; va += PAGE_SIZE) {
     void *page = pmm_alloc_page();
     if (page == 0) {
-      return OSAI_ERR_NO_MEMORY;
+      return XAIOS_ERR_NO_MEMORY;
     }
     bytes_zero(page, PAGE_SIZE);
 
@@ -152,32 +152,32 @@ static osai_status_t load_segment(const osai_initramfs_file_t *file,
 
     /* Map into per-process aspace AND global tables */
     if (vmm_map_user_page(va, (uint64_t)(uintptr_t)page, flags,
-                          aspace->l3_phys, aspace->l3_count) != OSAI_OK) {
+                          aspace->l3_phys, aspace->l3_count) != XAIOS_OK) {
       pmm_free_page(page);
-      return OSAI_ERR_INVALID;
+      return XAIOS_ERR_INVALID;
     }
-    if (track_page(aspace, va, (uint64_t)(uintptr_t)page) != OSAI_OK) {
+    if (track_page(aspace, va, (uint64_t)(uintptr_t)page) != XAIOS_OK) {
       pmm_free_page(page);
-      return OSAI_ERR_NO_MEMORY;
+      return XAIOS_ERR_NO_MEMORY;
     }
   }
 
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t elf_loader_load(const osai_initramfs_file_t *file,
-                              osai_process_aspace_t *aspace,
+xaios_status_t elf_loader_load(const xaios_initramfs_file_t *file,
+                              xaios_process_aspace_t *aspace,
                               uint64_t *out_entry) {
   const elf64_ehdr_t *ehdr = 0;
   if (file == 0 || aspace == 0 || out_entry == 0) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
-  if (validate_elf(file, &ehdr) != OSAI_OK) {
-    return OSAI_ERR_INVALID;
+  if (validate_elf(file, &ehdr) != XAIOS_OK) {
+    return XAIOS_ERR_INVALID;
   }
 
   /* Create per-process address space (allocates L3 tables) */
-  vmm_create_user_aspace(aspace->l3_phys, OSAI_ELF_LOADER_L3_TABLES,
+  vmm_create_user_aspace(aspace->l3_phys, XAIOS_ELF_LOADER_L3_TABLES,
                          &aspace->l3_count);
   aspace->page_count = 0;
 
@@ -188,8 +188,8 @@ osai_status_t elf_loader_load(const osai_initramfs_file_t *file,
         (const elf64_phdr_t *)(const void *)(base + ehdr->phoff +
                                              ((uint64_t)i * ehdr->phentsize));
     if (phdr->type == PT_LOAD) {
-      if (load_segment(file, phdr, aspace) != OSAI_OK) {
-        return OSAI_ERR_INVALID;
+      if (load_segment(file, phdr, aspace) != XAIOS_OK) {
+        return XAIOS_ERR_INVALID;
       }
     }
   }
@@ -197,47 +197,47 @@ osai_status_t elf_loader_load(const osai_initramfs_file_t *file,
   *out_entry = ehdr->entry;
   klog("elf_loader: loaded entry=0x%lx pages=%u l3_count=%u\n", ehdr->entry,
        aspace->page_count, aspace->l3_count);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t elf_loader_map_stack(osai_process_aspace_t *aspace,
+xaios_status_t elf_loader_map_stack(xaios_process_aspace_t *aspace,
                                    uint64_t stack_va, uint64_t guard_low,
                                    uint64_t guard_high) {
   if (aspace == 0) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   /* Allocate stack page */
   void *stack_page = pmm_alloc_page();
   if (stack_page == 0) {
-    return OSAI_ERR_NO_MEMORY;
+    return XAIOS_ERR_NO_MEMORY;
   }
   bytes_zero(stack_page, PAGE_SIZE);
 
   /* Unmap guard pages from global tables */
-  kassert(vmm_unmap_page(guard_low) == OSAI_OK);
-  kassert(vmm_unmap_page(guard_high) == OSAI_OK);
+  kassert(vmm_unmap_page(guard_low) == XAIOS_OK);
+  kassert(vmm_unmap_page(guard_high) == XAIOS_OK);
 
   /* Map stack page into per-process aspace AND global tables */
   if (vmm_map_user_page(stack_va, (uint64_t)(uintptr_t)stack_page,
-                        OSAI_VMM_PRESENT | OSAI_VMM_USER |
-                            OSAI_VMM_WRITABLE | OSAI_VMM_NG,
-                        aspace->l3_phys, aspace->l3_count) != OSAI_OK) {
+                        XAIOS_VMM_PRESENT | XAIOS_VMM_USER |
+                            XAIOS_VMM_WRITABLE | XAIOS_VMM_NG,
+                        aspace->l3_phys, aspace->l3_count) != XAIOS_OK) {
     pmm_free_page(stack_page);
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   if (track_page(aspace, stack_va, (uint64_t)(uintptr_t)stack_page) !=
-      OSAI_OK) {
+      XAIOS_OK) {
     pmm_free_page(stack_page);
-    return OSAI_ERR_NO_MEMORY;
+    return XAIOS_ERR_NO_MEMORY;
   }
 
   klog("elf_loader: stack mapped va=0x%lx guard=[0x%lx,0x%lx]\n", stack_va,
        guard_low, guard_high);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-void elf_loader_reclaim(osai_process_aspace_t *aspace, uint64_t mapped_low,
+void elf_loader_reclaim(xaios_process_aspace_t *aspace, uint64_t mapped_low,
                         uint64_t mapped_high) {
   if (aspace == 0) {
     return;
@@ -259,8 +259,8 @@ void elf_loader_reclaim(osai_process_aspace_t *aspace, uint64_t mapped_low,
     for (uint64_t va = mapped_low; va < mapped_high; va += PAGE_SIZE) {
       uint64_t physical = 0;
       uint32_t flags = 0;
-      if (vmm_translate(va, &physical, &flags) == OSAI_OK &&
-          (flags & OSAI_VMM_USER) != 0) {
+      if (vmm_translate(va, &physical, &flags) == XAIOS_OK &&
+          (flags & XAIOS_VMM_USER) != 0) {
         vmm_unmap_user_page(va, aspace->l3_phys, aspace->l3_count);
         pmm_free_page((void *)(uintptr_t)physical);
       }
@@ -279,13 +279,13 @@ void elf_loader_reclaim(osai_process_aspace_t *aspace, uint64_t mapped_low,
 
 void elf_loader_self_test(void) {
   /* Verify ELF validation rejects bad data */
-  osai_initramfs_file_t bad_file;
+  xaios_initramfs_file_t bad_file;
   bytes_zero(&bad_file, sizeof(bad_file));
-  osai_process_aspace_t test_aspace;
+  xaios_process_aspace_t test_aspace;
   bytes_zero(&test_aspace, sizeof(test_aspace));
   uint64_t entry = 0;
-  kassert(elf_loader_load(&bad_file, &test_aspace, &entry) == OSAI_ERR_INVALID);
-  kassert(elf_loader_load(0, &test_aspace, &entry) == OSAI_ERR_INVALID);
-  kassert(elf_loader_load(&bad_file, 0, &entry) == OSAI_ERR_INVALID);
+  kassert(elf_loader_load(&bad_file, &test_aspace, &entry) == XAIOS_ERR_INVALID);
+  kassert(elf_loader_load(0, &test_aspace, &entry) == XAIOS_ERR_INVALID);
+  kassert(elf_loader_load(&bad_file, 0, &entry) == XAIOS_ERR_INVALID);
   klog("elf_loader: self-test passed\n");
 }

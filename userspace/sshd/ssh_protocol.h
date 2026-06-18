@@ -1,10 +1,10 @@
 #ifndef SSH_PROTOCOL_H
 #define SSH_PROTOCOL_H
 
-#include <osai/types.h>
+#include <xaios/types.h>
 
 #define SSH_MAX_PACKET_SIZE 35000U
-#define SSH_VERSION_SERVER "SSH-2.0-OSAI_1.0"
+#define SSH_VERSION_SERVER "SSH-2.0-XAIOS_1.0"
 #define SSH_MSG_KEXINIT 20
 #define SSH_MSG_KEXDH_INIT 30
 #define SSH_MSG_KEXDH_REPLY 31

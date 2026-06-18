@@ -1,36 +1,36 @@
-#include <osai/assert.h>
-#include <osai/klog.h>
-#include <osai/persistence.h>
-#include <osai/virtio_blk.h>
+#include <xaios/assert.h>
+#include <xaios/klog.h>
+#include <xaios/persistence.h>
+#include <xaios/virtio_blk.h>
 
 #define MAX_SNAPSHOTS 8U
 #define SNAPSHOT_LABEL_MAX 32U
 #define PERSISTENCE_SECTOR UINT64_C(3000)
 #define PERSISTENCE_SECTOR_SIZE UINT64_C(512)
-#define PERSISTENCE_MAGIC "OSAIPST1"
+#define PERSISTENCE_MAGIC "XAIOSPST1"
 #define PERSISTENCE_MAGIC_LEN 8U
 #define PERSISTENCE_VERSION 1U
 #define FNV1A64_OFFSET UINT64_C(14695981039346656037)
 #define FNV1A64_PRIME UINT64_C(1099511628211)
 
-typedef struct osai_snapshot_record {
+typedef struct xaios_snapshot_record {
   uint8_t active;
-  osai_snapshot_kind_t kind;
+  xaios_snapshot_kind_t kind;
   uint32_t owner_id;
   uint64_t generation;
   char label[SNAPSHOT_LABEL_MAX];
-} osai_snapshot_record_t;
+} xaios_snapshot_record_t;
 
-typedef struct osai_persistence_disk_record {
+typedef struct xaios_persistence_disk_record {
   uint32_t active;
   uint32_t kind;
   uint32_t owner_id;
   uint32_t reserved;
   uint64_t generation;
   char label[SNAPSHOT_LABEL_MAX];
-} osai_persistence_disk_record_t;
+} xaios_persistence_disk_record_t;
 
-typedef struct osai_persistence_disk_sector {
+typedef struct xaios_persistence_disk_sector {
   char magic[8];
   uint32_t version;
   uint32_t sector_bytes;
@@ -38,11 +38,11 @@ typedef struct osai_persistence_disk_sector {
   uint32_t reserved;
   uint64_t next_generation;
   uint64_t checksum;
-  osai_persistence_disk_record_t records[MAX_SNAPSHOTS];
+  xaios_persistence_disk_record_t records[MAX_SNAPSHOTS];
   uint8_t padding[24];
-} osai_persistence_disk_sector_t;
+} xaios_persistence_disk_sector_t;
 
-static osai_snapshot_record_t g_snapshots[MAX_SNAPSHOTS];
+static xaios_snapshot_record_t g_snapshots[MAX_SNAPSHOTS];
 static uint64_t g_snapshot_count;
 static uint64_t g_rollback_count;
 static uint64_t g_reject_count;
@@ -89,7 +89,7 @@ static uint64_t fnv1a64(const void *buffer, uint64_t size) {
 static void clear_snapshot_table(void) {
   for (uint32_t i = 0; i < MAX_SNAPSHOTS; ++i) {
     g_snapshots[i].active = 0;
-    g_snapshots[i].kind = OSAI_SNAPSHOT_BOOT_CONFIG;
+    g_snapshots[i].kind = XAIOS_SNAPSHOT_BOOT_CONFIG;
     g_snapshots[i].owner_id = 0;
     g_snapshots[i].generation = 0;
     g_snapshots[i].label[0] = '\0';
@@ -111,12 +111,12 @@ static int label_valid(const char *label) {
   return 1;
 }
 
-static int kind_valid(osai_snapshot_kind_t kind) {
-  return kind == OSAI_SNAPSHOT_BOOT_CONFIG ||
-         kind == OSAI_SNAPSHOT_SERVICE ||
-         kind == OSAI_SNAPSHOT_WORKSPACE ||
-         kind == OSAI_SNAPSHOT_SANDBOX ||
-         kind == OSAI_SNAPSHOT_UPDATE;
+static int kind_valid(xaios_snapshot_kind_t kind) {
+  return kind == XAIOS_SNAPSHOT_BOOT_CONFIG ||
+         kind == XAIOS_SNAPSHOT_SERVICE ||
+         kind == XAIOS_SNAPSHOT_WORKSPACE ||
+         kind == XAIOS_SNAPSHOT_SANDBOX ||
+         kind == XAIOS_SNAPSHOT_UPDATE;
 }
 
 static void copy_label(char dst[SNAPSHOT_LABEL_MAX], const char *src) {
@@ -128,9 +128,9 @@ static void copy_label(char dst[SNAPSHOT_LABEL_MAX], const char *src) {
   dst[i] = '\0';
 }
 
-static osai_snapshot_record_t *find_snapshot(osai_snapshot_kind_t kind,
+static xaios_snapshot_record_t *find_snapshot(xaios_snapshot_kind_t kind,
                                              uint32_t owner_id) {
-  osai_snapshot_record_t *best = 0;
+  xaios_snapshot_record_t *best = 0;
   for (uint32_t i = 0; i < MAX_SNAPSHOTS; ++i) {
     if (g_snapshots[i].active != 0 &&
         g_snapshots[i].kind == kind &&
@@ -153,7 +153,7 @@ void persistence_runtime_init(void) {
   klog("persistence: runtime initialized slots=%u\n", MAX_SNAPSHOTS);
 }
 
-static uint64_t persistence_sector_checksum(osai_persistence_disk_sector_t *sector) {
+static uint64_t persistence_sector_checksum(xaios_persistence_disk_sector_t *sector) {
   uint64_t saved = sector->checksum;
   sector->checksum = 0;
   uint64_t checksum = fnv1a64(sector, sizeof(*sector));
@@ -161,8 +161,8 @@ static uint64_t persistence_sector_checksum(osai_persistence_disk_sector_t *sect
   return checksum;
 }
 
-static osai_status_t persistence_flush_to_disk(void) {
-  osai_persistence_disk_sector_t sector;
+static xaios_status_t persistence_flush_to_disk(void) {
+  xaios_persistence_disk_sector_t sector;
   bytes_zero(&sector, sizeof(sector));
   bytes_copy(sector.magic, PERSISTENCE_MAGIC, PERSISTENCE_MAGIC_LEN);
   sector.version = PERSISTENCE_VERSION;
@@ -187,24 +187,24 @@ static osai_status_t persistence_flush_to_disk(void) {
   sector.checksum = persistence_sector_checksum(&sector);
 
   if (virtio_block_write_sector(PERSISTENCE_SECTOR, &sector,
-                                sizeof(sector)) != OSAI_OK) {
+                                sizeof(sector)) != XAIOS_OK) {
     ++g_reject_count;
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
   ++g_disk_write_count;
   klog("persistence: disk write sector=%lu version=%u records=%u checksum=0x%lx\n",
        PERSISTENCE_SECTOR, sector.version, sector.record_count,
        sector.checksum);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t persistence_load_from_disk(void) {
-  osai_persistence_disk_sector_t sector;
+static xaios_status_t persistence_load_from_disk(void) {
+  xaios_persistence_disk_sector_t sector;
   bytes_zero(&sector, sizeof(sector));
   if (virtio_block_read_sector(PERSISTENCE_SECTOR, &sector, sizeof(sector)) !=
-      OSAI_OK) {
+      XAIOS_OK) {
     ++g_reject_count;
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
 
   if (!bytes_eq(sector.magic, PERSISTENCE_MAGIC, PERSISTENCE_MAGIC_LEN) ||
@@ -212,7 +212,7 @@ static osai_status_t persistence_load_from_disk(void) {
       sector.sector_bytes != PERSISTENCE_SECTOR_SIZE ||
       sector.record_count > MAX_SNAPSHOTS) {
     ++g_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   uint64_t expected = sector.checksum;
@@ -222,15 +222,15 @@ static osai_status_t persistence_load_from_disk(void) {
     ++g_reject_count;
     klog("persistence: checksum mismatch expected=0x%lx actual=0x%lx\n",
          expected, actual);
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   for (uint32_t i = 0; i < sector.record_count; ++i) {
     if (sector.records[i].active == 0 ||
-        !kind_valid((osai_snapshot_kind_t)sector.records[i].kind) ||
+        !kind_valid((xaios_snapshot_kind_t)sector.records[i].kind) ||
         !label_valid(sector.records[i].label)) {
       ++g_reject_count;
-      return OSAI_ERR_INVALID;
+      return XAIOS_ERR_INVALID;
     }
   }
 
@@ -238,7 +238,7 @@ static osai_status_t persistence_load_from_disk(void) {
   g_next_generation = sector.next_generation;
   for (uint32_t i = 0; i < sector.record_count; ++i) {
     g_snapshots[i].active = 1;
-    g_snapshots[i].kind = (osai_snapshot_kind_t)sector.records[i].kind;
+    g_snapshots[i].kind = (xaios_snapshot_kind_t)sector.records[i].kind;
     g_snapshots[i].owner_id = sector.records[i].owner_id;
     g_snapshots[i].generation = sector.records[i].generation;
     copy_label(g_snapshots[i].label, sector.records[i].label);
@@ -249,14 +249,14 @@ static osai_status_t persistence_load_from_disk(void) {
   klog("persistence: disk loaded sector=%lu version=%u records=%lu next_generation=%lu\n",
        PERSISTENCE_SECTOR, sector.version, g_snapshot_count,
        g_next_generation);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 static void persistence_probe_existing_disk_state(void) {
-  osai_persistence_disk_sector_t sector;
+  xaios_persistence_disk_sector_t sector;
   bytes_zero(&sector, sizeof(sector));
   if (virtio_block_read_sector(PERSISTENCE_SECTOR, &sector, sizeof(sector)) !=
-      OSAI_OK) {
+      XAIOS_OK) {
     return;
   }
   if (!bytes_eq(sector.magic, PERSISTENCE_MAGIC, PERSISTENCE_MAGIC_LEN) ||
@@ -278,7 +278,7 @@ static void persistence_probe_existing_disk_state(void) {
   }
   for (uint32_t i = 0; i < sector.record_count; ++i) {
     if (sector.records[i].active == 0 ||
-        !kind_valid((osai_snapshot_kind_t)sector.records[i].kind) ||
+        !kind_valid((xaios_snapshot_kind_t)sector.records[i].kind) ||
         !label_valid(sector.records[i].label)) {
       klog("persistence: existing disk state invalid record=%u sector=%lu\n",
            i, PERSISTENCE_SECTOR);
@@ -291,12 +291,12 @@ static void persistence_probe_existing_disk_state(void) {
        sector.record_count, sector.next_generation, sector.checksum);
 }
 
-osai_status_t persistence_snapshot_create(osai_snapshot_kind_t kind,
+xaios_status_t persistence_snapshot_create(xaios_snapshot_kind_t kind,
                                           uint32_t owner_id,
                                           const char *label) {
   if (!kind_valid(kind) || !label_valid(label)) {
     ++g_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   for (uint32_t i = 0; i < MAX_SNAPSHOTS; ++i) {
@@ -311,31 +311,31 @@ osai_status_t persistence_snapshot_create(osai_snapshot_kind_t kind,
       klog("persistence: snapshot kind=%u owner=%u generation=%lu label=%s\n",
            (unsigned)kind, owner_id, g_snapshots[i].generation,
            g_snapshots[i].label);
-      return OSAI_OK;
+      return XAIOS_OK;
     }
   }
 
   ++g_reject_count;
-  return OSAI_ERR_NO_MEMORY;
+  return XAIOS_ERR_NO_MEMORY;
 }
 
-osai_status_t persistence_rollback(osai_snapshot_kind_t kind,
+xaios_status_t persistence_rollback(xaios_snapshot_kind_t kind,
                                    uint32_t owner_id) {
   if (!kind_valid(kind)) {
     ++g_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
-  osai_snapshot_record_t *snapshot = find_snapshot(kind, owner_id);
+  xaios_snapshot_record_t *snapshot = find_snapshot(kind, owner_id);
   if (snapshot == 0) {
     ++g_reject_count;
-    return OSAI_ERR_NOT_FOUND;
+    return XAIOS_ERR_NOT_FOUND;
   }
 
   ++g_rollback_count;
   klog("persistence: rollback kind=%u owner=%u generation=%lu label=%s\n",
        (unsigned)kind, owner_id, snapshot->generation, snapshot->label);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 uint64_t persistence_snapshot_count(void) {
@@ -368,37 +368,37 @@ uint64_t persistence_checksum_error_count(void) {
 
 void persistence_self_test(void) {
   persistence_runtime_init();
-  kassert(sizeof(osai_persistence_disk_sector_t) <= PERSISTENCE_SECTOR_SIZE);
+  kassert(sizeof(xaios_persistence_disk_sector_t) <= PERSISTENCE_SECTOR_SIZE);
   kassert(PERSISTENCE_SECTOR < virtio_block_capacity_sectors());
   klog("persistence: mutable state region sector=%lu sectors=1 read_only_rofs_boundary=sector1+\n",
        PERSISTENCE_SECTOR);
   persistence_probe_existing_disk_state();
 
-  kassert(persistence_snapshot_create(OSAI_SNAPSHOT_BOOT_CONFIG, 0,
-                                      "boot-config-v1") == OSAI_OK);
-  kassert(persistence_snapshot_create(OSAI_SNAPSHOT_SERVICE, 1,
-                                      "init-service") == OSAI_OK);
-  kassert(persistence_snapshot_create(OSAI_SNAPSHOT_WORKSPACE, 1,
-                                      "workspace-r4") == OSAI_OK);
-  kassert(persistence_snapshot_create(OSAI_SNAPSHOT_SANDBOX, 0,
-                                      "sandbox-rev-good") == OSAI_OK);
-  kassert(persistence_snapshot_create(OSAI_SNAPSHOT_UPDATE, 0,
-                                      "update-policy-v1") == OSAI_OK);
-  kassert(persistence_flush_to_disk() == OSAI_OK);
+  kassert(persistence_snapshot_create(XAIOS_SNAPSHOT_BOOT_CONFIG, 0,
+                                      "boot-config-v1") == XAIOS_OK);
+  kassert(persistence_snapshot_create(XAIOS_SNAPSHOT_SERVICE, 1,
+                                      "init-service") == XAIOS_OK);
+  kassert(persistence_snapshot_create(XAIOS_SNAPSHOT_WORKSPACE, 1,
+                                      "workspace-r4") == XAIOS_OK);
+  kassert(persistence_snapshot_create(XAIOS_SNAPSHOT_SANDBOX, 0,
+                                      "sandbox-rev-good") == XAIOS_OK);
+  kassert(persistence_snapshot_create(XAIOS_SNAPSHOT_UPDATE, 0,
+                                      "update-policy-v1") == XAIOS_OK);
+  kassert(persistence_flush_to_disk() == XAIOS_OK);
   clear_snapshot_table();
   kassert(g_snapshot_count == 0);
-  kassert(persistence_load_from_disk() == OSAI_OK);
+  kassert(persistence_load_from_disk() == XAIOS_OK);
   kassert(g_snapshot_count == 5);
 
-  kassert(persistence_rollback(OSAI_SNAPSHOT_BOOT_CONFIG, 0) == OSAI_OK);
-  kassert(persistence_rollback(OSAI_SNAPSHOT_SERVICE, 1) == OSAI_OK);
-  kassert(persistence_rollback(OSAI_SNAPSHOT_WORKSPACE, 1) == OSAI_OK);
-  kassert(persistence_rollback(OSAI_SNAPSHOT_SANDBOX, 0) == OSAI_OK);
-  kassert(persistence_rollback(OSAI_SNAPSHOT_UPDATE, 0) == OSAI_OK);
-  kassert(persistence_rollback(OSAI_SNAPSHOT_WORKSPACE, 99) ==
-          OSAI_ERR_NOT_FOUND);
-  kassert(persistence_snapshot_create((osai_snapshot_kind_t)99, 0,
-                                      "bad") == OSAI_ERR_INVALID);
+  kassert(persistence_rollback(XAIOS_SNAPSHOT_BOOT_CONFIG, 0) == XAIOS_OK);
+  kassert(persistence_rollback(XAIOS_SNAPSHOT_SERVICE, 1) == XAIOS_OK);
+  kassert(persistence_rollback(XAIOS_SNAPSHOT_WORKSPACE, 1) == XAIOS_OK);
+  kassert(persistence_rollback(XAIOS_SNAPSHOT_SANDBOX, 0) == XAIOS_OK);
+  kassert(persistence_rollback(XAIOS_SNAPSHOT_UPDATE, 0) == XAIOS_OK);
+  kassert(persistence_rollback(XAIOS_SNAPSHOT_WORKSPACE, 99) ==
+          XAIOS_ERR_NOT_FOUND);
+  kassert(persistence_snapshot_create((xaios_snapshot_kind_t)99, 0,
+                                      "bad") == XAIOS_ERR_INVALID);
 
   kassert(g_snapshot_count == 5);
   kassert(g_rollback_count == 5);

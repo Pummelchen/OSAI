@@ -21,7 +21,7 @@ kernel_entry:
   /* Seed stack canary from CNTVCT_EL0 */
   isb
   mrs x1, cntvct_el0
-  ldr x2, =0x4F5341495F43414E
+  ldr x2, =0x5841494F535F4341
   eor x1, x1, x2
   ldr x2, =g_stack_canary
   str x1, [x2]

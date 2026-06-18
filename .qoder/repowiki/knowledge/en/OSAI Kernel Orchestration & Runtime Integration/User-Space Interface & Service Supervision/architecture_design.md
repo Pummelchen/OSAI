@@ -1,0 +1,4 @@
+- Entry Point: `syscall_dispatch` in `syscall.c` acts as the primary kernel-user boundary, routing requests via a static table (`g_syscall_table`) that enforces capability checks before execution.
+- Process Management: `user.c` handles ELF loading (`elf_loader_load`), address space isolation (via `vmm_switch_user_aspace`), and state transitions (Loaded, Runnable, Running, etc.) using a fixed-size process table.
+- Service Supervision: `service.c` implements a hierarchical service model (init, manager, worker) with restart policies, crash recovery, and configuration parsing. It exposes an `osctl` command interface for runtime management.
+- Security Boundary: All syscalls validate user buffers (`vmm_validate_user_buffer`) and check credential material (`security_reject_credential_material`) to prevent privilege escalation or data leakage.

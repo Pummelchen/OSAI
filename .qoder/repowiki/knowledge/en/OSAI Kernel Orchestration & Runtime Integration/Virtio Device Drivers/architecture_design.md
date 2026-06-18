@@ -1,0 +1,4 @@
+- **Layered Architecture**: The module is structured into a hardware-abstraction layer (`virtio_transport.c`) and device-specific layers (`virtio_blk.c`, `virtio_net.c`).
+- **Transport Layer**: `virtio_transport.c` manages MMIO discovery (scanning slots at `0x0a000000`), feature negotiation, and vring setup, exposing a generic `virtio_mmio_device_t` interface defined in `kernel/include/osai/virtio_transport.h`.
+- **Device Drivers**: Block and net drivers implement the Virtio specification by allocating aligned vrings via `kheap_calloc`, translating virtual addresses to physical DMA addresses using `vmm_translate`, and managing descriptor chains for I/O operations.
+- **Concurrency Model**: Uses spin-waiting (`virtio_transport_wait_used`) for synchronous I/O completion and a persistent polling mode for the network driver to support continuous packet processing without blocking.

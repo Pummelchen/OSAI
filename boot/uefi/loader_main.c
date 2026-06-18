@@ -10,17 +10,17 @@
 #define ET_EXEC 2
 #define KERNEL_MAX_SIZE (16ULL * 1024ULL * 1024ULL)
 
-#if defined(OSAI_UEFI_TARGET_X86_64)
-#define OSAI_LOADER_TARGET_MESSAGE u"OSAI loader target: x86_64 UEFI\r\n"
-#define OSAI_LOADER_INVALID_MESSAGE u"OSAI loader error: invalid x86_64 ELF64 kernel\r\n"
-#define OSAI_LOADER_EXPECTED_MACHINE EM_X86_64
-#define OSAI_LOADER_UART_BASE UINT64_C(0x000003f8)
+#if defined(XAIOS_UEFI_TARGET_X86_64)
+#define XAIOS_LOADER_TARGET_MESSAGE u"XAIOS loader target: x86_64 UEFI\r\n"
+#define XAIOS_LOADER_INVALID_MESSAGE u"XAIOS loader error: invalid x86_64 ELF64 kernel\r\n"
+#define XAIOS_LOADER_EXPECTED_MACHINE EM_X86_64
+#define XAIOS_LOADER_UART_BASE UINT64_C(0x000003f8)
 #else
-#define OSAI_LOADER_TARGET_MESSAGE u"OSAI loader target: AArch64 UEFI\r\n"
-#define OSAI_LOADER_INVALID_MESSAGE u"OSAI loader error: invalid AArch64 ELF64 kernel\r\n"
-#define OSAI_LOADER_EXPECTED_MACHINE EM_AARCH64
+#define XAIOS_LOADER_TARGET_MESSAGE u"XAIOS loader target: AArch64 UEFI\r\n"
+#define XAIOS_LOADER_INVALID_MESSAGE u"XAIOS loader error: invalid AArch64 ELF64 kernel\r\n"
+#define XAIOS_LOADER_EXPECTED_MACHINE EM_AARCH64
 #define QEMU_VIRT_PL011_UART0_BASE UINT64_C(0x09000000)
-#define OSAI_LOADER_UART_BASE QEMU_VIRT_PL011_UART0_BASE
+#define XAIOS_LOADER_UART_BASE QEMU_VIRT_PL011_UART0_BASE
 #endif
 
 typedef struct elf64_ehdr {
@@ -51,7 +51,7 @@ typedef struct elf64_phdr {
   uint64_t p_align;
 } elf64_phdr_t;
 
-typedef void (*kernel_entry_t)(const osai_boot_info_t *boot_info);
+typedef void (*kernel_entry_t)(const xaios_boot_info_t *boot_info);
 
 static const efi_guid_t EFI_LOADED_IMAGE_PROTOCOL_GUID = {
     0x5b1b31a1U,
@@ -65,7 +65,7 @@ static const efi_guid_t EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID = {
     0x11d2U,
     {0x8e, 0x39, 0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b}};
 
-static osai_boot_info_t g_boot_info;
+static xaios_boot_info_t g_boot_info;
 
 static void *mem_copy(void *dst, const void *src, uint64_t size) {
   unsigned char *d = (unsigned char *)dst;
@@ -133,7 +133,7 @@ static efi_status_t read_kernel_file(efi_system_table_t *system_table,
   uint64_t read_size = KERNEL_MAX_SIZE;
 
   efi_status_t status = root->open(root, &kernel_file,
-                                   u"\\EFI\\OSAI\\kernel.elf",
+                                   u"\\EFI\\XAIOS\\kernel.elf",
                                    EFI_FILE_MODE_READ, 0);
   if (is_error(status)) {
     return status;
@@ -173,7 +173,7 @@ static int validate_elf(const void *kernel_buffer, uint64_t kernel_size,
     return 0;
   }
   if (ehdr->e_type != ET_EXEC ||
-      ehdr->e_machine != OSAI_LOADER_EXPECTED_MACHINE) {
+      ehdr->e_machine != XAIOS_LOADER_EXPECTED_MACHINE) {
     return 0;
   }
   if (ehdr->e_phoff == 0 || ehdr->e_phnum == 0 ||
@@ -272,13 +272,13 @@ static efi_status_t get_memory_map(efi_system_table_t *system_table,
 
 efi_status_t EFIAPI efi_main(efi_handle_t image_handle,
                              efi_system_table_t *system_table) {
-  loader_puts(system_table, u"OSAI loader starting\r\n");
-  loader_puts(system_table, OSAI_LOADER_TARGET_MESSAGE);
+  loader_puts(system_table, u"XAIOS loader starting\r\n");
+  loader_puts(system_table, XAIOS_LOADER_TARGET_MESSAGE);
 
   efi_file_protocol_t *root = 0;
   efi_status_t status = open_root(image_handle, system_table, &root);
   if (is_error(status)) {
-    loader_puts(system_table, u"OSAI loader error: could not open boot volume\r\n");
+    loader_puts(system_table, u"XAIOS loader error: could not open boot volume\r\n");
     return status;
   }
 
@@ -286,29 +286,29 @@ efi_status_t EFIAPI efi_main(efi_handle_t image_handle,
   uint64_t kernel_size = 0;
   status = read_kernel_file(system_table, root, &kernel_buffer, &kernel_size);
   if (is_error(status)) {
-    loader_puts(system_table, u"OSAI loader error: missing kernel.elf\r\n");
+    loader_puts(system_table, u"XAIOS loader error: missing kernel.elf\r\n");
     return status;
   }
-  loader_puts(system_table, u"OSAI loader loaded kernel.elf\r\n");
+  loader_puts(system_table, u"XAIOS loader loaded kernel.elf\r\n");
 
   const elf64_ehdr_t *ehdr = 0;
   if (!validate_elf(kernel_buffer, kernel_size, &ehdr)) {
-    loader_puts(system_table, OSAI_LOADER_INVALID_MESSAGE);
+    loader_puts(system_table, XAIOS_LOADER_INVALID_MESSAGE);
     return EFI_LOAD_ERROR;
   }
-  loader_puts(system_table, u"OSAI loader validated ELF64 kernel\r\n");
+  loader_puts(system_table, u"XAIOS loader validated ELF64 kernel\r\n");
 
   uint64_t kernel_base = 0;
   uint64_t kernel_end = 0;
   status = load_kernel_segments(system_table, kernel_buffer, kernel_size, ehdr,
                                 &kernel_base, &kernel_end);
   if (is_error(status)) {
-    loader_puts(system_table, u"OSAI loader error: failed to load kernel segments\r\n");
+    loader_puts(system_table, u"XAIOS loader error: failed to load kernel segments\r\n");
     return status;
   }
-  loader_puts(system_table, u"OSAI loader copied kernel segments\r\n");
+  loader_puts(system_table, u"XAIOS loader copied kernel segments\r\n");
 
-  loader_puts(system_table, u"OSAI loader exiting boot services\r\n");
+  loader_puts(system_table, u"XAIOS loader exiting boot services\r\n");
 
   void *memory_map = 0;
   uint64_t memory_map_size = 0;
@@ -318,12 +318,12 @@ efi_status_t EFIAPI efi_main(efi_handle_t image_handle,
   status = get_memory_map(system_table, &memory_map, &memory_map_size, &map_key,
                           &descriptor_size, &descriptor_version);
   if (is_error(status)) {
-    loader_puts(system_table, u"OSAI loader error: failed to get memory map\r\n");
+    loader_puts(system_table, u"XAIOS loader error: failed to get memory map\r\n");
     return status;
   }
 
-  g_boot_info.magic = OSAI_BOOT_INFO_MAGIC;
-  g_boot_info.version = OSAI_BOOT_INFO_VERSION;
+  g_boot_info.magic = XAIOS_BOOT_INFO_MAGIC;
+  g_boot_info.version = XAIOS_BOOT_INFO_VERSION;
   g_boot_info.reserved = 0;
   g_boot_info.memory_map = (uint64_t)memory_map;
   g_boot_info.memory_map_size = memory_map_size;
@@ -331,11 +331,11 @@ efi_status_t EFIAPI efi_main(efi_handle_t image_handle,
   g_boot_info.memory_descriptor_version = descriptor_version;
   g_boot_info.kernel_phys_base = kernel_base;
   g_boot_info.kernel_phys_end = kernel_end;
-  g_boot_info.uart_base = OSAI_LOADER_UART_BASE;
+  g_boot_info.uart_base = XAIOS_LOADER_UART_BASE;
 
   status = system_table->boot_services->exit_boot_services(image_handle, map_key);
   if (is_error(status)) {
-    loader_puts(system_table, u"OSAI loader error: ExitBootServices failed\r\n");
+    loader_puts(system_table, u"XAIOS loader error: ExitBootServices failed\r\n");
     return status;
   }
 

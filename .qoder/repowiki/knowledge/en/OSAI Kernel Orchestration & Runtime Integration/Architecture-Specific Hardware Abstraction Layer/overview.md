@@ -1,0 +1,1 @@
+Implements low-level hardware initialization, exception handling, memory management, and SMP support for AArch64 and x86_64 architectures.

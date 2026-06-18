@@ -3,7 +3,7 @@ import json
 from qemu_gate_lib import BUILD, now, result, run, status_from_failures, write_report
 
 
-SCHEMA = "osai.qemu.post51_gate.v1"
+SCHEMA = "xaios.qemu.post51_gate.v1"
 REPORT = BUILD / "qemu-post51-gate-report.json"
 
 MILESTONE_COMMANDS = [

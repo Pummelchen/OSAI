@@ -1,0 +1,5 @@
+- The module is split into a C implementation (`scheduler.c`) for policy and an Assembly implementation (`context.S`) for mechanism.
+- `scheduler.c` manages task state, runqueues, and scheduling decisions (round-robin) using static arrays limited to 16 tasks.
+- `context.S` provides low-level primitives: `irq_entry_full` for saving/restoring full CPU state during interrupts, and `context_switch` for cooperative switching of callee-saved registers.
+- The scheduler integrates with the memory management subsystem via `user_switch_address_space` during context switches to enforce process isolation.
+- A reentrant lock mechanism (`scheduler_lock/unlock`) prevents preemption during critical sections by tracking lock depth.

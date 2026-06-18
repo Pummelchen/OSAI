@@ -1,9 +1,9 @@
-#include <osai/assert.h>
-#include <osai/kheap.h>
-#include <osai/klog.h>
-#include <osai/virtio_blk.h>
-#include <osai/virtio_transport.h>
-#include <osai/vmm.h>
+#include <xaios/assert.h>
+#include <xaios/kheap.h>
+#include <xaios/klog.h>
+#include <xaios/virtio_blk.h>
+#include <xaios/virtio_transport.h>
+#include <xaios/vmm.h>
 
 #define VIRTIO_MMIO_CONFIG 0x100U
 #define VRING_DESC_F_NEXT UINT16_C(1)
@@ -51,8 +51,8 @@ static void bytes_copy(void *dst, const void *src, uint64_t size) {
 static uint64_t dma_address(const void *ptr) {
   uint64_t physical = 0;
   uint32_t flags = 0;
-  kassert(vmm_translate((uint64_t)(uintptr_t)ptr, &physical, &flags) == OSAI_OK);
-  kassert((flags & OSAI_VMM_PRESENT) != 0);
+  kassert(vmm_translate((uint64_t)(uintptr_t)ptr, &physical, &flags) == XAIOS_OK);
+  kassert((flags & XAIOS_VMM_PRESENT) != 0);
   return physical;
 }
 
@@ -62,14 +62,14 @@ static uint64_t read_capacity(const virtio_mmio_device_t *device) {
   return ((uint64_t)high << 32U) | low;
 }
 
-static osai_status_t allocate_driver(void) {
+static xaios_status_t allocate_driver(void) {
   if (g_blk != 0) {
-    return OSAI_OK;
+    return XAIOS_OK;
   }
 
   g_blk = (virtio_block_driver_t *)kheap_calloc(sizeof(*g_blk), 16);
   if (g_blk == 0) {
-    return OSAI_ERR_NO_MEMORY;
+    return XAIOS_ERR_NO_MEMORY;
   }
   g_blk->desc = (virtq_desc_t *)kheap_calloc(sizeof(virtq_desc_t) * VIRTQ_SIZE, 16);
   g_blk->avail = (virtq_avail_t *)kheap_calloc(sizeof(virtq_avail_t), 2);
@@ -79,29 +79,29 @@ static osai_status_t allocate_driver(void) {
   g_blk->status = (uint8_t *)kheap_calloc(1, 1);
   if (g_blk->desc == 0 || g_blk->avail == 0 || g_blk->used == 0 ||
       g_blk->request == 0 || g_blk->dma_sector == 0 || g_blk->status == 0) {
-    return OSAI_ERR_NO_MEMORY;
+    return XAIOS_ERR_NO_MEMORY;
   }
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t virtio_block_init(void) {
-  if (allocate_driver() != OSAI_OK) {
-    return OSAI_ERR_NO_MEMORY;
+xaios_status_t virtio_block_init(void) {
+  if (allocate_driver() != XAIOS_OK) {
+    return XAIOS_ERR_NO_MEMORY;
   }
   if (virtio_transport_find(VIRTIO_DEVICE_BLOCK, "virtio-blk",
-                            &g_blk->device) != OSAI_OK) {
-    return OSAI_ERR_NOT_FOUND;
+                            &g_blk->device) != XAIOS_OK) {
+    return XAIOS_ERR_NOT_FOUND;
   }
-  if (virtio_transport_negotiate_no_features(&g_blk->device) != OSAI_OK) {
-    return OSAI_ERR_IO;
+  if (virtio_transport_negotiate_no_features(&g_blk->device) != XAIOS_OK) {
+    return XAIOS_ERR_IO;
   }
 
   bytes_zero(g_blk->desc, sizeof(virtq_desc_t) * VIRTQ_SIZE);
   bytes_zero(g_blk->avail, sizeof(*g_blk->avail));
   bytes_zero(g_blk->used, sizeof(*g_blk->used));
   if (virtio_transport_setup_queue(&g_blk->device, 0, VIRTQ_SIZE, g_blk->desc,
-                                   g_blk->avail, g_blk->used) != OSAI_OK) {
-    return OSAI_ERR_IO;
+                                   g_blk->avail, g_blk->used) != XAIOS_OK) {
+    return XAIOS_ERR_IO;
   }
 
   g_blk->capacity_sectors = read_capacity(&g_blk->device);
@@ -109,7 +109,7 @@ osai_status_t virtio_block_init(void) {
   g_blk->initialized = 1;
   virtio_transport_set_driver_ok(&g_blk->device);
   klog("virtio-blk: capacity_sectors=%lu\n", g_blk->capacity_sectors);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 uint64_t virtio_block_capacity_sectors(void) {
@@ -119,18 +119,18 @@ uint64_t virtio_block_capacity_sectors(void) {
   return g_blk->capacity_sectors;
 }
 
-static osai_status_t transfer_sector_h(virtio_block_driver_t *drv,
+static xaios_status_t transfer_sector_h(virtio_block_driver_t *drv,
                                         uint64_t sector, void *buffer,
                                         uint64_t buffer_size, uint32_t type) {
   if (drv == 0 || drv->initialized == 0 || buffer == 0 ||
       buffer_size < SECTOR_SIZE) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   if (type != VIRTIO_BLK_T_IN && type != VIRTIO_BLK_T_OUT) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   if (sector >= drv->capacity_sectors) {
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
 
   bytes_zero(drv->desc, sizeof(virtq_desc_t) * VIRTQ_SIZE);
@@ -166,50 +166,50 @@ static osai_status_t transfer_sector_h(virtio_block_driver_t *drv,
   drv->avail->idx = drv->next_avail;
   virtio_transport_notify(&drv->device, 0);
 
-  if (virtio_transport_wait_used(&drv->used->idx, used_target) != OSAI_OK) {
-    return OSAI_ERR_IO;
+  if (virtio_transport_wait_used(&drv->used->idx, used_target) != XAIOS_OK) {
+    return XAIOS_ERR_IO;
   }
   virtio_transport_ack_interrupts(&drv->device);
   if (*drv->status != 0) {
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
 
   if (type == VIRTIO_BLK_T_IN) {
     bytes_copy(buffer, drv->dma_sector, SECTOR_SIZE);
   }
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t virtio_block_transfer_sector(uint64_t sector, void *buffer,
+static xaios_status_t virtio_block_transfer_sector(uint64_t sector, void *buffer,
                                                   uint64_t buffer_size,
                                                   uint32_t type) {
   if (g_blk == 0 || g_blk->initialized == 0) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   return transfer_sector_h(g_blk, sector, buffer, buffer_size, type);
 }
 
-osai_status_t virtio_block_read_sector(uint64_t sector, void *buffer,
+xaios_status_t virtio_block_read_sector(uint64_t sector, void *buffer,
                                        uint64_t buffer_size) {
   return virtio_block_transfer_sector(sector, buffer, buffer_size,
                                       VIRTIO_BLK_T_IN);
 }
 
-osai_status_t virtio_block_write_sector(uint64_t sector, const void *buffer,
+xaios_status_t virtio_block_write_sector(uint64_t sector, const void *buffer,
                                         uint64_t buffer_size) {
   return virtio_block_transfer_sector(sector, (void *)buffer, buffer_size,
                                       VIRTIO_BLK_T_OUT);
 }
 
-osai_status_t virtio_block_open_slot(uint32_t start_slot,
+xaios_status_t virtio_block_open_slot(uint32_t start_slot,
                                      virtio_block_handle_t **out_handle) {
   if (out_handle == 0) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   virtio_block_driver_t *drv =
       (virtio_block_driver_t *)kheap_calloc(sizeof(*drv), 16);
   if (drv == 0) {
-    return OSAI_ERR_NO_MEMORY;
+    return XAIOS_ERR_NO_MEMORY;
   }
   drv->desc = (virtq_desc_t *)kheap_calloc(sizeof(virtq_desc_t) * VIRTQ_SIZE, 16);
   drv->avail = (virtq_avail_t *)kheap_calloc(sizeof(virtq_avail_t), 2);
@@ -219,22 +219,22 @@ osai_status_t virtio_block_open_slot(uint32_t start_slot,
   drv->status = (uint8_t *)kheap_calloc(1, 1);
   if (drv->desc == 0 || drv->avail == 0 || drv->used == 0 ||
       drv->request == 0 || drv->dma_sector == 0 || drv->status == 0) {
-    return OSAI_ERR_NO_MEMORY;
+    return XAIOS_ERR_NO_MEMORY;
   }
 
   if (virtio_transport_find_from(VIRTIO_DEVICE_BLOCK, "virtio-blk-h",
-                                 start_slot, &drv->device) != OSAI_OK) {
-    return OSAI_ERR_NOT_FOUND;
+                                 start_slot, &drv->device) != XAIOS_OK) {
+    return XAIOS_ERR_NOT_FOUND;
   }
-  if (virtio_transport_negotiate_no_features(&drv->device) != OSAI_OK) {
-    return OSAI_ERR_IO;
+  if (virtio_transport_negotiate_no_features(&drv->device) != XAIOS_OK) {
+    return XAIOS_ERR_IO;
   }
   bytes_zero(drv->desc, sizeof(virtq_desc_t) * VIRTQ_SIZE);
   bytes_zero(drv->avail, sizeof(*drv->avail));
   bytes_zero(drv->used, sizeof(*drv->used));
   if (virtio_transport_setup_queue(&drv->device, 0, VIRTQ_SIZE, drv->desc,
-                                   drv->avail, drv->used) != OSAI_OK) {
-    return OSAI_ERR_IO;
+                                   drv->avail, drv->used) != XAIOS_OK) {
+    return XAIOS_ERR_IO;
   }
   drv->capacity_sectors = read_capacity(&drv->device);
   drv->next_avail = 0;
@@ -243,16 +243,16 @@ osai_status_t virtio_block_open_slot(uint32_t start_slot,
   klog("virtio-blk-h: slot=%u capacity_sectors=%lu\n",
        start_slot, drv->capacity_sectors);
   *out_handle = drv;
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t virtio_block_read_sector_h(virtio_block_handle_t *handle,
+xaios_status_t virtio_block_read_sector_h(virtio_block_handle_t *handle,
                                          uint64_t sector, void *buffer,
                                          uint64_t buffer_size) {
   return transfer_sector_h(handle, sector, buffer, buffer_size, VIRTIO_BLK_T_IN);
 }
 
-osai_status_t virtio_block_write_sector_h(virtio_block_handle_t *handle,
+xaios_status_t virtio_block_write_sector_h(virtio_block_handle_t *handle,
                                           uint64_t sector, const void *buffer,
                                           uint64_t buffer_size) {
   return transfer_sector_h(handle, sector, (void *)buffer, buffer_size,
@@ -278,28 +278,28 @@ void virtio_block_self_test(void) {
   uint8_t *write_sector = (uint8_t *)kheap_calloc(SECTOR_SIZE, 16);
   kassert(sector != 0);
   kassert(write_sector != 0);
-  kassert(virtio_block_init() == OSAI_OK);
-  kassert(virtio_block_read_sector(0, sector, SECTOR_SIZE) == OSAI_OK);
+  kassert(virtio_block_init() == XAIOS_OK);
+  kassert(virtio_block_read_sector(0, sector, SECTOR_SIZE) == XAIOS_OK);
   kassert(sector[0] == 'O');
   kassert(sector[1] == 'S');
   kassert(sector[2] == 'A');
   kassert(sector[3] == 'I');
   klog("virtio-blk: sector0 magic='%s'\n", (const char *)sector);
   kassert(virtio_block_read_sector(virtio_block_capacity_sectors(), sector,
-                                   SECTOR_SIZE) == OSAI_ERR_IO);
+                                   SECTOR_SIZE) == XAIOS_ERR_IO);
   for (uint64_t i = 0; i < SECTOR_SIZE; ++i) {
     write_sector[i] = (uint8_t)(i & 0xffU);
   }
   uint64_t write_test_sector = virtio_block_capacity_sectors() - 2U;
   kassert(virtio_block_write_sector(write_test_sector, write_sector,
-                                    SECTOR_SIZE) == OSAI_OK);
+                                    SECTOR_SIZE) == XAIOS_OK);
   bytes_zero(sector, SECTOR_SIZE);
   kassert(virtio_block_read_sector(write_test_sector, sector, SECTOR_SIZE) ==
-          OSAI_OK);
+          XAIOS_OK);
   for (uint64_t i = 0; i < SECTOR_SIZE; ++i) {
     kassert(sector[i] == (uint8_t)(i & 0xffU));
   }
   virtio_transport_reset(&g_blk->device);
-  kassert(virtio_block_init() == OSAI_OK);
+  kassert(virtio_block_init() == XAIOS_OK);
   klog("virtio-blk: read/write/error/reset self-test passed\n");
 }

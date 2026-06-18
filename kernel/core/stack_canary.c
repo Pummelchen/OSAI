@@ -1,7 +1,7 @@
-#include <osai/assert.h>
-#include <osai/klog.h>
-#include <osai/panic.h>
-#include <osai/stack_canary.h>
+#include <xaios/assert.h>
+#include <xaios/klog.h>
+#include <xaios/panic.h>
+#include <xaios/stack_canary.h>
 
 /* Global canary, seeded by entry.S before kmain */
 uint64_t g_stack_canary;
@@ -16,7 +16,7 @@ void stack_canary_init(void) {
   if (g_stack_canary == 0) {
     uint64_t counter;
     __asm__ volatile("isb\n\tmrs %0, cntvct_el0" : "=r"(counter));
-    g_stack_canary = counter ^ OSAI_CANARY_MAGIC;
+    g_stack_canary = counter ^ XAIOS_CANARY_MAGIC;
   }
   g_canary_initialized = 1;
   g_corruption_count = 0;
@@ -48,11 +48,11 @@ uint64_t stack_canary_corruption_count(void) {
 
 static void canary_test_function(uint64_t *corruption_detected) {
   uint64_t saved;
-  OSAI_STACK_PROTECT_BEGIN(saved);
+  XAIOS_STACK_PROTECT_BEGIN(saved);
   /* Simulate some work */
   volatile uint64_t x = 42;
   (void)x;
-  OSAI_STACK_PROTECT_END(saved, "canary_test_function");
+  XAIOS_STACK_PROTECT_END(saved, "canary_test_function");
   *corruption_detected = 0;
 }
 

@@ -1,4 +1,4 @@
-#include <osai/assert.h>
+#include <xaios/assert.h>
 
-void osai_assert_translation_unit_anchor(void) {
+void xaios_assert_translation_unit_anchor(void) {
 }

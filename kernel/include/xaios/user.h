@@ -1,0 +1,76 @@
+#ifndef XAIOS_USER_H
+#define XAIOS_USER_H
+
+#include <xaios/elf_loader.h>
+#include <xaios/initramfs.h>
+#include <xaios/status.h>
+#include <xaios/syscall.h>
+#include <xaios/types.h>
+
+#define XAIOS_MAX_USER_PROCESSES 16U
+#define XAIOS_USER_EXIT_RETURN_MAGIC UINT64_C(0x4f53414900000000)
+#define XAIOS_USER_EXIT_RETURN_MASK UINT64_C(0xffffffff00000000)
+
+typedef enum xaios_user_process_state {
+  XAIOS_USER_PROCESS_EMPTY = 0,
+  XAIOS_USER_PROCESS_LOADED = 1,
+  XAIOS_USER_PROCESS_RUNNABLE = 2,
+  XAIOS_USER_PROCESS_RUNNING = 3,
+  XAIOS_USER_PROCESS_WAITING = 4,
+  XAIOS_USER_PROCESS_EXITED = 5,
+  XAIOS_USER_PROCESS_FAILED = 6,
+} xaios_user_process_state_t;
+
+typedef struct xaios_user_process {
+  uint32_t pid;
+  uint32_t parent_pid;
+  const char *name;
+  xaios_user_process_state_t state;
+  int exit_code;
+  uint64_t capability_mask;
+  uint64_t syscall_count;
+  uint64_t rejected_syscall_count;
+  uint64_t entry;
+  uint64_t stack_top;
+  uint64_t stack_guard_low;
+  uint64_t stack_guard_high;
+  uint64_t mapped_low;
+  uint64_t mapped_high;
+  uint64_t scheduler_ticks;
+  xaios_process_aspace_t aspace;
+} xaios_user_process_t;
+
+void user_process_table_init(void);
+void user_process_lifecycle_self_test(void);
+void user_scheduler_self_test(void);
+const xaios_user_process_t *user_current_process(void);
+xaios_status_t user_process_has_capability(uint64_t capability);
+void user_process_note_syscall(uint32_t rejected);
+uint64_t user_process_note_exit(int exit_code);
+xaios_status_t user_load_init(const xaios_initramfs_file_t *file,
+                             xaios_user_process_t *process);
+xaios_status_t user_load_process(const xaios_initramfs_file_t *file,
+                                uint32_t pid, uint64_t capability_mask,
+                                xaios_user_process_t *process);
+xaios_status_t user_process_snapshot(uint32_t pid, xaios_user_process_t *process);
+xaios_status_t user_process_make_runnable(uint32_t pid, uint32_t parent_pid);
+xaios_status_t user_process_wait(uint32_t pid);
+xaios_status_t user_process_wake(uint32_t pid);
+int user_process_run(const xaios_user_process_t *process);
+int user_process_run_concurrent(const xaios_user_process_t *process);
+void user_process_reclaim_address_space(const xaios_user_process_t *process);
+void user_switch_address_space(uint32_t pid);
+uint64_t user_process_transition_count(void);
+uint64_t user_process_loaded_count(void);
+uint64_t user_process_runnable_count(void);
+uint64_t user_process_running_count(void);
+uint64_t user_process_waiting_count(void);
+uint64_t user_process_exited_count(void);
+uint64_t user_process_failed_count(void);
+uint64_t user_process_reclaim_count(void);
+uint64_t user_process_scheduled_count(void);
+uint64_t user_process_wait_count(void);
+uint64_t user_process_wake_count(void);
+uint64_t user_process_active_count(void);
+
+#endif

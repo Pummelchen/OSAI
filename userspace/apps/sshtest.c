@@ -1,10 +1,10 @@
-#include <osai_user.h>
+#include <xaios_user.h>
 
 static int check_result(const char *command, const char *label, char *output,
                        u64 output_size) {
   u64 out = 0;
-  if (osai_remote_login("admin", command, output, output_size, &out) < 0) {
-    osai_log(label);
+  if (xaios_remote_login("admin", command, output, output_size, &out) < 0) {
+    xaios_log(label);
     return 1;
   }
   return 0;
@@ -12,9 +12,9 @@ static int check_result(const char *command, const char *label, char *output,
 
 int main(void) {
   char output[320];
-  osai_memzero(output, sizeof(output));
+  xaios_memzero(output, sizeof(output));
 
-  osai_log("/bin/sshtest: validating ssh-compatible remote login command surface\n");
+  xaios_log("/bin/sshtest: validating ssh-compatible remote login command surface\n");
 
   if (check_result("pwd", "/bin/sshtest: pwd failed\n", output,
                    sizeof(output)) != 0) {
@@ -213,7 +213,7 @@ int main(void) {
     return 1;
   }
 
-  osai_log("/bin/sshtest: interactive remote login command surface passed\n");
-  osai_log("/bin/sshtest: complete\n");
+  xaios_log("/bin/sshtest: interactive remote login command surface passed\n");
+  xaios_log("/bin/sshtest: complete\n");
   return 0;
 }

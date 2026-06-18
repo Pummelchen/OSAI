@@ -1,10 +1,10 @@
-#include <osai/assert.h>
-#include <osai/klog.h>
-#include <osai/mutable_fs.h>
-#include <osai/virtio_blk.h>
+#include <xaios/assert.h>
+#include <xaios/klog.h>
+#include <xaios/mutable_fs.h>
+#include <xaios/virtio_blk.h>
 
-#define MFS_MAGIC "OSAIMFS2"
-#define MFS_JOURNAL_MAGIC "OSAIMFJ1"
+#define MFS_MAGIC "XAIOSMFS2"
+#define MFS_JOURNAL_MAGIC "XAIOSMFJ1"
 #define MFS_MAGIC_LEN 8U
 #define MFS_VERSION 2U
 #define MFS_JOURNAL_VERSION 1U
@@ -38,7 +38,7 @@
 #define FNV1A64_OFFSET UINT64_C(14695981039346656037)
 #define FNV1A64_PRIME UINT64_C(1099511628211)
 
-typedef struct osai_mfs_node {
+typedef struct xaios_mfs_node {
   uint32_t active;
   uint32_t snapshot_active;
   uint32_t type;
@@ -54,9 +54,9 @@ typedef struct osai_mfs_node {
   uint16_t blocks[MFS_FILE_MAX_BLOCKS];
   uint16_t snapshot_blocks[MFS_FILE_MAX_BLOCKS];
   char path[MFS_PATH_MAX];
-} osai_mfs_node_t;
+} xaios_mfs_node_t;
 
-typedef struct osai_mfs_disk {
+typedef struct xaios_mfs_disk {
   char magic[MFS_MAGIC_LEN];
   uint32_t version;
   uint32_t sector_size;
@@ -71,10 +71,10 @@ typedef struct osai_mfs_disk {
   uint64_t committed_generation;
   uint64_t checksum;
   uint8_t block_bitmap[MFS_DATA_SECTORS];
-  osai_mfs_node_t nodes[MFS_MAX_NODES];
-} osai_mfs_disk_t;
+  xaios_mfs_node_t nodes[MFS_MAX_NODES];
+} xaios_mfs_disk_t;
 
-typedef struct osai_mfs_state {
+typedef struct xaios_mfs_state {
   char magic[MFS_MAGIC_LEN];
   uint32_t version;
   uint32_t sector_size;
@@ -89,10 +89,10 @@ typedef struct osai_mfs_state {
   uint64_t committed_generation;
   uint64_t checksum;
   uint8_t block_bitmap[MFS_V3_DATA_SECTORS];
-  osai_mfs_node_t nodes[MFS_V3_MAX_NODES];
-} osai_mfs_state_t;
+  xaios_mfs_node_t nodes[MFS_V3_MAX_NODES];
+} xaios_mfs_state_t;
 
-typedef struct osai_mfs_journal {
+typedef struct xaios_mfs_journal {
   char magic[MFS_MAGIC_LEN];
   uint32_t version;
   uint32_t state;
@@ -103,17 +103,17 @@ typedef struct osai_mfs_journal {
   uint64_t checksum;
   char path[MFS_PATH_MAX];
   uint8_t padding[368];
-} osai_mfs_journal_t;
+} xaios_mfs_journal_t;
 
-typedef struct osai_mfs_file_handle {
+typedef struct xaios_mfs_file_handle {
   uint32_t in_use;
   uint32_t flags;
   uint64_t cursor;
   char path[MFS_PATH_MAX];
-} osai_mfs_file_handle_t;
+} xaios_mfs_file_handle_t;
 
-static osai_mfs_state_t g_mfs;
-static osai_mfs_file_handle_t g_open_files[MFS_MAX_OPEN_FILES];
+static xaios_mfs_state_t g_mfs;
+static xaios_mfs_file_handle_t g_open_files[MFS_MAX_OPEN_FILES];
 static uint32_t g_mounted;
 static uint32_t g_mount_flags;
 static uint64_t g_mount_count;
@@ -161,7 +161,7 @@ static const char k_boot_log[] = "boot=ok\n";
 static const char k_replayed_state[] =
     "service=/svc/replayed\nstate=recovered\n";
 
-static osai_status_t restore_snapshot_node(osai_mfs_node_t *node);
+static xaios_status_t restore_snapshot_node(xaios_mfs_node_t *node);
 
 static void bytes_zero(void *buffer, uint64_t size) {
   uint8_t *bytes = (uint8_t *)buffer;
@@ -196,14 +196,14 @@ static void set_active_v3(void) {
   g_active_version = MFS_V3_VERSION;
 }
 
-static osai_status_t blk_read(uint64_t sector, void *buf, uint64_t sz) {
+static xaios_status_t blk_read(uint64_t sector, void *buf, uint64_t sz) {
   if (g_persistent_handle != 0) {
     return virtio_block_read_sector_h(g_persistent_handle, sector, buf, sz);
   }
   return virtio_block_read_sector(sector, buf, sz);
 }
 
-static osai_status_t blk_write(uint64_t sector, const void *buf, uint64_t sz) {
+static xaios_status_t blk_write(uint64_t sector, const void *buf, uint64_t sz) {
   if (g_persistent_handle != 0) {
     return virtio_block_write_sector_h(g_persistent_handle, sector, buf, sz);
   }
@@ -256,35 +256,35 @@ static int str_eq(const char *a, const char *b) {
   return *a == '\0' && *b == '\0';
 }
 
-static int node_is_visible(const osai_mfs_node_t *node) {
+static int node_is_visible(const xaios_mfs_node_t *node) {
   return node != 0 && (node->active != 0 || node->snapshot_active != 0);
 }
 
-static osai_status_t append_char(char *buffer, uint64_t capacity,
+static xaios_status_t append_char(char *buffer, uint64_t capacity,
                                  uint64_t *offset, char value) {
   if (buffer == 0 || offset == 0 || *offset + 1U >= capacity) {
-    return OSAI_ERR_NO_MEMORY;
+    return XAIOS_ERR_NO_MEMORY;
   }
   buffer[*offset] = value;
   ++(*offset);
   buffer[*offset] = '\0';
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t append_cstr(char *buffer, uint64_t capacity,
+static xaios_status_t append_cstr(char *buffer, uint64_t capacity,
                                  uint64_t *offset, const char *value) {
   if (value == 0) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   for (uint64_t i = 0; value[i] != '\0'; ++i) {
-    if (append_char(buffer, capacity, offset, value[i]) != OSAI_OK) {
-      return OSAI_ERR_NO_MEMORY;
+    if (append_char(buffer, capacity, offset, value[i]) != XAIOS_OK) {
+      return XAIOS_ERR_NO_MEMORY;
     }
   }
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t append_u32(char *buffer, uint64_t capacity,
+static xaios_status_t append_u32(char *buffer, uint64_t capacity,
                                 uint64_t *offset, uint32_t value) {
   char digits[10];
   uint32_t count = 0;
@@ -297,11 +297,11 @@ static osai_status_t append_u32(char *buffer, uint64_t capacity,
   }
   while (count > 0) {
     --count;
-    if (append_char(buffer, capacity, offset, digits[count]) != OSAI_OK) {
-      return OSAI_ERR_NO_MEMORY;
+    if (append_char(buffer, capacity, offset, digits[count]) != XAIOS_OK) {
+      return XAIOS_ERR_NO_MEMORY;
     }
   }
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 static uint64_t fnv1a64(const void *buffer, uint64_t size) {
@@ -323,7 +323,7 @@ static uint64_t mfs_checksum(const void *data, uint64_t size) {
   return fnv1a64(temp, size);
 }
 
-static uint64_t journal_checksum(osai_mfs_journal_t *journal) {
+static uint64_t journal_checksum(xaios_mfs_journal_t *journal) {
   uint64_t saved = journal->checksum;
   journal->checksum = 0;
   uint64_t checksum = fnv1a64(journal, sizeof(*journal));
@@ -353,9 +353,9 @@ static const char *basename_of(const char *path) {
   return base;
 }
 
-static osai_status_t validate_path(const char *path) {
+static xaios_status_t validate_path(const char *path) {
   if (path == 0 || path[0] != '/') {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   uint32_t len = 0;
   uint32_t last_slash = 1;
@@ -363,30 +363,30 @@ static osai_status_t validate_path(const char *path) {
     char c = path[i];
     if (c == '\0') {
       if (len == 0 || (len > 1U && last_slash != 0)) {
-        return OSAI_ERR_INVALID;
+        return XAIOS_ERR_INVALID;
       }
-      return OSAI_OK;
+      return XAIOS_OK;
     }
     if (c < '!' || c > '~' || c == ':' || c == '*' || c == '?' ||
         c == '"' || c == '<' || c == '>' || c == '|') {
-      return OSAI_ERR_INVALID;
+      return XAIOS_ERR_INVALID;
     }
     if (c == '/' && last_slash != 0 && i != 0) {
-      return OSAI_ERR_INVALID;
+      return XAIOS_ERR_INVALID;
     }
     last_slash = c == '/' ? 1U : 0U;
     ++len;
   }
-  return OSAI_ERR_INVALID;
+  return XAIOS_ERR_INVALID;
 }
 
-static osai_status_t normalize_path(const char *path,
+static xaios_status_t normalize_path(const char *path,
                                     char normalized[MFS_PATH_MAX]) {
-  if (validate_path(path) != OSAI_OK) {
-    return OSAI_ERR_INVALID;
+  if (validate_path(path) != XAIOS_OK) {
+    return XAIOS_ERR_INVALID;
   }
   copy_path(normalized, path);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 static void parent_path_of(const char *path, char parent[MFS_PATH_MAX]) {
@@ -427,9 +427,9 @@ static uint64_t block_count_used(void) {
   return count;
 }
 
-static osai_mfs_node_t *find_node(const char *path, uint32_t include_snapshot) {
+static xaios_mfs_node_t *find_node(const char *path, uint32_t include_snapshot) {
   for (uint32_t i = 0; i < g_active_max_nodes; ++i) {
-    osai_mfs_node_t *node = &g_mfs.nodes[i];
+    xaios_mfs_node_t *node = &g_mfs.nodes[i];
     if ((node->active != 0 ||
          (include_snapshot != 0 && node->snapshot_active != 0)) &&
         str_eq(node->path, path)) {
@@ -439,7 +439,7 @@ static osai_mfs_node_t *find_node(const char *path, uint32_t include_snapshot) {
   return 0;
 }
 
-static osai_mfs_node_t *find_free_node(void) {
+static xaios_mfs_node_t *find_free_node(void) {
   for (uint32_t i = 0; i < g_active_max_nodes; ++i) {
     if (g_mfs.nodes[i].active == 0 && g_mfs.nodes[i].snapshot_active == 0) {
       return &g_mfs.nodes[i];
@@ -448,10 +448,10 @@ static osai_mfs_node_t *find_free_node(void) {
   return 0;
 }
 
-static osai_status_t read_metadata(void) {
+static xaios_status_t read_metadata(void) {
   uint8_t first_sector[MFS_SECTOR_SIZE];
-  if (blk_read(MFS_START_SECTOR, first_sector, sizeof(first_sector)) != OSAI_OK) {
-    return OSAI_ERR_IO;
+  if (blk_read(MFS_START_SECTOR, first_sector, sizeof(first_sector)) != XAIOS_OK) {
+    return XAIOS_ERR_IO;
   }
   uint32_t version = 0;
   bytes_copy(&version, first_sector + MFS_MAGIC_LEN, sizeof(version));
@@ -462,8 +462,8 @@ static osai_status_t read_metadata(void) {
   bytes_copy(raw, first_sector, MFS_SECTOR_SIZE);
   for (uint32_t i = 1; i < sectors; ++i) {
     if (blk_read(MFS_START_SECTOR + i, raw + i * MFS_SECTOR_SIZE,
-                 MFS_SECTOR_SIZE) != OSAI_OK) {
-      return OSAI_ERR_IO;
+                 MFS_SECTOR_SIZE) != XAIOS_OK) {
+      return XAIOS_ERR_IO;
     }
   }
   /* compute and store checksum over raw data before deserializing */
@@ -489,19 +489,19 @@ static osai_status_t read_metadata(void) {
   bytes_copy(&g_mfs.checksum, raw + p, 8); p += 8;
   bytes_copy(g_mfs.block_bitmap, raw + p, disk_bitmap); p += disk_bitmap;
   for (uint32_t i = 0; i < disk_max_nodes; ++i) {
-    bytes_copy(&g_mfs.nodes[i], raw + p, sizeof(osai_mfs_node_t));
-    p += sizeof(osai_mfs_node_t);
+    bytes_copy(&g_mfs.nodes[i], raw + p, sizeof(xaios_mfs_node_t));
+    p += sizeof(xaios_mfs_node_t);
   }
   for (uint32_t i = disk_max_nodes; i < MFS_V3_MAX_NODES; ++i) {
-    bytes_zero(&g_mfs.nodes[i], sizeof(osai_mfs_node_t));
+    bytes_zero(&g_mfs.nodes[i], sizeof(xaios_mfs_node_t));
   }
   for (uint32_t i = disk_bitmap; i < MFS_V3_DATA_SECTORS; ++i) {
     g_mfs.block_bitmap[i] = 0;
   }
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t write_metadata(void) {
+static xaios_status_t write_metadata(void) {
   uint8_t raw[MFS_V3_METADATA_SECTORS * MFS_SECTOR_SIZE];
   bytes_zero(raw, sizeof(raw));
   uint64_t p = 0;
@@ -526,8 +526,8 @@ static osai_status_t write_metadata(void) {
                                 ? MFS_V3_MAX_NODES : MFS_MAX_NODES;
   bytes_copy(raw + p, g_mfs.block_bitmap, disk_bitmap); p += disk_bitmap;
   for (uint32_t i = 0; i < disk_max_nodes; ++i) {
-    bytes_copy(raw + p, &g_mfs.nodes[i], sizeof(osai_mfs_node_t));
-    p += sizeof(osai_mfs_node_t);
+    bytes_copy(raw + p, &g_mfs.nodes[i], sizeof(xaios_mfs_node_t));
+    p += sizeof(xaios_mfs_node_t);
   }
   uint64_t total_bytes = (uint64_t)g_active_metadata_sectors * MFS_SECTOR_SIZE;
   g_mfs.checksum = mfs_checksum(raw, total_bytes);
@@ -535,59 +535,59 @@ static osai_status_t write_metadata(void) {
   uint8_t sector[MFS_SECTOR_SIZE];
   for (uint32_t i = 0; i < g_active_metadata_sectors; ++i) {
     bytes_copy(sector, raw + (uint64_t)i * MFS_SECTOR_SIZE, MFS_SECTOR_SIZE);
-    if (blk_write(MFS_START_SECTOR + i, sector, sizeof(sector)) != OSAI_OK) {
+    if (blk_write(MFS_START_SECTOR + i, sector, sizeof(sector)) != XAIOS_OK) {
       klog("mutable-fs: metadata write failed sector=%lu capacity=%lu\n",
            MFS_START_SECTOR + i, blk_capacity());
       ++g_reject_count;
-      return OSAI_ERR_IO;
+      return XAIOS_ERR_IO;
     }
   }
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t clear_journal(void) {
+static xaios_status_t clear_journal(void) {
   uint8_t sector[MFS_SECTOR_SIZE];
   bytes_zero(sector, sizeof(sector));
   if (blk_write(MFS_JOURNAL_HEADER_SECTOR, sector,
-                                sizeof(sector)) != OSAI_OK ||
+                                sizeof(sector)) != XAIOS_OK ||
       blk_write(MFS_JOURNAL_DATA_SECTOR, sector,
-                                sizeof(sector)) != OSAI_OK) {
+                                sizeof(sector)) != XAIOS_OK) {
     ++g_reject_count;
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t read_journal(osai_mfs_journal_t *journal) {
+static xaios_status_t read_journal(xaios_mfs_journal_t *journal) {
   if (blk_read(MFS_JOURNAL_HEADER_SECTOR, journal,
-                               sizeof(*journal)) != OSAI_OK) {
-    return OSAI_ERR_IO;
+                               sizeof(*journal)) != XAIOS_OK) {
+    return XAIOS_ERR_IO;
   }
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t write_journal(osai_mfs_journal_t *journal) {
+static xaios_status_t write_journal(xaios_mfs_journal_t *journal) {
   journal->checksum = journal_checksum(journal);
   if (blk_write(MFS_JOURNAL_HEADER_SECTOR, journal,
-                                sizeof(*journal)) != OSAI_OK) {
+                                sizeof(*journal)) != XAIOS_OK) {
     ++g_reject_count;
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
   ++g_journal_write_count;
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 static uint64_t absolute_data_sector(uint16_t block_index) {
   return MFS_DATA_START_SECTOR + (uint64_t)block_index;
 }
 
-static osai_status_t allocate_blocks(uint16_t count,
+static xaios_status_t allocate_blocks(uint16_t count,
                                      uint16_t blocks[MFS_FILE_MAX_BLOCKS]) {
   if (count > g_active_file_max_blocks) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   if (count == 0) {
-    return OSAI_OK;
+    return XAIOS_OK;
   }
   uint16_t found = 0;
   for (uint16_t i = 0; i < g_active_data_sectors && found < count; ++i) {
@@ -603,9 +603,9 @@ static osai_status_t allocate_blocks(uint16_t count,
       ++g_free_count;
     }
     ++g_reject_count;
-    return OSAI_ERR_NO_MEMORY;
+    return XAIOS_ERR_NO_MEMORY;
   }
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 static void free_blocks(uint16_t count,
@@ -618,7 +618,7 @@ static void free_blocks(uint16_t count,
   }
 }
 
-static osai_status_t validate_disk(uint64_t expected_checksum) {
+static xaios_status_t validate_disk(uint64_t expected_checksum) {
   if (!bytes_eq(g_mfs.magic, MFS_MAGIC, MFS_MAGIC_LEN) ||
       g_mfs.version != g_active_version ||
       g_mfs.sector_size != MFS_SECTOR_SIZE ||
@@ -629,38 +629,38 @@ static osai_status_t validate_disk(uint64_t expected_checksum) {
       g_mfs.journal_data_sector != MFS_JOURNAL_DATA_SECTOR ||
       g_mfs.data_start_sector != MFS_DATA_START_SECTOR ||
       g_mfs.data_sectors != g_active_data_sectors) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   if (g_mfs.checksum != expected_checksum) {
     ++g_checksum_error_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   for (uint32_t i = 0; i < g_active_max_nodes; ++i) {
-    osai_mfs_node_t *node = &g_mfs.nodes[i];
+    xaios_mfs_node_t *node = &g_mfs.nodes[i];
     if ((node->active != 0 || node->snapshot_active != 0) &&
-        validate_path(node->path) != OSAI_OK) {
-      return OSAI_ERR_INVALID;
+        validate_path(node->path) != XAIOS_OK) {
+      return XAIOS_ERR_INVALID;
     }
     if (node->active != 0 &&
         node->type != MFS_NODE_DIR && node->type != MFS_NODE_FILE) {
-      return OSAI_ERR_INVALID;
+      return XAIOS_ERR_INVALID;
     }
     if (node->snapshot_active != 0 &&
         node->snapshot_type != MFS_NODE_DIR &&
         node->snapshot_type != MFS_NODE_FILE) {
-      return OSAI_ERR_INVALID;
+      return XAIOS_ERR_INVALID;
     }
     if (node->block_count > g_active_file_max_blocks ||
         node->snapshot_block_count > g_active_file_max_blocks ||
         node->size > g_active_max_file_bytes ||
         node->snapshot_size > g_active_max_file_bytes) {
-      return OSAI_ERR_INVALID;
+      return XAIOS_ERR_INVALID;
     }
   }
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t format_volume(void) {
+static xaios_status_t format_volume(void) {
   bytes_zero(&g_mfs, sizeof(g_mfs));
   bytes_copy(g_mfs.magic, MFS_MAGIC, MFS_MAGIC_LEN);
   g_mfs.version = g_active_version;
@@ -675,25 +675,25 @@ static osai_status_t format_volume(void) {
   g_mfs.generation = 1;
   g_mfs.committed_generation = 0;
   ++g_format_count;
-  if (clear_journal() != OSAI_OK) {
-    return OSAI_ERR_IO;
+  if (clear_journal() != XAIOS_OK) {
+    return XAIOS_ERR_IO;
   }
   return write_metadata();
 }
 
-static osai_status_t write_file(const char *path, const void *data,
+static xaios_status_t write_file(const char *path, const void *data,
                                 uint64_t size);
-static osai_status_t create_dir(const char *path);
+static xaios_status_t create_dir(const char *path);
 
-static osai_status_t replay_journal(void) {
-  osai_mfs_journal_t journal;
-  if (read_journal(&journal) != OSAI_OK) {
+static xaios_status_t replay_journal(void) {
+  xaios_mfs_journal_t journal;
+  if (read_journal(&journal) != XAIOS_OK) {
     ++g_reject_count;
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
   if (!bytes_eq(journal.magic, MFS_JOURNAL_MAGIC, MFS_MAGIC_LEN) ||
       journal.state == MFS_JOURNAL_EMPTY) {
-    return OSAI_OK;
+    return XAIOS_OK;
   }
   uint64_t expected = journal.checksum;
   if (journal.version != MFS_JOURNAL_VERSION ||
@@ -701,7 +701,7 @@ static osai_status_t replay_journal(void) {
       journal.op != MFS_JOURNAL_OP_WRITE_FILE ||
       journal.size == 0 || journal.size > MFS_SECTOR_SIZE ||
       journal_checksum(&journal) != expected ||
-      validate_path(journal.path) != OSAI_OK) {
+      validate_path(journal.path) != XAIOS_OK) {
     ++g_checksum_error_count;
     ++g_reject_count;
     return clear_journal();
@@ -709,42 +709,42 @@ static osai_status_t replay_journal(void) {
 
   uint8_t sector[MFS_SECTOR_SIZE];
   if (blk_read(MFS_JOURNAL_DATA_SECTOR, sector,
-                               sizeof(sector)) != OSAI_OK) {
+                               sizeof(sector)) != XAIOS_OK) {
     ++g_reject_count;
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
   if (fnv1a64(sector, journal.size) != journal.content_hash) {
     ++g_checksum_error_count;
     ++g_reject_count;
     return clear_journal();
   }
-  if (write_file(journal.path, sector, journal.size) != OSAI_OK) {
-    return OSAI_ERR_IO;
+  if (write_file(journal.path, sector, journal.size) != XAIOS_OK) {
+    return XAIOS_ERR_IO;
   }
-  if (clear_journal() != OSAI_OK) {
-    return OSAI_ERR_IO;
+  if (clear_journal() != XAIOS_OK) {
+    return XAIOS_ERR_IO;
   }
   ++g_replay_count;
   klog("mutable-fs: journal replay path=%s size=%lu\n",
        journal.path, journal.size);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t mount_volume(uint32_t mount_flags) {
+static xaios_status_t mount_volume(uint32_t mount_flags) {
   set_active_v2();
   if (blk_capacity() <
       MFS_DATA_START_SECTOR + g_active_data_sectors) {
     ++g_reject_count;
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
 
   g_mount_flags = mount_flags;
-  if (read_metadata() != OSAI_OK) {
+  if (read_metadata() != XAIOS_OK) {
     ++g_reject_count;
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
   uint64_t saved_checksum = g_mfs.checksum;
-  if (validate_disk(g_metadata_verified_checksum) == OSAI_OK &&
+  if (validate_disk(g_metadata_verified_checksum) == XAIOS_OK &&
       saved_checksum == g_metadata_verified_checksum) {
     ++g_boot_load_count;
     klog("mutable-fs: existing state loaded files=%lu directories=%lu blocks=%lu generation=%lu committed=%lu\n",
@@ -753,30 +753,30 @@ static osai_status_t mount_volume(uint32_t mount_flags) {
   } else {
     klog("mutable-fs: no valid filesystem at sector=%lu; formatting\n",
          MFS_START_SECTOR);
-    if (format_volume() != OSAI_OK) {
-      return OSAI_ERR_IO;
+    if (format_volume() != XAIOS_OK) {
+      return XAIOS_ERR_IO;
     }
   }
 
   g_mounted = 1;
   ++g_mount_count;
-  if (replay_journal() != OSAI_OK) {
-    return OSAI_ERR_IO;
+  if (replay_journal() != XAIOS_OK) {
+    return XAIOS_ERR_IO;
   }
 
   if ((g_mount_flags & MFS_MOUNT_READ_WRITE) != 0U) {
-    osai_mfs_node_t *root = find_node("/", 1);
+    xaios_mfs_node_t *root = find_node("/", 1);
     if (root == 0) {
-      if (create_dir("/") != OSAI_OK) {
-        return OSAI_ERR_IO;
+      if (create_dir("/") != XAIOS_OK) {
+        return XAIOS_ERR_IO;
       }
     } else if (root->active == 0) {
-      if (restore_snapshot_node(root) != OSAI_OK) {
-        return OSAI_ERR_IO;
+      if (restore_snapshot_node(root) != XAIOS_OK) {
+        return XAIOS_ERR_IO;
       }
     } else if (root->type != MFS_NODE_DIR) {
       ++g_reject_count;
-      return OSAI_ERR_INVALID;
+      return XAIOS_ERR_INVALID;
     }
   }
 
@@ -784,7 +784,7 @@ static osai_status_t mount_volume(uint32_t mount_flags) {
        MFS_START_SECTOR, (uint64_t)g_active_metadata_sectors, MFS_JOURNAL_SECTORS,
        MFS_DATA_START_SECTOR, g_active_data_sectors, g_active_max_nodes,
        (g_mount_flags & MFS_MOUNT_READ_WRITE) != 0 ? "rw" : "ro");
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 static int parent_exists_for(const char *path) {
@@ -793,26 +793,26 @@ static int parent_exists_for(const char *path) {
   if (str_eq(parent, "/")) {
     return 1;
   }
-  osai_mfs_node_t *node = find_node(parent, 0);
+  xaios_mfs_node_t *node = find_node(parent, 0);
   return node != 0 && node->active != 0 && node->type == MFS_NODE_DIR;
 }
 
-static osai_status_t create_dir(const char *path) {
+static xaios_status_t create_dir(const char *path) {
   if (g_mounted == 0 || (g_mount_flags & MFS_MOUNT_READ_WRITE) == 0 ||
-      validate_path(path) != OSAI_OK || !parent_exists_for(path)) {
+      validate_path(path) != XAIOS_OK || !parent_exists_for(path)) {
     ++g_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
-  osai_mfs_node_t *node = find_node(path, 1);
+  xaios_mfs_node_t *node = find_node(path, 1);
   if (node != 0 && node->active != 0) {
-    return node->type == MFS_NODE_DIR ? OSAI_OK : OSAI_ERR_INVALID;
+    return node->type == MFS_NODE_DIR ? XAIOS_OK : XAIOS_ERR_INVALID;
   }
   if (node == 0) {
     node = find_free_node();
   }
   if (node == 0) {
     ++g_reject_count;
-    return OSAI_ERR_NO_MEMORY;
+    return XAIOS_ERR_NO_MEMORY;
   }
   if (node->snapshot_active == 0) {
     bytes_zero(node, sizeof(*node));
@@ -835,7 +835,7 @@ static uint16_t block_count_for_size(uint64_t size) {
   return (uint16_t)((size + MFS_SECTOR_SIZE - 1U) / MFS_SECTOR_SIZE);
 }
 
-static osai_status_t write_blocks(const uint16_t blocks[MFS_FILE_MAX_BLOCKS],
+static xaios_status_t write_blocks(const uint16_t blocks[MFS_FILE_MAX_BLOCKS],
                                   uint16_t block_count, const void *data,
                                   uint64_t size) {
   const uint8_t *bytes = (const uint8_t *)data;
@@ -847,15 +847,15 @@ static osai_status_t write_blocks(const uint16_t blocks[MFS_FILE_MAX_BLOCKS],
     uint64_t copy = remaining < MFS_SECTOR_SIZE ? remaining : MFS_SECTOR_SIZE;
     bytes_copy(sector, bytes + offset, copy);
     if (blk_write(absolute_data_sector(blocks[i]), sector,
-                                  sizeof(sector)) != OSAI_OK) {
+                                  sizeof(sector)) != XAIOS_OK) {
       ++g_reject_count;
-      return OSAI_ERR_IO;
+      return XAIOS_ERR_IO;
     }
   }
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t read_blocks(const uint16_t blocks[MFS_FILE_MAX_BLOCKS],
+static xaios_status_t read_blocks(const uint16_t blocks[MFS_FILE_MAX_BLOCKS],
                                  uint16_t block_count, void *buffer,
                                  uint64_t size) {
   uint8_t *bytes = (uint8_t *)buffer;
@@ -865,49 +865,49 @@ static osai_status_t read_blocks(const uint16_t blocks[MFS_FILE_MAX_BLOCKS],
     uint64_t remaining = size - offset;
     uint64_t copy = remaining < MFS_SECTOR_SIZE ? remaining : MFS_SECTOR_SIZE;
     if (blk_read(absolute_data_sector(blocks[i]), sector,
-                                 sizeof(sector)) != OSAI_OK) {
+                                 sizeof(sector)) != XAIOS_OK) {
       ++g_reject_count;
-      return OSAI_ERR_IO;
+      return XAIOS_ERR_IO;
     }
     bytes_copy(bytes + offset, sector, copy);
   }
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t write_file(const char *path, const void *data,
+static xaios_status_t write_file(const char *path, const void *data,
                                 uint64_t size) {
   if (g_mounted == 0 || (g_mount_flags & MFS_MOUNT_READ_WRITE) == 0 ||
-      validate_path(path) != OSAI_OK || !parent_exists_for(path) ||
+      validate_path(path) != XAIOS_OK || !parent_exists_for(path) ||
       (data == 0 && size != 0) || size > g_active_max_file_bytes) {
     klog("mutable-fs: write rejected path=%s mounted=%u flags=0x%x parent=%u size=%lu\n",
          path == 0 ? "<null>" : path, g_mounted, g_mount_flags,
          path == 0 ? 0U : (uint32_t)parent_exists_for(path), size);
     ++g_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   uint16_t new_count = block_count_for_size(size);
   uint16_t new_blocks[MFS_FILE_MAX_BLOCKS];
   bytes_zero(new_blocks, sizeof(new_blocks));
-  if (allocate_blocks(new_count, new_blocks) != OSAI_OK) {
+  if (allocate_blocks(new_count, new_blocks) != XAIOS_OK) {
     klog("mutable-fs: write allocation failed path=%s blocks=%u used=%lu\n",
          path, new_count, block_count_used());
-    return OSAI_ERR_NO_MEMORY;
+    return XAIOS_ERR_NO_MEMORY;
   }
-  if (write_blocks(new_blocks, new_count, data, size) != OSAI_OK) {
+  if (write_blocks(new_blocks, new_count, data, size) != XAIOS_OK) {
     klog("mutable-fs: write block IO failed path=%s blocks=%u\n",
          path, new_count);
     free_blocks(new_count, new_blocks);
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
 
-  osai_mfs_node_t *node = find_node(path, 1);
+  xaios_mfs_node_t *node = find_node(path, 1);
   if (node != 0 && node->active != 0 && node->type != MFS_NODE_FILE) {
     klog("mutable-fs: write rejected existing non-file path=%s type=%u\n",
          path, node->type);
     free_blocks(new_count, new_blocks);
     ++g_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   if (node == 0) {
     node = find_free_node();
@@ -918,7 +918,7 @@ static osai_status_t write_file(const char *path, const void *data,
          node_count_by_type(MFS_NODE_DIR));
     free_blocks(new_count, new_blocks);
     ++g_reject_count;
-    return OSAI_ERR_NO_MEMORY;
+    return XAIOS_ERR_NO_MEMORY;
   }
 
   if (node->active != 0 && node->type == MFS_NODE_FILE) {
@@ -942,39 +942,39 @@ static osai_status_t write_file(const char *path, const void *data,
   return write_metadata();
 }
 
-static osai_status_t read_file(const char *path, void *buffer,
+static xaios_status_t read_file(const char *path, void *buffer,
                                uint64_t buffer_size, uint64_t *out_size) {
-  if (g_mounted == 0 || validate_path(path) != OSAI_OK || buffer == 0 ||
+  if (g_mounted == 0 || validate_path(path) != XAIOS_OK || buffer == 0 ||
       out_size == 0) {
     ++g_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
-  osai_mfs_node_t *node = find_node(path, 0);
+  xaios_mfs_node_t *node = find_node(path, 0);
   if (node == 0 || node->active == 0 || node->type != MFS_NODE_FILE ||
       node->size > buffer_size) {
     ++g_reject_count;
-    return OSAI_ERR_NOT_FOUND;
+    return XAIOS_ERR_NOT_FOUND;
   }
   if (read_blocks(node->blocks, node->block_count, buffer, node->size) !=
-      OSAI_OK) {
-    return OSAI_ERR_IO;
+      XAIOS_OK) {
+    return XAIOS_ERR_IO;
   }
   if (fnv1a64(buffer, node->size) != node->content_hash) {
     ++g_checksum_error_count;
     ++g_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   *out_size = node->size;
   ++g_read_count;
   klog("mutable-fs: read path=%s size=%lu blocks=%u generation=%lu\n",
        node->path, node->size, node->block_count, node->generation);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 static int has_active_children(const char *path) {
   uint64_t parent_len = cstr_len(path);
   for (uint32_t i = 0; i < g_active_max_nodes; ++i) {
-    osai_mfs_node_t *node = &g_mfs.nodes[i];
+    xaios_mfs_node_t *node = &g_mfs.nodes[i];
     if (node->active == 0 || str_eq(node->path, path)) {
       continue;
     }
@@ -985,20 +985,20 @@ static int has_active_children(const char *path) {
   return 0;
 }
 
-static osai_status_t delete_node(const char *path) {
+static xaios_status_t delete_node(const char *path) {
   if (g_mounted == 0 || (g_mount_flags & MFS_MOUNT_READ_WRITE) == 0 ||
-      validate_path(path) != OSAI_OK) {
+      validate_path(path) != XAIOS_OK) {
     ++g_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
-  osai_mfs_node_t *node = find_node(path, 0);
+  xaios_mfs_node_t *node = find_node(path, 0);
   if (node == 0 || node->active == 0) {
     ++g_reject_count;
-    return OSAI_ERR_NOT_FOUND;
+    return XAIOS_ERR_NOT_FOUND;
   }
   if (node->type == MFS_NODE_DIR && has_active_children(path)) {
     ++g_reject_count;
-    return OSAI_ERR_BUSY;
+    return XAIOS_ERR_BUSY;
   }
   if (node->type == MFS_NODE_FILE) {
     free_blocks(node->block_count, node->blocks);
@@ -1012,28 +1012,28 @@ static osai_status_t delete_node(const char *path) {
   return write_metadata();
 }
 
-static osai_status_t rename_node(const char *old_path, const char *new_path) {
+static xaios_status_t rename_node(const char *old_path, const char *new_path) {
   char normalized_old[MFS_PATH_MAX];
   char normalized_new[MFS_PATH_MAX];
   if (g_mounted == 0 || (g_mount_flags & MFS_MOUNT_READ_WRITE) == 0 ||
-      normalize_path(old_path, normalized_old) != OSAI_OK ||
-      normalize_path(new_path, normalized_new) != OSAI_OK ||
+      normalize_path(old_path, normalized_old) != XAIOS_OK ||
+      normalize_path(new_path, normalized_new) != XAIOS_OK ||
       !parent_exists_for(normalized_new)) {
     ++g_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
-  osai_mfs_node_t *node = find_node(normalized_old, 0);
+  xaios_mfs_node_t *node = find_node(normalized_old, 0);
   if (node == 0 || node->active == 0) {
     ++g_reject_count;
-    return OSAI_ERR_NOT_FOUND;
+    return XAIOS_ERR_NOT_FOUND;
   }
   if (find_node(normalized_new, 0) != 0) {
     ++g_reject_count;
-    return OSAI_ERR_BUSY;
+    return XAIOS_ERR_BUSY;
   }
   if (node->type == MFS_NODE_DIR && has_active_children(normalized_old)) {
     ++g_reject_count;
-    return OSAI_ERR_BUSY;
+    return XAIOS_ERR_BUSY;
   }
   copy_path(node->path, normalized_new);
   node->generation = g_mfs.generation++;
@@ -1043,16 +1043,16 @@ static osai_status_t rename_node(const char *old_path, const char *new_path) {
   return write_metadata();
 }
 
-static osai_status_t stat_node(const char *path, osai_mfs_stat_t *stat) {
+static xaios_status_t stat_node(const char *path, xaios_mfs_stat_t *stat) {
   char normalized[MFS_PATH_MAX];
-  if (stat == 0 || normalize_path(path, normalized) != OSAI_OK) {
+  if (stat == 0 || normalize_path(path, normalized) != XAIOS_OK) {
     ++g_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
-  osai_mfs_node_t *node = find_node(normalized, 1);
+  xaios_mfs_node_t *node = find_node(normalized, 1);
   if (!node_is_visible(node)) {
     ++g_reject_count;
-    return OSAI_ERR_NOT_FOUND;
+    return XAIOS_ERR_NOT_FOUND;
   }
   stat->type = node->type;
   stat->block_count = node->block_count;
@@ -1062,7 +1062,7 @@ static osai_status_t stat_node(const char *path, osai_mfs_stat_t *stat) {
   ++g_stat_count;
   klog("mutable-fs: stat path=%s type=%u size=%lu generation=%lu\n",
        normalized, stat->type, stat->size, stat->generation);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 static int direct_child_of(const char *parent, const char *child,
@@ -1097,38 +1097,38 @@ static int direct_child_of(const char *parent, const char *child,
   return 1;
 }
 
-static osai_status_t list_dir(const char *path, char *buffer,
+static xaios_status_t list_dir(const char *path, char *buffer,
                               uint64_t buffer_size, uint64_t *out_size) {
   char normalized[MFS_PATH_MAX];
   uint64_t offset = 0;
-  osai_status_t append_status = OSAI_OK;
+  xaios_status_t append_status = XAIOS_OK;
   if (buffer == 0 || out_size == 0 || buffer_size == 0 ||
-      normalize_path(path, normalized) != OSAI_OK) {
+      normalize_path(path, normalized) != XAIOS_OK) {
     ++g_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
-  osai_mfs_node_t *dir = find_node(normalized, 1);
+  xaios_mfs_node_t *dir = find_node(normalized, 1);
   if (!node_is_visible(dir) || dir->type != MFS_NODE_DIR) {
     if (!str_eq(normalized, "/")) {
       ++g_reject_count;
-      return OSAI_ERR_NOT_FOUND;
+      return XAIOS_ERR_NOT_FOUND;
     }
   }
 
   buffer[0] = '\0';
   for (uint32_t i = 0; i < g_active_max_nodes; ++i) {
-    osai_mfs_node_t *node = &g_mfs.nodes[i];
+    xaios_mfs_node_t *node = &g_mfs.nodes[i];
     const char *name = 0;
     if (!node_is_visible(node) || str_eq(node->path, normalized) ||
         !direct_child_of(normalized, node->path, &name)) {
       continue;
     }
     append_status = append_cstr(buffer, buffer_size, &offset, name);
-    if (append_status == OSAI_OK) {
+    if (append_status == XAIOS_OK) {
       append_status = append_char(buffer, buffer_size, &offset, '\n');
     }
-    if (append_status != OSAI_OK) {
+    if (append_status != XAIOS_OK) {
       if (out_size != 0) {
         *out_size = offset;
       }
@@ -1139,24 +1139,24 @@ static osai_status_t list_dir(const char *path, char *buffer,
 
   if (str_eq(normalized, "/") && offset == 0U) {
     ++g_reject_count;
-    return OSAI_ERR_NOT_FOUND;
+    return XAIOS_ERR_NOT_FOUND;
   }
 
   *out_size = offset;
   ++g_list_count;
   klog("mutable-fs: list path=%s bytes=%lu\n", normalized, offset);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t commit_snapshot(const char *label) {
+static xaios_status_t commit_snapshot(const char *label) {
   (void)label;
   if (g_mounted == 0 || (g_mount_flags & MFS_MOUNT_READ_WRITE) == 0) {
     ++g_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   uint8_t buffer[MFS_MAX_FILE_BYTES];
   for (uint32_t i = 0; i < g_active_max_nodes; ++i) {
-    osai_mfs_node_t *node = &g_mfs.nodes[i];
+    xaios_mfs_node_t *node = &g_mfs.nodes[i];
     if (node->snapshot_active != 0 && node->snapshot_type == MFS_NODE_FILE) {
       free_blocks(node->snapshot_block_count, node->snapshot_blocks);
     }
@@ -1177,18 +1177,18 @@ static osai_status_t commit_snapshot(const char *label) {
     node->snapshot_generation = node->generation;
     if (node->type == MFS_NODE_FILE) {
       if (read_blocks(node->blocks, node->block_count, buffer, node->size) !=
-          OSAI_OK) {
-        return OSAI_ERR_IO;
+          XAIOS_OK) {
+        return XAIOS_ERR_IO;
       }
       uint16_t snapshot_blocks[MFS_FILE_MAX_BLOCKS];
       bytes_zero(snapshot_blocks, sizeof(snapshot_blocks));
-      if (allocate_blocks(node->block_count, snapshot_blocks) != OSAI_OK) {
-        return OSAI_ERR_NO_MEMORY;
+      if (allocate_blocks(node->block_count, snapshot_blocks) != XAIOS_OK) {
+        return XAIOS_ERR_NO_MEMORY;
       }
       if (write_blocks(snapshot_blocks, node->block_count, buffer,
-                       node->size) != OSAI_OK) {
+                       node->size) != XAIOS_OK) {
         free_blocks(node->block_count, snapshot_blocks);
-        return OSAI_ERR_IO;
+        return XAIOS_ERR_IO;
       }
       node->snapshot_block_count = node->block_count;
       bytes_copy(node->snapshot_blocks, snapshot_blocks,
@@ -1203,10 +1203,10 @@ static osai_status_t commit_snapshot(const char *label) {
   return write_metadata();
 }
 
-static osai_status_t restore_snapshot_node(osai_mfs_node_t *node) {
+static xaios_status_t restore_snapshot_node(xaios_mfs_node_t *node) {
   uint8_t buffer[MFS_MAX_FILE_BYTES];
   if (node->snapshot_active == 0) {
-    return OSAI_OK;
+    return XAIOS_OK;
   }
   if (node->active != 0 && node->type == MFS_NODE_FILE) {
     free_blocks(node->block_count, node->blocks);
@@ -1220,33 +1220,33 @@ static osai_status_t restore_snapshot_node(osai_mfs_node_t *node) {
   bytes_zero(node->blocks, sizeof(node->blocks));
   if (node->snapshot_type == MFS_NODE_FILE) {
     if (read_blocks(node->snapshot_blocks, node->snapshot_block_count, buffer,
-                    node->snapshot_size) != OSAI_OK) {
-      return OSAI_ERR_IO;
+                    node->snapshot_size) != XAIOS_OK) {
+      return XAIOS_ERR_IO;
     }
     uint16_t restored_blocks[MFS_FILE_MAX_BLOCKS];
     bytes_zero(restored_blocks, sizeof(restored_blocks));
     if (allocate_blocks(node->snapshot_block_count, restored_blocks) !=
-        OSAI_OK) {
-      return OSAI_ERR_NO_MEMORY;
+        XAIOS_OK) {
+      return XAIOS_ERR_NO_MEMORY;
     }
     if (write_blocks(restored_blocks, node->snapshot_block_count, buffer,
-                     node->snapshot_size) != OSAI_OK) {
+                     node->snapshot_size) != XAIOS_OK) {
       free_blocks(node->snapshot_block_count, restored_blocks);
-      return OSAI_ERR_IO;
+      return XAIOS_ERR_IO;
     }
     node->block_count = node->snapshot_block_count;
     bytes_copy(node->blocks, restored_blocks, sizeof(restored_blocks));
   }
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t rollback_snapshot(void) {
+static xaios_status_t rollback_snapshot(void) {
   if (g_mounted == 0 || (g_mount_flags & MFS_MOUNT_READ_WRITE) == 0) {
     ++g_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   for (uint32_t i = 0; i < g_active_max_nodes; ++i) {
-    osai_mfs_node_t *node = &g_mfs.nodes[i];
+    xaios_mfs_node_t *node = &g_mfs.nodes[i];
     if (node->snapshot_active == 0 && node->active != 0 &&
         node->generation >= g_mfs.committed_generation) {
       if (node->type == MFS_NODE_FILE) {
@@ -1259,14 +1259,14 @@ static osai_status_t rollback_snapshot(void) {
   }
   for (uint32_t pass = 0; pass < 2U; ++pass) {
     for (uint32_t i = 0; i < g_active_max_nodes; ++i) {
-      osai_mfs_node_t *node = &g_mfs.nodes[i];
+      xaios_mfs_node_t *node = &g_mfs.nodes[i];
       if (node->snapshot_active == 0) {
         continue;
       }
       if ((pass == 0 && node->snapshot_type == MFS_NODE_DIR) ||
           (pass == 1 && node->snapshot_type == MFS_NODE_FILE)) {
-        if (restore_snapshot_node(node) != OSAI_OK) {
-          return OSAI_ERR_IO;
+        if (restore_snapshot_node(node) != XAIOS_OK) {
+          return XAIOS_ERR_IO;
         }
       }
     }
@@ -1279,23 +1279,23 @@ static osai_status_t rollback_snapshot(void) {
   return write_metadata();
 }
 
-static osai_status_t write_pending_journal_file(const char *path,
+static xaios_status_t write_pending_journal_file(const char *path,
                                                 const void *data,
                                                 uint64_t size) {
-  if (validate_path(path) != OSAI_OK || data == 0 || size == 0 ||
+  if (validate_path(path) != XAIOS_OK || data == 0 || size == 0 ||
       size > MFS_SECTOR_SIZE) {
     ++g_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   uint8_t sector[MFS_SECTOR_SIZE];
   bytes_zero(sector, sizeof(sector));
   bytes_copy(sector, data, size);
   if (blk_write(MFS_JOURNAL_DATA_SECTOR, sector,
-                                sizeof(sector)) != OSAI_OK) {
+                                sizeof(sector)) != XAIOS_OK) {
     ++g_reject_count;
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
-  osai_mfs_journal_t journal;
+  xaios_mfs_journal_t journal;
   bytes_zero(&journal, sizeof(journal));
   bytes_copy(journal.magic, MFS_JOURNAL_MAGIC, MFS_MAGIC_LEN);
   journal.version = MFS_JOURNAL_VERSION;
@@ -1308,7 +1308,7 @@ static osai_status_t write_pending_journal_file(const char *path,
   return write_journal(&journal);
 }
 
-osai_status_t mutable_fs_record_service_state(const char *name,
+xaios_status_t mutable_fs_record_service_state(const char *name,
                                               const char *state) {
   char path[MFS_PATH_MAX];
   char record[256];
@@ -1319,27 +1319,27 @@ osai_status_t mutable_fs_record_service_state(const char *name,
   bytes_zero(record, sizeof(record));
   if (base == 0 || *base == '\0' || state == 0 ||
       append_cstr(path, sizeof(path), &path_offset, "/state/services/") !=
-          OSAI_OK ||
-      append_cstr(path, sizeof(path), &path_offset, base) != OSAI_OK ||
-      append_cstr(path, sizeof(path), &path_offset, ".state") != OSAI_OK ||
+          XAIOS_OK ||
+      append_cstr(path, sizeof(path), &path_offset, base) != XAIOS_OK ||
+      append_cstr(path, sizeof(path), &path_offset, ".state") != XAIOS_OK ||
       append_cstr(record, sizeof(record), &record_offset, "service=") !=
-          OSAI_OK ||
-      append_cstr(record, sizeof(record), &record_offset, name) != OSAI_OK ||
+          XAIOS_OK ||
+      append_cstr(record, sizeof(record), &record_offset, name) != XAIOS_OK ||
       append_cstr(record, sizeof(record), &record_offset, "\nstate=") !=
-          OSAI_OK ||
-      append_cstr(record, sizeof(record), &record_offset, state) != OSAI_OK ||
-      append_char(record, sizeof(record), &record_offset, '\n') != OSAI_OK) {
+          XAIOS_OK ||
+      append_cstr(record, sizeof(record), &record_offset, state) != XAIOS_OK ||
+      append_char(record, sizeof(record), &record_offset, '\n') != XAIOS_OK) {
     ++g_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
-  osai_status_t status = write_file(path, record, record_offset + 1U);
-  if (status == OSAI_OK) {
+  xaios_status_t status = write_file(path, record, record_offset + 1U);
+  if (status == XAIOS_OK) {
     ++g_state_record_count;
   }
   return status;
 }
 
-osai_status_t mutable_fs_record_workspace_state(uint32_t workspace_id,
+xaios_status_t mutable_fs_record_workspace_state(uint32_t workspace_id,
                                                 const char *revision) {
   char path[MFS_PATH_MAX];
   char record[256];
@@ -1349,51 +1349,51 @@ osai_status_t mutable_fs_record_workspace_state(uint32_t workspace_id,
   bytes_zero(record, sizeof(record));
   if (revision == 0 ||
       append_cstr(path, sizeof(path), &path_offset, "/state/workspaces/workspace-") !=
-          OSAI_OK ||
-      append_u32(path, sizeof(path), &path_offset, workspace_id) != OSAI_OK ||
-      append_cstr(path, sizeof(path), &path_offset, ".state") != OSAI_OK ||
+          XAIOS_OK ||
+      append_u32(path, sizeof(path), &path_offset, workspace_id) != XAIOS_OK ||
+      append_cstr(path, sizeof(path), &path_offset, ".state") != XAIOS_OK ||
       append_cstr(record, sizeof(record), &record_offset, "workspace=") !=
-          OSAI_OK ||
+          XAIOS_OK ||
       append_u32(record, sizeof(record), &record_offset, workspace_id) !=
-          OSAI_OK ||
+          XAIOS_OK ||
       append_cstr(record, sizeof(record), &record_offset,
                   "\npath=/repo/workspaces/source-index\nrevision=") !=
-          OSAI_OK ||
+          XAIOS_OK ||
       append_cstr(record, sizeof(record), &record_offset, revision) !=
-          OSAI_OK ||
-      append_char(record, sizeof(record), &record_offset, '\n') != OSAI_OK) {
+          XAIOS_OK ||
+      append_char(record, sizeof(record), &record_offset, '\n') != XAIOS_OK) {
     ++g_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
-  osai_status_t status = write_file(path, record, record_offset + 1U);
-  if (status == OSAI_OK) {
+  xaios_status_t status = write_file(path, record, record_offset + 1U);
+  if (status == XAIOS_OK) {
     ++g_state_record_count;
   }
   return status;
 }
 
-osai_status_t mutable_fs_record_update_state(const char *policy) {
+xaios_status_t mutable_fs_record_update_state(const char *policy) {
   char record[256];
   uint64_t record_offset = 0;
   bytes_zero(record, sizeof(record));
   if (policy == 0 ||
       append_cstr(record, sizeof(record), &record_offset, "policy=") !=
-          OSAI_OK ||
-      append_cstr(record, sizeof(record), &record_offset, policy) != OSAI_OK ||
+          XAIOS_OK ||
+      append_cstr(record, sizeof(record), &record_offset, policy) != XAIOS_OK ||
       append_cstr(record, sizeof(record), &record_offset,
-                  "\nrollback=enabled\n") != OSAI_OK) {
+                  "\nrollback=enabled\n") != XAIOS_OK) {
     ++g_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
-  osai_status_t status = write_file("/state/updates/update.state",
+  xaios_status_t status = write_file("/state/updates/update.state",
                                     record, record_offset + 1U);
-  if (status == OSAI_OK) {
+  if (status == XAIOS_OK) {
     ++g_state_record_count;
   }
   return status;
 }
 
-osai_status_t mutable_fs_record_update_transaction(uint32_t generation,
+xaios_status_t mutable_fs_record_update_transaction(uint32_t generation,
                                                    const char *state,
                                                    const char *target,
                                                    const char *rollback_label) {
@@ -1402,34 +1402,34 @@ osai_status_t mutable_fs_record_update_transaction(uint32_t generation,
   bytes_zero(record, sizeof(record));
   if (state == 0 || target == 0 || rollback_label == 0 ||
       append_cstr(record, sizeof(record), &record_offset,
-                  "policy=signed-update-required\n") != OSAI_OK ||
+                  "policy=signed-update-required\n") != XAIOS_OK ||
       append_cstr(record, sizeof(record), &record_offset,
-                  "transaction_generation=") != OSAI_OK ||
+                  "transaction_generation=") != XAIOS_OK ||
       append_u32(record, sizeof(record), &record_offset, generation) !=
-          OSAI_OK ||
+          XAIOS_OK ||
       append_cstr(record, sizeof(record), &record_offset, "\nstate=") !=
-          OSAI_OK ||
-      append_cstr(record, sizeof(record), &record_offset, state) != OSAI_OK ||
+          XAIOS_OK ||
+      append_cstr(record, sizeof(record), &record_offset, state) != XAIOS_OK ||
       append_cstr(record, sizeof(record), &record_offset, "\ntarget=") !=
-          OSAI_OK ||
-      append_cstr(record, sizeof(record), &record_offset, target) != OSAI_OK ||
+          XAIOS_OK ||
+      append_cstr(record, sizeof(record), &record_offset, target) != XAIOS_OK ||
       append_cstr(record, sizeof(record), &record_offset, "\nrollback=") !=
-          OSAI_OK ||
+          XAIOS_OK ||
       append_cstr(record, sizeof(record), &record_offset, rollback_label) !=
-          OSAI_OK ||
-      append_char(record, sizeof(record), &record_offset, '\n') != OSAI_OK) {
+          XAIOS_OK ||
+      append_char(record, sizeof(record), &record_offset, '\n') != XAIOS_OK) {
     ++g_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
-  osai_status_t status = write_file("/state/updates/update.state",
+  xaios_status_t status = write_file("/state/updates/update.state",
                                     record, record_offset + 1U);
-  if (status == OSAI_OK) {
+  if (status == XAIOS_OK) {
     ++g_state_record_count;
   }
   return status;
 }
 
-osai_status_t mutable_fs_record_admin_status(const char *service,
+xaios_status_t mutable_fs_record_admin_status(const char *service,
                                              const char *state,
                                              uint32_t starts,
                                              uint32_t restarts,
@@ -1439,117 +1439,117 @@ osai_status_t mutable_fs_record_admin_status(const char *service,
   bytes_zero(record, sizeof(record));
   if (service == 0 || state == 0 ||
       append_cstr(record, sizeof(record), &record_offset,
-                  "admin=ssh-only\nservice=") != OSAI_OK ||
+                  "admin=ssh-only\nservice=") != XAIOS_OK ||
       append_cstr(record, sizeof(record), &record_offset, service) !=
-          OSAI_OK ||
+          XAIOS_OK ||
       append_cstr(record, sizeof(record), &record_offset, "\nstate=") !=
-          OSAI_OK ||
-      append_cstr(record, sizeof(record), &record_offset, state) != OSAI_OK ||
+          XAIOS_OK ||
+      append_cstr(record, sizeof(record), &record_offset, state) != XAIOS_OK ||
       append_cstr(record, sizeof(record), &record_offset, "\nstarts=") !=
-          OSAI_OK ||
-      append_u32(record, sizeof(record), &record_offset, starts) != OSAI_OK ||
+          XAIOS_OK ||
+      append_u32(record, sizeof(record), &record_offset, starts) != XAIOS_OK ||
       append_cstr(record, sizeof(record), &record_offset, "\nrestarts=") !=
-          OSAI_OK ||
+          XAIOS_OK ||
       append_u32(record, sizeof(record), &record_offset, restarts) !=
-          OSAI_OK ||
+          XAIOS_OK ||
       append_cstr(record, sizeof(record), &record_offset, "\nlogs=") !=
-          OSAI_OK ||
-      append_u32(record, sizeof(record), &record_offset, logs) != OSAI_OK ||
+          XAIOS_OK ||
+      append_u32(record, sizeof(record), &record_offset, logs) != XAIOS_OK ||
       append_cstr(record, sizeof(record), &record_offset,
-                  "\nremote_safe=allowlist\n") != OSAI_OK) {
+                  "\nremote_safe=allowlist\n") != XAIOS_OK) {
     ++g_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
-  osai_status_t status =
+  xaios_status_t status =
       write_file("/state/services/admin.state", record, record_offset + 1U);
-  if (status == OSAI_OK) {
+  if (status == XAIOS_OK) {
     ++g_state_record_count;
   }
   return status;
 }
 
-osai_status_t mutable_fs_commit(const char *label) {
+xaios_status_t mutable_fs_commit(const char *label) {
   return commit_snapshot(label);
 }
 
-osai_status_t mutable_fs_rollback(void) {
+xaios_status_t mutable_fs_rollback(void) {
   return rollback_snapshot();
 }
 
-osai_status_t mutable_fs_mkdir(const char *path) {
+xaios_status_t mutable_fs_mkdir(const char *path) {
   return create_dir(path);
 }
 
-osai_status_t mutable_fs_write(const char *path, const void *data,
+xaios_status_t mutable_fs_write(const char *path, const void *data,
                                uint64_t size) {
   return write_file(path, data, size);
 }
 
-osai_status_t mutable_fs_read(const char *path, void *buffer,
+xaios_status_t mutable_fs_read(const char *path, void *buffer,
                               uint64_t buffer_size, uint64_t *out_size) {
   return read_file(path, buffer, buffer_size, out_size);
 }
 
-osai_status_t mutable_fs_delete(const char *path) {
+xaios_status_t mutable_fs_delete(const char *path) {
   return delete_node(path);
 }
 
-osai_status_t mutable_fs_rename(const char *old_path, const char *new_path) {
+xaios_status_t mutable_fs_rename(const char *old_path, const char *new_path) {
   return rename_node(old_path, new_path);
 }
 
-osai_status_t mutable_fs_stat(const char *path, osai_mfs_stat_t *stat) {
+xaios_status_t mutable_fs_stat(const char *path, xaios_mfs_stat_t *stat) {
   return stat_node(path, stat);
 }
 
-osai_status_t mutable_fs_list(const char *path, char *buffer,
+xaios_status_t mutable_fs_list(const char *path, char *buffer,
                               uint64_t buffer_size, uint64_t *out_size) {
   return list_dir(path, buffer, buffer_size, out_size);
 }
 
-static osai_mfs_file_handle_t *handle_for_fd(uint32_t fd) {
+static xaios_mfs_file_handle_t *handle_for_fd(uint32_t fd) {
   if (fd == 0 || fd > MFS_MAX_OPEN_FILES) {
     return 0;
   }
-  osai_mfs_file_handle_t *handle = &g_open_files[fd - 1U];
+  xaios_mfs_file_handle_t *handle = &g_open_files[fd - 1U];
   return handle->in_use != 0 ? handle : 0;
 }
 
 int64_t mutable_fs_open(const char *path, uint32_t flags) {
   char normalized[MFS_PATH_MAX];
-  if (normalize_path(path, normalized) != OSAI_OK ||
-      (flags & (OSAI_MFS_OPEN_READ | OSAI_MFS_OPEN_WRITE)) == 0 ||
-      (flags & ~(OSAI_MFS_OPEN_READ | OSAI_MFS_OPEN_WRITE |
-                 OSAI_MFS_OPEN_CREATE | OSAI_MFS_OPEN_TRUNCATE)) != 0) {
+  if (normalize_path(path, normalized) != XAIOS_OK ||
+      (flags & (XAIOS_MFS_OPEN_READ | XAIOS_MFS_OPEN_WRITE)) == 0 ||
+      (flags & ~(XAIOS_MFS_OPEN_READ | XAIOS_MFS_OPEN_WRITE |
+                 XAIOS_MFS_OPEN_CREATE | XAIOS_MFS_OPEN_TRUNCATE)) != 0) {
     ++g_reject_count;
-    return (int64_t)OSAI_ERR_INVALID;
+    return (int64_t)XAIOS_ERR_INVALID;
   }
 
-  osai_mfs_node_t *node = find_node(normalized, 0);
+  xaios_mfs_node_t *node = find_node(normalized, 0);
   if (node == 0 || node->active == 0) {
-    if ((flags & OSAI_MFS_OPEN_CREATE) == 0) {
+    if ((flags & XAIOS_MFS_OPEN_CREATE) == 0) {
       ++g_reject_count;
-      return (int64_t)OSAI_ERR_NOT_FOUND;
+      return (int64_t)XAIOS_ERR_NOT_FOUND;
     }
-    if ((flags & OSAI_MFS_OPEN_WRITE) == 0 || !parent_exists_for(normalized)) {
+    if ((flags & XAIOS_MFS_OPEN_WRITE) == 0 || !parent_exists_for(normalized)) {
       ++g_reject_count;
-      return (int64_t)OSAI_ERR_INVALID;
+      return (int64_t)XAIOS_ERR_INVALID;
     }
   } else if (node->type != MFS_NODE_FILE) {
     ++g_reject_count;
-    return (int64_t)OSAI_ERR_INVALID;
+    return (int64_t)XAIOS_ERR_INVALID;
   }
 
-  if ((flags & OSAI_MFS_OPEN_CREATE) != 0 && node == 0) {
-    if (write_file(normalized, 0, 0) != OSAI_OK) {
-      return (int64_t)OSAI_ERR_IO;
+  if ((flags & XAIOS_MFS_OPEN_CREATE) != 0 && node == 0) {
+    if (write_file(normalized, 0, 0) != XAIOS_OK) {
+      return (int64_t)XAIOS_ERR_IO;
     }
     node = find_node(normalized, 0);
   }
-  if ((flags & OSAI_MFS_OPEN_TRUNCATE) != 0 && node != 0 &&
+  if ((flags & XAIOS_MFS_OPEN_TRUNCATE) != 0 && node != 0 &&
       node->active != 0) {
-    if (write_file(normalized, 0, 0) != OSAI_OK) {
-      return (int64_t)OSAI_ERR_IO;
+    if (write_file(normalized, 0, 0) != XAIOS_OK) {
+      return (int64_t)XAIOS_ERR_IO;
     }
     node = find_node(normalized, 0);
   }
@@ -1568,21 +1568,21 @@ int64_t mutable_fs_open(const char *path, uint32_t flags) {
   }
 
   ++g_reject_count;
-  return (int64_t)OSAI_ERR_NO_MEMORY;
+  return (int64_t)XAIOS_ERR_NO_MEMORY;
 }
 
 int64_t mutable_fs_read_fd(uint32_t fd, void *buffer, uint64_t size) {
-  osai_mfs_file_handle_t *handle = handle_for_fd(fd);
+  xaios_mfs_file_handle_t *handle = handle_for_fd(fd);
   if (handle == 0 || buffer == 0 || size == 0 ||
-      (handle->flags & OSAI_MFS_OPEN_READ) == 0) {
+      (handle->flags & XAIOS_MFS_OPEN_READ) == 0) {
     ++g_reject_count;
-    return (int64_t)OSAI_ERR_INVALID;
+    return (int64_t)XAIOS_ERR_INVALID;
   }
   uint8_t file_buffer[MFS_MAX_FILE_BYTES];
   uint64_t file_size = 0;
   if (read_file(handle->path, file_buffer, sizeof(file_buffer), &file_size) !=
-      OSAI_OK) {
-    return (int64_t)OSAI_ERR_IO;
+      XAIOS_OK) {
+    return (int64_t)XAIOS_ERR_IO;
   }
   if (handle->cursor >= file_size) {
     return 0;
@@ -1597,13 +1597,13 @@ int64_t mutable_fs_read_fd(uint32_t fd, void *buffer, uint64_t size) {
 }
 
 int64_t mutable_fs_write_fd(uint32_t fd, const void *buffer, uint64_t size) {
-  osai_mfs_file_handle_t *handle = handle_for_fd(fd);
+  xaios_mfs_file_handle_t *handle = handle_for_fd(fd);
   if (handle == 0 || buffer == 0 || size == 0 ||
-      (handle->flags & OSAI_MFS_OPEN_WRITE) == 0 ||
+      (handle->flags & XAIOS_MFS_OPEN_WRITE) == 0 ||
       handle->cursor > g_active_max_file_bytes ||
       size > g_active_max_file_bytes - handle->cursor) {
     ++g_reject_count;
-    return (int64_t)OSAI_ERR_INVALID;
+    return (int64_t)XAIOS_ERR_INVALID;
   }
 
   uint8_t file_buffer[MFS_MAX_FILE_BYTES];
@@ -1611,8 +1611,8 @@ int64_t mutable_fs_write_fd(uint32_t fd, const void *buffer, uint64_t size) {
   bytes_zero(file_buffer, sizeof(file_buffer));
   if (find_node(handle->path, 0) != 0) {
     if (read_file(handle->path, file_buffer, sizeof(file_buffer), &file_size) !=
-        OSAI_OK) {
-      return (int64_t)OSAI_ERR_IO;
+        XAIOS_OK) {
+      return (int64_t)XAIOS_ERR_IO;
     }
   }
   uint64_t new_size = handle->cursor + size;
@@ -1620,8 +1620,8 @@ int64_t mutable_fs_write_fd(uint32_t fd, const void *buffer, uint64_t size) {
     new_size = file_size;
   }
   bytes_copy(file_buffer + handle->cursor, buffer, size);
-  if (write_file(handle->path, file_buffer, new_size) != OSAI_OK) {
-    return (int64_t)OSAI_ERR_IO;
+  if (write_file(handle->path, file_buffer, new_size) != XAIOS_OK) {
+    return (int64_t)XAIOS_ERR_IO;
   }
   handle->cursor += size;
   klog("mutable-fs: write-fd fd=%u bytes=%lu cursor=%lu\n", fd, size,
@@ -1629,11 +1629,11 @@ int64_t mutable_fs_write_fd(uint32_t fd, const void *buffer, uint64_t size) {
   return (int64_t)size;
 }
 
-osai_status_t mutable_fs_close(uint32_t fd) {
-  osai_mfs_file_handle_t *handle = handle_for_fd(fd);
+xaios_status_t mutable_fs_close(uint32_t fd) {
+  xaios_mfs_file_handle_t *handle = handle_for_fd(fd);
   if (handle == 0) {
     ++g_reject_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   klog("mutable-fs: close fd=%u path=%s\n", fd, handle->path);
   handle->in_use = 0;
@@ -1641,7 +1641,7 @@ osai_status_t mutable_fs_close(uint32_t fd) {
   handle->cursor = 0;
   handle->path[0] = '\0';
   ++g_close_count;
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 uint64_t mutable_fs_mount_count(void) { return g_mount_count; }
@@ -1669,10 +1669,10 @@ uint64_t mutable_fs_open_count(void) { return g_open_count; }
 uint64_t mutable_fs_close_count(void) { return g_close_count; }
 uint64_t mutable_fs_persistent_mount_count(void) { return g_persistent_mount_count; }
 
-osai_status_t mutable_fs_mount_persistent(uint32_t slot) {
+xaios_status_t mutable_fs_mount_persistent(uint32_t slot) {
   virtio_block_handle_t *handle = 0;
-  osai_status_t status = virtio_block_open_slot(slot, &handle);
-  if (status != OSAI_OK) {
+  xaios_status_t status = virtio_block_open_slot(slot, &handle);
+  if (status != XAIOS_OK) {
     klog("mutable-fs: persistent block device not found at slot=%u\n", slot);
     return status;
   }
@@ -1682,20 +1682,20 @@ osai_status_t mutable_fs_mount_persistent(uint32_t slot) {
          virtio_block_capacity_sectors_h(handle),
          MFS_DATA_START_SECTOR + MFS_V3_DATA_SECTORS);
     virtio_block_close(handle);
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
   g_persistent_handle = handle;
   set_active_v3();
   g_mounted = 0;
   g_mount_flags = 0;
-  if (read_metadata() != OSAI_OK) {
+  if (read_metadata() != XAIOS_OK) {
     g_persistent_handle = 0;
     set_active_v2();
     virtio_block_close(handle);
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
   uint64_t saved_checksum = g_mfs.checksum;
-  if (validate_disk(g_metadata_verified_checksum) == OSAI_OK &&
+  if (validate_disk(g_metadata_verified_checksum) == XAIOS_OK &&
       saved_checksum == g_metadata_verified_checksum) {
     ++g_boot_load_count;
     klog("mutable-fs: persistent loaded files=%lu dirs=%lu blocks=%lu gen=%lu\n",
@@ -1703,39 +1703,39 @@ osai_status_t mutable_fs_mount_persistent(uint32_t slot) {
          block_count_used(), g_mfs.generation);
   } else {
     klog("mutable-fs: persistent disk no valid fs; formatting v3\n");
-    if (format_volume() != OSAI_OK) {
+    if (format_volume() != XAIOS_OK) {
       g_persistent_handle = 0;
       set_active_v2();
       virtio_block_close(handle);
-      return OSAI_ERR_IO;
+      return XAIOS_ERR_IO;
     }
   }
   g_mounted = 1;
   g_mount_flags = MFS_MOUNT_READ_WRITE;
   ++g_mount_count;
   ++g_persistent_mount_count;
-  if (replay_journal() != OSAI_OK) {
+  if (replay_journal() != XAIOS_OK) {
     g_persistent_handle = 0;
     set_active_v2();
     virtio_block_close(handle);
-    return OSAI_ERR_IO;
+    return XAIOS_ERR_IO;
   }
-  osai_mfs_node_t *root = find_node("/", 1);
+  xaios_mfs_node_t *root = find_node("/", 1);
   if (root == 0) {
-    if (create_dir("/") != OSAI_OK) {
+    if (create_dir("/") != XAIOS_OK) {
       g_persistent_handle = 0;
       set_active_v2();
       virtio_block_close(handle);
-      return OSAI_ERR_IO;
+      return XAIOS_ERR_IO;
     }
   }
   klog("mutable-fs: persistent mounted v3 nodes=%u sectors=%u\n",
        g_active_max_nodes, g_active_data_sectors);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_mfs_fsck_result_t mutable_fs_fsck(void) {
-  osai_mfs_fsck_result_t result;
+xaios_mfs_fsck_result_t mutable_fs_fsck(void) {
+  xaios_mfs_fsck_result_t result;
   bytes_zero(&result, sizeof(result));
   result.version = g_active_version;
   result.files = node_count_by_type(MFS_NODE_FILE);
@@ -1747,7 +1747,7 @@ osai_mfs_fsck_result_t mutable_fs_fsck(void) {
     int in_use = g_mfs.block_bitmap[i] != 0;
     int referenced = 0;
     for (uint32_t n = 0; n < g_active_max_nodes; ++n) {
-      osai_mfs_node_t *node = &g_mfs.nodes[n];
+      xaios_mfs_node_t *node = &g_mfs.nodes[n];
       if (node->active != 0 && node->type == MFS_NODE_FILE) {
         for (uint16_t b = 0; b < node->block_count; ++b) {
           if (node->blocks[b] == i) {
@@ -1768,8 +1768,8 @@ osai_mfs_fsck_result_t mutable_fs_fsck(void) {
 }
 
 void mutable_fs_self_test(void) {
-  kassert(sizeof(osai_mfs_journal_t) == MFS_SECTOR_SIZE);
-  kassert(sizeof(osai_mfs_disk_t) <= MFS_METADATA_SECTORS * MFS_SECTOR_SIZE);
+  kassert(sizeof(xaios_mfs_journal_t) == MFS_SECTOR_SIZE);
+  kassert(sizeof(xaios_mfs_disk_t) <= MFS_METADATA_SECTORS * MFS_SECTOR_SIZE);
   g_mounted = 0;
   g_mount_flags = 0;
   g_persistent_handle = 0;
@@ -1798,121 +1798,121 @@ void mutable_fs_self_test(void) {
   g_close_count = 0;
   reset_open_files();
 
-  kassert(mount_volume(MFS_MOUNT_READ_WRITE) == OSAI_OK);
-  kassert(format_volume() == OSAI_OK);
+  kassert(mount_volume(MFS_MOUNT_READ_WRITE) == XAIOS_OK);
+  kassert(format_volume() == XAIOS_OK);
 
-  kassert(create_dir("/etc") == OSAI_OK);
-  kassert(create_dir("/bin") == OSAI_OK);
-  kassert(create_dir("/state") == OSAI_OK);
-  kassert(create_dir("/state/services") == OSAI_OK);
-  kassert(create_dir("/state/workspaces") == OSAI_OK);
-  kassert(create_dir("/state/updates") == OSAI_OK);
-  kassert(create_dir("/config") == OSAI_OK);
-  kassert(create_dir("/logs") == OSAI_OK);
-  kassert(create_dir("/workspaces") == OSAI_OK);
-  kassert(create_dir("/models") == OSAI_OK);
+  kassert(create_dir("/etc") == XAIOS_OK);
+  kassert(create_dir("/bin") == XAIOS_OK);
+  kassert(create_dir("/state") == XAIOS_OK);
+  kassert(create_dir("/state/services") == XAIOS_OK);
+  kassert(create_dir("/state/workspaces") == XAIOS_OK);
+  kassert(create_dir("/state/updates") == XAIOS_OK);
+  kassert(create_dir("/config") == XAIOS_OK);
+  kassert(create_dir("/logs") == XAIOS_OK);
+  kassert(create_dir("/workspaces") == XAIOS_OK);
+  kassert(create_dir("/models") == XAIOS_OK);
 
   kassert(mutable_fs_record_service_state("/svc/source-index", "running") ==
-          OSAI_OK);
-  kassert(mutable_fs_record_workspace_state(0, "boot") == OSAI_OK);
-  kassert(mutable_fs_record_update_state("signed-update-required") == OSAI_OK);
+          XAIOS_OK);
+  kassert(mutable_fs_record_workspace_state(0, "boot") == XAIOS_OK);
+  kassert(mutable_fs_record_update_state("signed-update-required") == XAIOS_OK);
   kassert(mutable_fs_record_admin_status("/svc/source-index", "running", 1, 0,
-                                         0) == OSAI_OK);
-  kassert(write_file("/config/osai.conf", k_config_v1,
-                     sizeof(k_config_v1)) == OSAI_OK);
+                                         0) == XAIOS_OK);
+  kassert(write_file("/config/xaios.conf", k_config_v1,
+                     sizeof(k_config_v1)) == XAIOS_OK);
 
   uint8_t large[MFS_SECTOR_SIZE * 3U];
   for (uint64_t i = 0; i < sizeof(large); ++i) {
     large[i] = (uint8_t)('A' + (i % 23U));
   }
   kassert(write_file("/state/services/large.state", large, sizeof(large)) ==
-          OSAI_OK);
+          XAIOS_OK);
 
   uint8_t buffer[MFS_MAX_FILE_BYTES];
   uint64_t size = 0;
   kassert(read_file("/state/services/large.state", buffer, sizeof(buffer),
-                    &size) == OSAI_OK);
+                    &size) == XAIOS_OK);
   kassert(size == sizeof(large));
   kassert(bytes_eq(buffer, large, sizeof(large)) != 0);
 
-  char listing[OSAI_MFS_MAX_LIST_BYTES];
-  osai_mfs_stat_t stat;
-  kassert(list_dir("/state", listing, sizeof(listing), &size) == OSAI_OK);
+  char listing[XAIOS_MFS_MAX_LIST_BYTES];
+  xaios_mfs_stat_t stat;
+  kassert(list_dir("/state", listing, sizeof(listing), &size) == XAIOS_OK);
   kassert(size > 0);
-  kassert(stat_node("/state/services/large.state", &stat) == OSAI_OK);
+  kassert(stat_node("/state/services/large.state", &stat) == XAIOS_OK);
   kassert(stat.type == MFS_NODE_FILE);
   kassert(stat.size == sizeof(large));
-  kassert(rename_node("/config/osai.conf", "/config/osai-renamed.conf") ==
-          OSAI_OK);
-  kassert(stat_node("/config/osai-renamed.conf", &stat) == OSAI_OK);
-  kassert(read_file("/config/osai.conf", buffer, sizeof(buffer), &size) ==
-          OSAI_ERR_NOT_FOUND);
+  kassert(rename_node("/config/xaios.conf", "/config/xaios-renamed.conf") ==
+          XAIOS_OK);
+  kassert(stat_node("/config/xaios-renamed.conf", &stat) == XAIOS_OK);
+  kassert(read_file("/config/xaios.conf", buffer, sizeof(buffer), &size) ==
+          XAIOS_ERR_NOT_FOUND);
 
   static const char k_fd_payload[] = "fd-api=ok\n";
   int64_t fd = mutable_fs_open("/logs/fd-api.log",
-                               OSAI_MFS_OPEN_READ | OSAI_MFS_OPEN_WRITE |
-                                   OSAI_MFS_OPEN_CREATE);
+                               XAIOS_MFS_OPEN_READ | XAIOS_MFS_OPEN_WRITE |
+                                   XAIOS_MFS_OPEN_CREATE);
   kassert(fd > 0);
   kassert(mutable_fs_write_fd((uint32_t)fd, k_fd_payload,
                               sizeof(k_fd_payload)) ==
           (int64_t)sizeof(k_fd_payload));
-  kassert(mutable_fs_close((uint32_t)fd) == OSAI_OK);
-  fd = mutable_fs_open("/logs/fd-api.log", OSAI_MFS_OPEN_READ);
+  kassert(mutable_fs_close((uint32_t)fd) == XAIOS_OK);
+  fd = mutable_fs_open("/logs/fd-api.log", XAIOS_MFS_OPEN_READ);
   kassert(fd > 0);
   kassert(mutable_fs_read_fd((uint32_t)fd, buffer, sizeof(k_fd_payload)) ==
           (int64_t)sizeof(k_fd_payload));
   kassert(bytes_eq(buffer, k_fd_payload, sizeof(k_fd_payload)) != 0);
-  kassert(mutable_fs_close((uint32_t)fd) == OSAI_OK);
+  kassert(mutable_fs_close((uint32_t)fd) == XAIOS_OK);
   fd = mutable_fs_open("/logs/fd-api.log",
-                       OSAI_MFS_OPEN_READ | OSAI_MFS_OPEN_WRITE |
-                           OSAI_MFS_OPEN_TRUNCATE);
+                       XAIOS_MFS_OPEN_READ | XAIOS_MFS_OPEN_WRITE |
+                           XAIOS_MFS_OPEN_TRUNCATE);
   kassert(fd > 0);
-  kassert(stat_node("/logs/fd-api.log", &stat) == OSAI_OK);
+  kassert(stat_node("/logs/fd-api.log", &stat) == XAIOS_OK);
   kassert(stat.size == 0);
-  kassert(mutable_fs_close((uint32_t)fd) == OSAI_OK);
-  kassert(mutable_fs_open("/missing/nope", OSAI_MFS_OPEN_READ) ==
-          (int64_t)OSAI_ERR_NOT_FOUND);
-  kassert(commit_snapshot("mfs-snapshot-v2") == OSAI_OK);
+  kassert(mutable_fs_close((uint32_t)fd) == XAIOS_OK);
+  kassert(mutable_fs_open("/missing/nope", XAIOS_MFS_OPEN_READ) ==
+          (int64_t)XAIOS_ERR_NOT_FOUND);
+  kassert(commit_snapshot("mfs-snapshot-v2") == XAIOS_OK);
 
   kassert(write_file("/state/services/source-index.state",
                      k_service_restarting,
-                     sizeof(k_service_restarting)) == OSAI_OK);
-  kassert(delete_node("/state/updates/update.state") == OSAI_OK);
+                     sizeof(k_service_restarting)) == XAIOS_OK);
+  kassert(delete_node("/state/updates/update.state") == XAIOS_OK);
   kassert(write_file("/logs/boot.log", k_boot_log, sizeof(k_boot_log)) ==
-          OSAI_OK);
+          XAIOS_OK);
   kassert(write_pending_journal_file("/state/services/replayed.state",
                                      k_replayed_state,
-                                     sizeof(k_replayed_state)) == OSAI_OK);
+                                     sizeof(k_replayed_state)) == XAIOS_OK);
   g_mounted = 0;
-  kassert(mount_volume(MFS_MOUNT_READ_WRITE) == OSAI_OK);
+  kassert(mount_volume(MFS_MOUNT_READ_WRITE) == XAIOS_OK);
   kassert(read_file("/state/services/replayed.state", buffer, sizeof(buffer),
-                    &size) == OSAI_OK);
+                    &size) == XAIOS_OK);
   kassert(size == sizeof(k_replayed_state));
   kassert(bytes_eq(buffer, k_replayed_state, sizeof(k_replayed_state)) != 0);
 
-  kassert(rollback_snapshot() == OSAI_OK);
+  kassert(rollback_snapshot() == XAIOS_OK);
   kassert(read_file("/state/services/source-index.state", buffer,
-                    sizeof(buffer), &size) == OSAI_OK);
+                    sizeof(buffer), &size) == XAIOS_OK);
   kassert(size == sizeof(k_service_running));
   kassert(bytes_eq(buffer, k_service_running, sizeof(k_service_running)) != 0);
   kassert(read_file("/state/updates/update.state", buffer, sizeof(buffer),
-                    &size) == OSAI_OK);
+                    &size) == XAIOS_OK);
   kassert(size == sizeof(k_update_state));
   kassert(bytes_eq(buffer, k_update_state, sizeof(k_update_state)) != 0);
   kassert(read_file("/logs/boot.log", buffer, sizeof(buffer), &size) ==
-          OSAI_ERR_NOT_FOUND);
+          XAIOS_ERR_NOT_FOUND);
   kassert(read_file("/state/services/replayed.state", buffer, sizeof(buffer),
-                    &size) == OSAI_ERR_NOT_FOUND);
+                    &size) == XAIOS_ERR_NOT_FOUND);
 
   kassert(write_file("/bad/missing-parent", k_config_v1,
-                     sizeof(k_config_v1)) == OSAI_ERR_INVALID);
-  kassert(create_dir("/state/services/bad") == OSAI_OK);
-  kassert(delete_node("/state/services") == OSAI_ERR_BUSY);
+                     sizeof(k_config_v1)) == XAIOS_ERR_INVALID);
+  kassert(create_dir("/state/services/bad") == XAIOS_OK);
+  kassert(delete_node("/state/services") == XAIOS_ERR_BUSY);
   uint8_t too_large[MFS_MAX_FILE_BYTES + 1U];
   kassert(write_file("/state/services/too-large", too_large,
-                     sizeof(too_large)) == OSAI_ERR_INVALID);
+                     sizeof(too_large)) == XAIOS_ERR_INVALID);
   kassert(read_file("/state/missing.state", buffer, sizeof(buffer), &size) ==
-          OSAI_ERR_NOT_FOUND);
+          XAIOS_ERR_NOT_FOUND);
 
   kassert(mutable_fs_mount_count() == 2);
   kassert(mutable_fs_format_count() >= 1);

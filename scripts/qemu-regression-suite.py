@@ -4,7 +4,7 @@ from qemu_gate_lib import (BUILD, check_markers, contract, now, parse_telemetry,
                            validate_telemetry_against_contract, write_report)
 
 
-SCHEMA = "osai.qemu.regression_suite.v1"
+SCHEMA = "xaios.qemu.regression_suite.v1"
 REPORT = BUILD / "qemu-milestone-52-regression-suite.json"
 
 MARKER_GROUPS = {

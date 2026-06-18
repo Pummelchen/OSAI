@@ -1,0 +1,3 @@
+- All modules implement a `*_self_test()` function containing assertions to verify internal logic and edge-case handling during development.
+- Memory alignment is consistently handled via local `align_up()` and `align_down()` helpers using bitwise operations on power-of-two boundaries.
+- VMM permission flags are derived from higher-level abstractions (e.g., arena flags or ELF program header flags) through dedicated translation functions like `vmm_flags_from_arena()`.

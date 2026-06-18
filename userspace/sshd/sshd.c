@@ -3,7 +3,7 @@
 #include "ssh_protocol.h"
 #include "ssh_channel.h"
 #include "ssh_host_key.h"
-#include <osai_user.h>
+#include <xaios_user.h>
 
 static void mem_copy(void *d, const void *s, uint64_t n) {
   uint8_t *o = (uint8_t *)d; const uint8_t *i = (const uint8_t *)s;
@@ -177,24 +177,24 @@ int sshd_run(void) {
 
   /* Listen on SSH port */
   u64 listen_fd = 0;
-  if (osai_net_listen(SSHD_PORT, &listen_fd) != 0) {
+  if (xaios_net_listen(SSHD_PORT, &listen_fd) != 0) {
     return -1;
   }
 
   /* Accept loop */
   for (;;) {
     u64 conn_fd = 0;
-    if (osai_net_accept(listen_fd, &conn_fd) != 0) {
+    if (xaios_net_accept(listen_fd, &conn_fd) != 0) {
       continue;
     }
     handle_connection((int)conn_fd);
-    osai_net_close(conn_fd);
+    xaios_net_close(conn_fd);
   }
   return 0; /* unreachable */
 }
 
-/* Entry point - called from _start via osai_main pattern */
+/* Entry point - called from _start via xaios_main pattern */
 void sshd_main(void) {
   sshd_run();
-  osai_exit(0);
+  xaios_exit(0);
 }

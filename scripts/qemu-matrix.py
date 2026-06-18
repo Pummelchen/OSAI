@@ -38,7 +38,7 @@ def run_scenario(name: str, cmd, timeout: int, env) -> int:
 
 def main() -> int:
     env = os.environ.copy()
-    env.setdefault("OSAI_QEMU_SMOKE_TIMEOUT", "60")
+    env.setdefault("XAIOS_QEMU_SMOKE_TIMEOUT", "60")
     failures = []
     for name, cmd, timeout in SCENARIOS:
         rc = run_scenario(name, cmd, timeout, env)

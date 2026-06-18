@@ -1,12 +1,12 @@
-#include <osai/assert.h>
-#include <osai/context.h>
-#include <osai/exception.h>
-#include <osai/klog.h>
-#include <osai/panic.h>
-#include <osai/scheduler.h>
-#include <osai/syscall.h>
-#include <osai/timer.h>
-#include <osai/user.h>
+#include <xaios/assert.h>
+#include <xaios/context.h>
+#include <xaios/exception.h>
+#include <xaios/klog.h>
+#include <xaios/panic.h>
+#include <xaios/scheduler.h>
+#include <xaios/syscall.h>
+#include <xaios/timer.h>
+#include <xaios/user.h>
 
 #define ESR_EC_SHIFT 26U
 #define ESR_EC_MASK UINT64_C(0x3f)
@@ -29,38 +29,38 @@
 extern char __exception_vectors[];
 
 static const char *exception_kind_name(uint64_t kind) {
-  switch ((osai_exception_kind_t)kind) {
-    case OSAI_EXCEPTION_CURRENT_SP0_SYNC:
+  switch ((xaios_exception_kind_t)kind) {
+    case XAIOS_EXCEPTION_CURRENT_SP0_SYNC:
       return "current-sp0-sync";
-    case OSAI_EXCEPTION_CURRENT_SP0_IRQ:
+    case XAIOS_EXCEPTION_CURRENT_SP0_IRQ:
       return "current-sp0-irq";
-    case OSAI_EXCEPTION_CURRENT_SP0_FIQ:
+    case XAIOS_EXCEPTION_CURRENT_SP0_FIQ:
       return "current-sp0-fiq";
-    case OSAI_EXCEPTION_CURRENT_SP0_SERROR:
+    case XAIOS_EXCEPTION_CURRENT_SP0_SERROR:
       return "current-sp0-serror";
-    case OSAI_EXCEPTION_CURRENT_SPX_SYNC:
+    case XAIOS_EXCEPTION_CURRENT_SPX_SYNC:
       return "current-spx-sync";
-    case OSAI_EXCEPTION_CURRENT_SPX_IRQ:
+    case XAIOS_EXCEPTION_CURRENT_SPX_IRQ:
       return "current-spx-irq";
-    case OSAI_EXCEPTION_CURRENT_SPX_FIQ:
+    case XAIOS_EXCEPTION_CURRENT_SPX_FIQ:
       return "current-spx-fiq";
-    case OSAI_EXCEPTION_CURRENT_SPX_SERROR:
+    case XAIOS_EXCEPTION_CURRENT_SPX_SERROR:
       return "current-spx-serror";
-    case OSAI_EXCEPTION_LOWER_A64_SYNC:
+    case XAIOS_EXCEPTION_LOWER_A64_SYNC:
       return "lower-a64-sync";
-    case OSAI_EXCEPTION_LOWER_A64_IRQ:
+    case XAIOS_EXCEPTION_LOWER_A64_IRQ:
       return "lower-a64-irq";
-    case OSAI_EXCEPTION_LOWER_A64_FIQ:
+    case XAIOS_EXCEPTION_LOWER_A64_FIQ:
       return "lower-a64-fiq";
-    case OSAI_EXCEPTION_LOWER_A64_SERROR:
+    case XAIOS_EXCEPTION_LOWER_A64_SERROR:
       return "lower-a64-serror";
-    case OSAI_EXCEPTION_LOWER_A32_SYNC:
+    case XAIOS_EXCEPTION_LOWER_A32_SYNC:
       return "lower-a32-sync";
-    case OSAI_EXCEPTION_LOWER_A32_IRQ:
+    case XAIOS_EXCEPTION_LOWER_A32_IRQ:
       return "lower-a32-irq";
-    case OSAI_EXCEPTION_LOWER_A32_FIQ:
+    case XAIOS_EXCEPTION_LOWER_A32_FIQ:
       return "lower-a32-fiq";
-    case OSAI_EXCEPTION_LOWER_A32_SERROR:
+    case XAIOS_EXCEPTION_LOWER_A32_SERROR:
       return "lower-a32-serror";
   }
 
@@ -112,7 +112,7 @@ void exception_self_test(void) {
   }
 }
 
-osai_context_frame_t *aarch64_irq_handler(osai_context_frame_t *frame) {
+xaios_context_frame_t *aarch64_irq_handler(xaios_context_frame_t *frame) {
   /* Read interrupt ID from GIC CPU interface */
   uint64_t iar = 0;
   __asm__ volatile("mrs %[iar], " ICC_IAR1_EL1 : [iar] "=r"(iar));
@@ -146,7 +146,7 @@ uint64_t aarch64_exception_entry(uint64_t kind, uint64_t esr, uint64_t elr,
   uint64_t ec = (esr >> ESR_EC_SHIFT) & ESR_EC_MASK;
   uint64_t iss = esr & ESR_ISS_MASK;
 
-  if (kind == OSAI_EXCEPTION_LOWER_A64_SYNC && ec == ESR_EC_SVC_A64) {
+  if (kind == XAIOS_EXCEPTION_LOWER_A64_SYNC && ec == ESR_EC_SVC_A64) {
     return syscall_dispatch(syscall, arg0, arg1, arg2);
   }
 

@@ -26,8 +26,8 @@ def main() -> int:
     preview_output = os.path.join(build_dir, "qemu-preview-manifest.json")
 
     env = os.environ.copy()
-    env.setdefault("OSAI_QEMU_SMOKE_TIMEOUT", "60")
-    env["OSAI_QEMU_BENCHMARK_OUTPUT"] = benchmark_output
+    env.setdefault("XAIOS_QEMU_SMOKE_TIMEOUT", "60")
+    env["XAIOS_QEMU_BENCHMARK_OUTPUT"] = benchmark_output
 
     bench = run(["python3", "./scripts/qemu-benchmark.py"], env=env)
     sys.stdout.write(bench.stdout)
@@ -39,18 +39,18 @@ def main() -> int:
         benchmark = json.load(handle)
 
     manifest = {
-        "schema": "osai.qemu.preview.v1",
+        "schema": "xaios.qemu.preview.v1",
         "created_unix": int(time.time()),
         "status": "pass",
-        "image": "build/osai-aarch64.img",
-        "virtio_test_block": "build/osai-virtio-test.img",
+        "image": "build/xaios-aarch64.img",
+        "virtio_test_block": "build/xaios-virtio-test.img",
         "benchmark_report": "build/qemu-benchmark-report.json",
         "release_candidate_contract": "contracts/qemu-rc-v1.json",
         "contracts": {
             "architecture": "aarch64",
             "firmware": "UEFI",
             "machine": "qemu-virt",
-            "release_candidate_contract_schema": "osai.qemu.release_candidate_contract.v1",
+            "release_candidate_contract_schema": "xaios.qemu.release_candidate_contract.v1",
             "userspace": "EL0 /init plus /bin/service-manager from VirtIO-backed read-only filesystem",
             "performance_claims_allowed": False,
         },

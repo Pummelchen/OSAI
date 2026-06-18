@@ -2,7 +2,7 @@
 from qemu_gate_lib import BUILD, now, parse_telemetry, result, run, status_from_failures, write_report
 
 
-SCHEMA = "osai.qemu.deterministic_boot_loop.v1"
+SCHEMA = "xaios.qemu.deterministic_boot_loop.v1"
 REPORT = BUILD / "qemu-milestone-55-boot-loop.json"
 INVARIANT_KEYS = [
     "cpu_count",
@@ -24,7 +24,7 @@ def main() -> int:
 
     for index in range(iterations):
         proc = run(["python3", "./scripts/qemu-smoke.py"], timeout=200,
-                   env={"OSAI_QEMU_SMOKE_TIMEOUT": "120"})
+                   env={"XAIOS_QEMU_SMOKE_TIMEOUT": "120"})
         if proc.returncode != 0:
             failures.append(f"boot {index + 1} qemu-smoke exited {proc.returncode}")
             boots.append(result(f"boot_{index + 1}", False,

@@ -1,6 +1,6 @@
-#include <osai/assert.h>
-#include <osai/klog.h>
-#include <osai/sha256.h>
+#include <xaios/assert.h>
+#include <xaios/klog.h>
+#include <xaios/sha256.h>
 
 /* SHA-256 round constants (FIPS 180-4 Section 4.2.2) */
 static const uint32_t K[64] = {
@@ -91,7 +91,7 @@ static void sha256_compress(uint32_t state[8], const uint8_t block[64]) {
   state[7] += h;
 }
 
-void osai_sha256_init(osai_sha256_ctx_t *ctx) {
+void xaios_sha256_init(xaios_sha256_ctx_t *ctx) {
   if (ctx == 0) {
     return;
   }
@@ -110,7 +110,7 @@ void osai_sha256_init(osai_sha256_ctx_t *ctx) {
   }
 }
 
-void osai_sha256_update(osai_sha256_ctx_t *ctx, const void *data,
+void xaios_sha256_update(xaios_sha256_ctx_t *ctx, const void *data,
                          uint64_t len) {
   if (ctx == 0 || data == 0 || len == 0) {
     return;
@@ -152,18 +152,18 @@ void osai_sha256_update(osai_sha256_ctx_t *ctx, const void *data,
   }
 }
 
-void osai_sha256_final(osai_sha256_ctx_t *ctx, uint8_t hash[32]) {
+void xaios_sha256_final(xaios_sha256_ctx_t *ctx, uint8_t hash[32]) {
   if (ctx == 0 || hash == 0) {
     return;
   }
 
   /* Padding: append 0x80, then zeros, then 64-bit big-endian bit count */
   uint8_t pad = 0x80;
-  osai_sha256_update(ctx, &pad, 1);
+  xaios_sha256_update(ctx, &pad, 1);
 
   pad = 0x00;
   while (ctx->buffer_len != 56U) {
-    osai_sha256_update(ctx, &pad, 1);
+    xaios_sha256_update(ctx, &pad, 1);
   }
 
   /* Append bit count in big-endian */
@@ -171,7 +171,7 @@ void osai_sha256_final(osai_sha256_ctx_t *ctx, uint8_t hash[32]) {
   for (uint32_t i = 0; i < 8; ++i) {
     count_bytes[7 - i] = (uint8_t)(ctx->bit_count >> (i * 8U));
   }
-  osai_sha256_update(ctx, count_bytes, 8);
+  xaios_sha256_update(ctx, count_bytes, 8);
 
   /* Output hash */
   for (uint32_t i = 0; i < 8; ++i) {
@@ -179,11 +179,11 @@ void osai_sha256_final(osai_sha256_ctx_t *ctx, uint8_t hash[32]) {
   }
 }
 
-void osai_sha256(const void *data, uint64_t len, uint8_t hash[32]) {
-  osai_sha256_ctx_t ctx;
-  osai_sha256_init(&ctx);
-  osai_sha256_update(&ctx, data, len);
-  osai_sha256_final(&ctx, hash);
+void xaios_sha256(const void *data, uint64_t len, uint8_t hash[32]) {
+  xaios_sha256_ctx_t ctx;
+  xaios_sha256_init(&ctx);
+  xaios_sha256_update(&ctx, data, len);
+  xaios_sha256_final(&ctx, hash);
 }
 
 void sha256_self_test(void) {
@@ -194,7 +194,7 @@ void sha256_self_test(void) {
       0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad};
 
   uint8_t hash[32];
-  osai_sha256("abc", 3, hash);
+  xaios_sha256("abc", 3, hash);
 
   for (uint32_t i = 0; i < 32; ++i) {
     kassert(hash[i] == expected_abc[i]);
@@ -206,7 +206,7 @@ void sha256_self_test(void) {
       0xc8, 0x99, 0x6f, 0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b,
       0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55};
 
-  osai_sha256("", 0, hash);
+  xaios_sha256("", 0, hash);
   for (uint32_t i = 0; i < 32; ++i) {
     kassert(hash[i] == expected_empty[i]);
   }

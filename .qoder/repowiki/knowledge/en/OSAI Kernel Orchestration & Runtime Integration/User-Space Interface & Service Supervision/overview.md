@@ -1,0 +1,1 @@
+Manages user process lifecycle, capability-based syscall dispatch, and a supervised service model with administrative controls.

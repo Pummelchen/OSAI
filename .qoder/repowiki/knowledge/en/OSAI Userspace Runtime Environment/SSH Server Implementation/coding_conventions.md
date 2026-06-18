@@ -1,0 +1,3 @@
+- Big-endian byte order is used for all multi-byte integer serialization via `ssh_write_u32_be` and `ssh_read_u32_be`.
+- Network I/O uses blocking `send_all`/`recv_all` wrappers around `osai_net_send`/`osai_net_recv` to ensure full buffer transmission/reception.
+- Cryptographic primitives are implemented from scratch without external libraries, verified by `ssh_crypto_self_test()`.

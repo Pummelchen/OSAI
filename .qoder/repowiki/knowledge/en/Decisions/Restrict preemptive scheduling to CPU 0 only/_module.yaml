@@ -1,0 +1,7 @@
+schema_version: 1
+module_path: decisions/808394076012_0b38adbc5e38
+title: Restrict preemptive scheduling to CPU 0 only
+scope: []
+source_files: []
+depends_on: []
+related_to: []

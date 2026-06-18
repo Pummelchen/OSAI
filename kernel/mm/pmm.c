@@ -1,12 +1,12 @@
-#include <osai/assert.h>
-#include <osai/klog.h>
-#include <osai/numa.h>
-#include <osai/pmm.h>
+#include <xaios/assert.h>
+#include <xaios/klog.h>
+#include <xaios/numa.h>
+#include <xaios/pmm.h>
 
 static uint64_t g_total_pages;
 static uint64_t g_reserved_pages;
 
-void pmm_init(const osai_boot_info_t *boot) {
+void pmm_init(const xaios_boot_info_t *boot) {
   /* numa_init(boot) must be called before pmm_init().
    * PMM now delegates to NUMA node free-stacks. */
   (void)boot;
@@ -15,7 +15,7 @@ void pmm_init(const osai_boot_info_t *boot) {
 
   uint32_t ncount = numa_node_count();
   for (uint32_t i = 0; i < ncount; ++i) {
-    const osai_numa_node_t *node = numa_node(i);
+    const xaios_numa_node_t *node = numa_node(i);
     if (node != 0) {
       g_total_pages += node->total_pages;
     }
@@ -89,7 +89,7 @@ uint64_t pmm_free_pages(void) {
   uint64_t total = 0;
   uint32_t ncount = numa_node_count();
   for (uint32_t i = 0; i < ncount; ++i) {
-    const osai_numa_node_t *node = numa_node(i);
+    const xaios_numa_node_t *node = numa_node(i);
     if (node != 0) {
       total += node->free_count;
     }

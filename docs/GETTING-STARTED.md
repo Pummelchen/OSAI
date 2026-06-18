@@ -1,6 +1,6 @@
-# Getting Started with OSAI
+# Getting Started with XAIOS
 
-This guide covers setting up a development environment, building OSAI, running it in QEMU, and writing your first userspace application.
+This guide covers setting up a development environment, building XAIOS, running it in QEMU, and writing your first userspace application.
 
 ## Prerequisites
 
@@ -25,15 +25,15 @@ From the repository root:
 
 ```sh
 make bootstrap    # One-time toolchain verification
-make image        # Build everything → build/osai-aarch64.img
+make image        # Build everything → build/xaios-aarch64.img
 ```
 
 The build produces:
 - `build/uefi/BOOTAA64.EFI` — UEFI bootloader
 - `build/kernel/kernel.elf` — Kernel ELF binary
-- `build/osai-aarch64.img` — 64 MB FAT boot image
-- `build/osai-virtio-test.img` — VirtIO block device with initramfs
-- `build/osai-persistent.img` — Persistent mutable storage (4 MB)
+- `build/xaios-aarch64.img` — 64 MB FAT boot image
+- `build/xaios-virtio-test.img` — VirtIO block device with initramfs
+- `build/xaios-persistent.img` — Persistent mutable storage (4 MB)
 
 ## Running
 
@@ -73,30 +73,30 @@ The smoke test runs is the primary validation: it boots the full OS, executes al
 Create `userspace/apps/myapp.c`:
 
 ```c
-#include <osai_user.h>
+#include <xaios_user.h>
 
 int main(void) {
-    osai_log("myapp: starting\n");
+    xaios_log("myapp: starting\n");
 
-    // Use any OSAI syscall
-    u64 now = osai_clock_nanos();
-    osai_log("myapp: clock_nanos = ");
-    osai_log_u64("", now, "\n");
+    // Use any XAIOS syscall
+    u64 now = xaios_clock_nanos();
+    xaios_log("myapp: clock_nanos = ");
+    xaios_log_u64("", now, "\n");
 
     // Filesystem operations
-    osai_fs_mkdir("/state/myapp");
-    osai_write_file("/state/myapp/data.txt", "hello from myapp");
+    xaios_fs_mkdir("/state/myapp");
+    xaios_write_file("/state/myapp/data.txt", "hello from myapp");
 
     char buf[256];
-    int n = osai_read_file("/state/myapp/data.txt", buf, sizeof(buf) - 1);
+    int n = xaios_read_file("/state/myapp/data.txt", buf, sizeof(buf) - 1);
     if (n > 0) {
         buf[n] = '\0';
-        osai_log("myapp: read back: ");
-        osai_log(buf);
-        osai_log("\n");
+        xaios_log("myapp: read back: ");
+        xaios_log(buf);
+        xaios_log("\n");
     }
 
-    osai_log("myapp: done\n");
+    xaios_log("myapp: done\n");
     return 0;
 }
 ```
@@ -106,7 +106,7 @@ int main(void) {
 Edit `scripts/build-image.sh`, line 23. Add your app name to `USER_APPS`:
 
 ```sh
-USER_APPS="osai-shell hello sysinfo systest smptest nettest lstm-xor sshtest mltest myapp"
+USER_APPS="xaios-shell hello sysinfo systest smptest nettest lstm-xor sshtest mltest myapp"
 ```
 
 ### 3. Register the app in kmain
@@ -135,11 +135,11 @@ make image && make qemu-smoke
 
 ### Key constraints
 
-- **No libc**: Use `osai_user.h` functions only. `osai_memzero()`, `osai_strlen()`, `memcpy()`, `memset()` are available.
+- **No libc**: Use `xaios_user.h` functions only. `xaios_memzero()`, `xaios_strlen()`, `memcpy()`, `memset()` are available.
 - **No dynamic allocation**: The userspace runtime has no `malloc`. Use stack buffers or fixed-size arrays.
 - **Freestanding C99**: Standard C99 only. No POSIX headers, no standard library.
-- **Single-threaded**: Each app runs as a single process. Use `osai_thread_group_run()` for parallelism within CPU 0, or `osai_smp_run()` to dispatch to secondary cores.
-- **Exit cleanly**: Return 0 from `main()`. The runtime calls `osai_exit()` automatically.
+- **Single-threaded**: Each app runs as a single process. Use `xaios_thread_group_run()` for parallelism within CPU 0, or `xaios_smp_run()` to dispatch to secondary cores.
+- **Exit cleanly**: Return 0 from `main()`. The runtime calls `xaios_exit()` automatically.
 
 ## Architecture Reference
 

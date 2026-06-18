@@ -2,7 +2,7 @@
 from qemu_gate_lib import BUILD, check_markers, now, result, run, status_from_failures, write_report
 
 
-SCHEMA = "osai.qemu.userspace_expansion.v1"
+SCHEMA = "xaios.qemu.userspace_expansion.v1"
 REPORT = BUILD / "qemu-milestone-56-userspace-suite.json"
 
 COMMAND_MARKERS = {
@@ -32,8 +32,8 @@ COMMAND_MARKERS = {
         "/service-manager: remote-safe checks passed",
         "/service-manager: control plane complete",
         "/worker: scheduled child process ran",
-        "kernel: /bin/osai-worker pid=5 returned to kernel exit_code=0",
-        "/bin/osai-shell: command surface passed 1..15 + ls variants + tar/cpio archive",
+        "kernel: /bin/xaios-worker pid=5 returned to kernel exit_code=0",
+        "/bin/xaios-shell: command surface passed 1..15 + ls variants + tar/cpio archive",
         "/bin/hello: C toolchain and EL0 runtime integration passed",
         "/bin/sysinfo: complete",
         "/bin/systest: syscall and filesystem suite passed",

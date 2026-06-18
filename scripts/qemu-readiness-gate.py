@@ -6,11 +6,11 @@ import time
 from typing import Any, Dict, List
 
 
-REPORT_SCHEMA = "osai.qemu.hardware_readiness_gate.v1"
-BENCHMARK_SCHEMA = "osai.qemu.correctness_benchmark.v1"
-PREVIEW_SCHEMA = "osai.qemu.preview.v1"
-CPU_MATRIX_SCHEMA = "osai.qemu.cpu_matrix.v1"
-CONTRACT_SCHEMA = "osai.qemu.release_candidate_contract.v1"
+REPORT_SCHEMA = "xaios.qemu.hardware_readiness_gate.v1"
+BENCHMARK_SCHEMA = "xaios.qemu.correctness_benchmark.v1"
+PREVIEW_SCHEMA = "xaios.qemu.preview.v1"
+CPU_MATRIX_SCHEMA = "xaios.qemu.cpu_matrix.v1"
+CONTRACT_SCHEMA = "xaios.qemu.release_candidate_contract.v1"
 CONTRACT_PATH = "contracts/qemu-rc-v1.json"
 
 FROZEN_QEMU_CONTRACTS = [
@@ -62,15 +62,15 @@ FROZEN_QEMU_CONTRACTS = [
 
 INTEL_DESKTOP_ENTRY_CRITERIA = [
     "make qemu-readiness-gate exits with status 0.",
-    "build/qemu-preview-manifest.json exists and uses schema osai.qemu.preview.v1.",
-    "build/qemu-benchmark-report.json exists and uses schema osai.qemu.correctness_benchmark.v1.",
+    "build/qemu-preview-manifest.json exists and uses schema xaios.qemu.preview.v1.",
+    "build/qemu-benchmark-report.json exists and uses schema xaios.qemu.correctness_benchmark.v1.",
     "All benchmark gates are true.",
     "Two-boot persistence reboot validation passes on the same VirtIO state image.",
     "QEMU performance_claims_allowed is false.",
     "QEMU benchmark_type remains qemu-correctness.",
     "Controlled page, read-only write, and NX fault scenarios pass.",
     "QEMU CPU matrix report validates ARM64 boot tiers and x86_64 command tiers.",
-    "QEMU RC contract remains frozen at osai.qemu.release_candidate_contract.v1.",
+    "QEMU RC contract remains frozen at xaios.qemu.release_candidate_contract.v1.",
     "Platform and benchmark documentation describe QEMU as correctness-only.",
 ]
 
@@ -311,26 +311,26 @@ def validate_contract(contract: Dict[str, Any], failures: List[str]) -> Dict[str
         failures.append(f"contract.syscall_abi numbers expected {expected_syscall_numbers}, got {actual_syscall_numbers}")
 
     telemetry_schema = contract.get("telemetry_schema", {})
-    check_equal(telemetry_schema.get("schema"), "osai.qemu.telemetry.v1", "contract.telemetry_schema.schema", failures)
+    check_equal(telemetry_schema.get("schema"), "xaios.qemu.telemetry.v1", "contract.telemetry_schema.schema", failures)
     check_equal(telemetry_schema.get("minimums"), REQUIRED_TELEMETRY_MINIMUMS, "contract.telemetry_schema.minimums", failures)
     check_equal(telemetry_schema.get("equals"), REQUIRED_TELEMETRY_EQUALS, "contract.telemetry_schema.equals", failures)
 
     filesystem = contract.get("filesystem_format", {})
-    check_equal(filesystem.get("magic"), "OSAIROFS2", "contract.filesystem.magic", failures)
+    check_equal(filesystem.get("magic"), "XAIOSROFS2", "contract.filesystem.magic", failures)
     check_equal(filesystem.get("version"), 2, "contract.filesystem.version", failures)
     check_equal(filesystem.get("header_bytes"), 2048, "contract.filesystem.header_bytes", failures)
-    check_equal(filesystem.get("manifest_path"), "/etc/osai-init.conf", "contract.filesystem.manifest_path", failures)
+    check_equal(filesystem.get("manifest_path"), "/etc/xaios-init.conf", "contract.filesystem.manifest_path", failures)
     required_paths = filesystem.get("required_paths", [])
-    for path in ["/init", "/bin/service-manager", "/bin/osai-worker", "/bin/osai-shell", "/bin/hello", "/bin/sysinfo", "/bin/systest", "/bin/smptest", "/bin/nettest", "/bin/lstm-xor", "/bin/sshtest", "/bin/mltest", "/etc/osai-init.conf", "/etc/services/source-index.svc", "/models/cpu-ai-mvp.osaimodel"]:
+    for path in ["/init", "/bin/service-manager", "/bin/xaios-worker", "/bin/xaios-shell", "/bin/hello", "/bin/sysinfo", "/bin/systest", "/bin/smptest", "/bin/nettest", "/bin/lstm-xor", "/bin/sshtest", "/bin/mltest", "/etc/xaios-init.conf", "/etc/services/source-index.svc", "/models/cpu-ai-mvp.xaiosmodel"]:
         if path not in required_paths:
             failures.append(f"contract.filesystem.required_paths missing {path}")
     check_equal(filesystem.get("max_files"), 16, "contract.filesystem.max_files", failures)
 
     model_format = contract.get("cpu_ai_model_format", {})
-    check_equal(model_format.get("magic"), "OSAI_MODEL_MIAI", "contract.cpu_ai_model_format.magic", failures)
+    check_equal(model_format.get("magic"), "XAIOS_MODEL_MIAI", "contract.cpu_ai_model_format.magic", failures)
     check_equal(model_format.get("version"), 1, "contract.cpu_ai_model_format.version", failures)
     check_equal(model_format.get("header_bytes"), 80, "contract.cpu_ai_model_format.header_bytes", failures)
-    check_equal(model_format.get("path"), "/models/cpu-ai-mvp.osaimodel", "contract.cpu_ai_model_format.path", failures)
+    check_equal(model_format.get("path"), "/models/cpu-ai-mvp.xaiosmodel", "contract.cpu_ai_model_format.path", failures)
     check_bool(model_format.get("cpu_only_required"), True, "contract.cpu_ai_model_format.cpu_only_required", failures)
     check_bool(model_format.get("gpu_required_rejected"), True, "contract.cpu_ai_model_format.gpu_required_rejected", failures)
 
@@ -344,7 +344,7 @@ def validate_contract(contract: Dict[str, Any], failures: List[str]) -> Dict[str
             failures.append(f"contract.ai_cell_descriptor_abi.required_flags missing {flag}")
 
     persistence = contract.get("persistence_format", {})
-    check_equal(persistence.get("magic"), "OSAIPST1", "contract.persistence.magic", failures)
+    check_equal(persistence.get("magic"), "XAIOSPST1", "contract.persistence.magic", failures)
     check_equal(persistence.get("version"), 1, "contract.persistence.version", failures)
     check_equal(persistence.get("sector"), 3000, "contract.persistence.sector", failures)
 
@@ -356,10 +356,10 @@ def validate_contract(contract: Dict[str, Any], failures: List[str]) -> Dict[str
 
     security_policy = contract.get("security_policy", {})
     check_bool(security_policy.get("admin_capability_required"), True, "contract.security_policy.admin_capability_required", failures)
-    check_equal(security_policy.get("admin_capability"), "OSAI_CAP_ADMIN", "contract.security_policy.admin_capability", failures)
+    check_equal(security_policy.get("admin_capability"), "XAIOS_CAP_ADMIN", "contract.security_policy.admin_capability", failures)
     check_equal(security_policy.get("update_generation_policy"), "strictly monotonic", "contract.security_policy.update_generation_policy", failures)
-    check_equal(security_policy.get("accepted_update_key"), "OSAI-QEMU-DEV-PUBKEY", "contract.security_policy.accepted_update_key", failures)
-    for cap in ["OSAI_CAP_UPDATE", "OSAI_CAP_ADMIN"]:
+    check_equal(security_policy.get("accepted_update_key"), "XAIOS-QEMU-DEV-PUBKEY", "contract.security_policy.accepted_update_key", failures)
+    for cap in ["XAIOS_CAP_UPDATE", "XAIOS_CAP_ADMIN"]:
         if cap not in security_policy.get("update_requires_capabilities", []):
             failures.append(f"contract.security_policy.update_requires_capabilities missing {cap}")
     check_bool(security_policy.get("rollback_authorization_required"), True, "contract.security_policy.rollback_authorization_required", failures)
@@ -382,7 +382,7 @@ def validate_contract(contract: Dict[str, Any], failures: List[str]) -> Dict[str
     check_equal(admin_control.get("access_policy"), "ssh-only", "contract.admin_control_plane.access_policy", failures)
     check_bool(admin_control.get("password_login"), False, "contract.admin_control_plane.password_login", failures)
     check_bool(admin_control.get("admin_capability_required"), True, "contract.admin_control_plane.admin_capability_required", failures)
-    check_equal(admin_control.get("admin_capability"), "OSAI_CAP_ADMIN", "contract.admin_control_plane.admin_capability", failures)
+    check_equal(admin_control.get("admin_capability"), "XAIOS_CAP_ADMIN", "contract.admin_control_plane.admin_capability", failures)
     check_equal(admin_control.get("status_export_path"), "/state/services/admin.state", "contract.admin_control_plane.status_export_path", failures)
     for command in ["admin policy", "admin status <service>", "admin export <service>", "admin logs <service>", "admin remote-safe <command>"]:
         if command not in admin_control.get("required_commands", []):
@@ -429,8 +429,8 @@ def validate_docs(root: str, failures: List[str]) -> Dict[str, bool]:
     required_snippets = {
         "HARDWARE-READINESS.md": [
             "make qemu-readiness-gate",
-            "osai.qemu.hardware_readiness_gate.v1",
-            "osai.qemu.release_candidate_contract.v1",
+            "xaios.qemu.hardware_readiness_gate.v1",
+            "xaios.qemu.release_candidate_contract.v1",
             "correctness benchmark only",
         ],
         "QEMU-FULL-OS-PLAN.md": [
@@ -463,7 +463,7 @@ def main() -> int:
     os.makedirs(build_dir, exist_ok=True)
 
     env = os.environ.copy()
-    env.setdefault("OSAI_QEMU_SMOKE_TIMEOUT", "60")
+    env.setdefault("XAIOS_QEMU_SMOKE_TIMEOUT", "60")
     matrix = run(["make", "qemu-matrix"], env)
 
     failures: List[str] = []

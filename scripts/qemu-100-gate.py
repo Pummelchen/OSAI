@@ -2,7 +2,7 @@
 from qemu_gate_lib import BUILD, now, result, run, status_from_failures, write_report
 
 
-SCHEMA = "osai.qemu.100_gate.v1"
+SCHEMA = "xaios.qemu.100_gate.v1"
 REPORT = BUILD / "qemu-100-report.json"
 
 COMMANDS = [

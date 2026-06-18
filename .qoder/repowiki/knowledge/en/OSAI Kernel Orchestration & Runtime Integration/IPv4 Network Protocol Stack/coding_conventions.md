@@ -1,0 +1,3 @@
+- Protocol constants and magic numbers (e.g., Ethernet types, ICMP types) are defined in dedicated header files under `kernel/include/osai/` rather than hardcoded in implementation files.
+- Each protocol module implements a dedicated `self_test` function that uses `kassert` for validation and `klog` for reporting success, ensuring runtime verifiability of network logic.
+- Big-endian byte conversion helpers (`put_be16`, `get_be32`, etc.) are reimplemented locally in each source file instead of being centralized in a common utility module.

@@ -1,0 +1,3 @@
+- Use of static global arrays for fixed-size task storage and runqueues to avoid dynamic allocation in the kernel.
+- Separation of concerns where architecture-specific state saving is handled in assembly while scheduling logic remains in C.
+- Defensive programming with explicit bounds checking on PID values and array indices before accessing task structures.

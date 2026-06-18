@@ -39,8 +39,8 @@ brew_prefix() {
 }
 
 find_ovmf_firmware() {
-  if [ "${OSAI_OVMF_CODE:-}" != "" ]; then
-    [ -f "$OSAI_OVMF_CODE" ] && printf '%s\n' "$OSAI_OVMF_CODE" && return 0
+  if [ "${XAIOS_OVMF_CODE:-}" != "" ]; then
+    [ -f "$XAIOS_OVMF_CODE" ] && printf '%s\n' "$XAIOS_OVMF_CODE" && return 0
     return 1
   fi
 
@@ -89,20 +89,20 @@ if ! qemu="$(find_tool qemu-system-x86_64 "$QEMU_BIN/qemu-system-x86_64")"; then
 fi
 
 if ! firmware="$(find_ovmf_firmware)"; then
-  printf '%s\n' "error: x86_64 OVMF firmware not found. Set OSAI_OVMF_CODE=/path/to/edk2-x86_64-code.fd." >&2
+  printf '%s\n' "error: x86_64 OVMF firmware not found. Set XAIOS_OVMF_CODE=/path/to/edk2-x86_64-code.fd." >&2
   exit 1
 fi
 
-accel="${OSAI_QEMU_X86_ACCEL:-tcg}"
-machine="${OSAI_QEMU_X86_MACHINE:-q35}"
-cpu="${OSAI_QEMU_X86_CPU:-max}"
-memory="${OSAI_QEMU_X86_MEMORY:-2G}"
-smp="${OSAI_QEMU_X86_SMP:-4}"
-image="${OSAI_X86_64_IMAGE:-build/osai-x86_64.img}"
+accel="${XAIOS_QEMU_X86_ACCEL:-tcg}"
+machine="${XAIOS_QEMU_X86_MACHINE:-q35}"
+cpu="${XAIOS_QEMU_X86_CPU:-max}"
+memory="${XAIOS_QEMU_X86_MEMORY:-2G}"
+smp="${XAIOS_QEMU_X86_SMP:-4}"
+image="${XAIOS_X86_64_IMAGE:-build/xaios-x86_64.img}"
 
 if [ "$dry_run" -eq 0 ] && [ ! -f "$image" ]; then
   printf '%s\n' "error: missing x86_64 boot image: $image" >&2
-  printf '%s\n' "       Run make image-x86_64 first, or set OSAI_X86_64_IMAGE=/path/to/image.img." >&2
+  printf '%s\n' "       Run make image-x86_64 first, or set XAIOS_X86_64_IMAGE=/path/to/image.img." >&2
   exit 1
 fi
 

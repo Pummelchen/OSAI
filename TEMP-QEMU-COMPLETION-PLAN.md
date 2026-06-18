@@ -1,6 +1,6 @@
 # Temporary QEMU Completion Plan
 
-This file is a working plan for moving OSAI from the current QEMU status through milestone 33. It is intentionally temporary and should be removed or folded into the GitHub Wiki once the milestone sequence is stable.
+This file is a working plan for moving XAIOS from the current QEMU status through milestone 33. It is intentionally temporary and should be removed or folded into the GitHub Wiki once the milestone sequence is stable.
 
 ## Current Baseline
 

@@ -1,9 +1,9 @@
-#include <osai/assert.h>
-#include <osai/kheap.h>
-#include <osai/klog.h>
-#include <osai/virtio_net.h>
-#include <osai/virtio_transport.h>
-#include <osai/vmm.h>
+#include <xaios/assert.h>
+#include <xaios/kheap.h>
+#include <xaios/klog.h>
+#include <xaios/virtio_net.h>
+#include <xaios/virtio_transport.h>
+#include <xaios/vmm.h>
 
 #define VRING_DESC_F_WRITE UINT16_C(2)
 #define VIRTIO_NET_HDR_SIZE 10U
@@ -48,8 +48,8 @@ static void put_be16(uint8_t *dst, uint16_t value) {
 static uint64_t dma_address(const void *ptr) {
   uint64_t physical = 0;
   uint32_t flags = 0;
-  kassert(vmm_translate((uint64_t)(uintptr_t)ptr, &physical, &flags) == OSAI_OK);
-  kassert((flags & OSAI_VMM_PRESENT) != 0);
+  kassert(vmm_translate((uint64_t)(uintptr_t)ptr, &physical, &flags) == XAIOS_OK);
+  kassert((flags & XAIOS_VMM_PRESENT) != 0);
   return physical;
 }
 
@@ -57,13 +57,13 @@ static uint16_t get_be16(const uint8_t *src) {
   return (uint16_t)(((uint16_t)src[0] << 8U) | src[1]);
 }
 
-static osai_status_t allocate_driver(void) {
+static xaios_status_t allocate_driver(void) {
   if (g_net != 0) {
-    return OSAI_OK;
+    return XAIOS_OK;
   }
   g_net = (virtio_net_driver_t *)kheap_calloc(sizeof(*g_net), 16);
   if (g_net == 0) {
-    return OSAI_ERR_NO_MEMORY;
+    return XAIOS_ERR_NO_MEMORY;
   }
   g_net->rx_desc = (virtq_desc_t *)kheap_calloc(sizeof(virtq_desc_t) * VIRTQ_SIZE, 16);
   g_net->rx_avail = (virtq_avail_t *)kheap_calloc(sizeof(virtq_avail_t), 2);
@@ -76,9 +76,9 @@ static osai_status_t allocate_driver(void) {
   if (g_net->rx_desc == 0 || g_net->rx_avail == 0 || g_net->rx_used == 0 ||
       g_net->tx_desc == 0 || g_net->tx_avail == 0 || g_net->tx_used == 0 ||
       g_net->rx_packet == 0 || g_net->tx_packet == 0) {
-    return OSAI_ERR_NO_MEMORY;
+    return XAIOS_ERR_NO_MEMORY;
   }
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 static void build_arp_request(uint8_t *packet, uint64_t *packet_len) {
@@ -141,10 +141,10 @@ static void malformed_packet_self_test(void) {
 }
 
 void virtio_net_self_test(void) {
-  kassert(allocate_driver() == OSAI_OK);
+  kassert(allocate_driver() == XAIOS_OK);
   kassert(virtio_transport_find(VIRTIO_DEVICE_NET, "virtio-net",
-                                &g_net->device) == OSAI_OK);
-  kassert(virtio_transport_negotiate_no_features(&g_net->device) == OSAI_OK);
+                                &g_net->device) == XAIOS_OK);
+  kassert(virtio_transport_negotiate_no_features(&g_net->device) == XAIOS_OK);
 
   bytes_zero(g_net->rx_desc, sizeof(virtq_desc_t) * VIRTQ_SIZE);
   bytes_zero(g_net->rx_avail, sizeof(*g_net->rx_avail));
@@ -157,10 +157,10 @@ void virtio_net_self_test(void) {
 
   kassert(virtio_transport_setup_queue(&g_net->device, 0, VIRTQ_SIZE,
                                        g_net->rx_desc, g_net->rx_avail,
-                                       g_net->rx_used) == OSAI_OK);
+                                       g_net->rx_used) == XAIOS_OK);
   kassert(virtio_transport_setup_queue(&g_net->device, 1, VIRTQ_SIZE,
                                        g_net->tx_desc, g_net->tx_avail,
-                                       g_net->tx_used) == OSAI_OK);
+                                       g_net->tx_used) == XAIOS_OK);
   virtio_transport_set_driver_ok(&g_net->device);
 
   g_net->rx_desc[0].addr = dma_address(g_net->rx_packet);
@@ -181,8 +181,8 @@ void virtio_net_self_test(void) {
   g_net->tx_avail->idx = 1;
   virtio_transport_notify(&g_net->device, 1);
 
-  kassert(virtio_transport_wait_used(&g_net->tx_used->idx, 1) == OSAI_OK);
-  kassert(virtio_transport_wait_used(&g_net->rx_used->idx, 1) == OSAI_OK);
+  kassert(virtio_transport_wait_used(&g_net->tx_used->idx, 1) == XAIOS_OK);
+  kassert(virtio_transport_wait_used(&g_net->rx_used->idx, 1) == XAIOS_OK);
   virtio_transport_ack_interrupts(&g_net->device);
 
   uint32_t rx_len = g_net->rx_used->ring[0].len;
@@ -196,21 +196,21 @@ void virtio_net_self_test(void) {
 static uint64_t net_dma_address(const void *ptr) {
   uint64_t physical = 0;
   uint32_t flags = 0;
-  kassert(vmm_translate((uint64_t)(uintptr_t)ptr, &physical, &flags) == OSAI_OK);
-  kassert((flags & OSAI_VMM_PRESENT) != 0);
+  kassert(vmm_translate((uint64_t)(uintptr_t)ptr, &physical, &flags) == XAIOS_OK);
+  kassert((flags & XAIOS_VMM_PRESENT) != 0);
   return physical;
 }
 
-osai_status_t virtio_net_init_persistent(void) {
-  kassert(allocate_driver() == OSAI_OK);
+xaios_status_t virtio_net_init_persistent(void) {
+  kassert(allocate_driver() == XAIOS_OK);
 
   if (g_net->persistent != 0) {
-    return OSAI_OK;
+    return XAIOS_OK;
   }
 
   kassert(virtio_transport_find(VIRTIO_DEVICE_NET, "virtio-net-persist",
-                                &g_net->device) == OSAI_OK);
-  kassert(virtio_transport_negotiate_no_features(&g_net->device) == OSAI_OK);
+                                &g_net->device) == XAIOS_OK);
+  kassert(virtio_transport_negotiate_no_features(&g_net->device) == XAIOS_OK);
 
   bytes_zero(g_net->rx_desc, sizeof(virtq_desc_t) * VIRTQ_SIZE);
   bytes_zero(g_net->rx_avail, sizeof(*g_net->rx_avail));
@@ -221,10 +221,10 @@ osai_status_t virtio_net_init_persistent(void) {
 
   kassert(virtio_transport_setup_queue(&g_net->device, 0, VIRTQ_SIZE,
                                        g_net->rx_desc, g_net->rx_avail,
-                                       g_net->rx_used) == OSAI_OK);
+                                       g_net->rx_used) == XAIOS_OK);
   kassert(virtio_transport_setup_queue(&g_net->device, 1, VIRTQ_SIZE,
                                        g_net->tx_desc, g_net->tx_avail,
-                                       g_net->tx_used) == OSAI_OK);
+                                       g_net->tx_used) == XAIOS_OK);
   virtio_transport_set_driver_ok(&g_net->device);
 
   /* Allocate and post RX buffers */
@@ -232,7 +232,7 @@ osai_status_t virtio_net_init_persistent(void) {
     g_net->rx_bufs[i] = (uint8_t *)kheap_calloc(
         VIRTIO_NET_HDR_SIZE + VIRTIO_NET_MAX_FRAME, 16);
     if (g_net->rx_bufs[i] == 0) {
-      return OSAI_ERR_NO_MEMORY;
+      return XAIOS_ERR_NO_MEMORY;
     }
     g_net->rx_desc[i].addr = net_dma_address(g_net->rx_bufs[i]);
     g_net->rx_desc[i].len = VIRTIO_NET_HDR_SIZE + VIRTIO_NET_MAX_FRAME;
@@ -250,7 +250,7 @@ osai_status_t virtio_net_init_persistent(void) {
     g_net->tx_bufs[i] = (uint8_t *)kheap_calloc(
         VIRTIO_NET_HDR_SIZE + VIRTIO_NET_MAX_FRAME, 16);
     if (g_net->tx_bufs[i] == 0) {
-      return OSAI_ERR_NO_MEMORY;
+      return XAIOS_ERR_NO_MEMORY;
     }
   }
   g_net->tx_avail_idx = 0;
@@ -259,13 +259,13 @@ osai_status_t virtio_net_init_persistent(void) {
 
   klog("virtio-net: persistent mode initialized rx=%u tx=%u\n",
        VIRTIO_NET_PERSISTENT_RX_DESCS, VIRTIO_NET_PERSISTENT_TX_DESCS);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-osai_status_t virtio_net_tx(const uint8_t *data, uint64_t len) {
+xaios_status_t virtio_net_tx(const uint8_t *data, uint64_t len) {
   if (g_net == 0 || g_net->persistent == 0 || data == 0 ||
       len == 0 || len > VIRTIO_NET_MAX_FRAME) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   uint16_t desc_idx = g_net->tx_avail_idx % VIRTIO_NET_PERSISTENT_TX_DESCS;
@@ -275,8 +275,8 @@ osai_status_t virtio_net_tx(const uint8_t *data, uint64_t len) {
       g_net->tx_used->idx <= g_net->tx_last_used) {
     if (virtio_transport_wait_used(&g_net->tx_used->idx,
                                    (uint16_t)(g_net->tx_last_used + 1)) !=
-        OSAI_OK) {
-      return OSAI_ERR_IO;
+        XAIOS_OK) {
+      return XAIOS_ERR_IO;
     }
     ++g_net->tx_last_used;
   }
@@ -297,7 +297,7 @@ osai_status_t virtio_net_tx(const uint8_t *data, uint64_t len) {
   g_net->tx_avail->idx = g_net->tx_avail_idx;
   virtio_transport_notify(&g_net->device, 1);
 
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
 uint32_t virtio_net_rx_poll(uint8_t *buffer, uint64_t buffer_size) {
@@ -343,12 +343,12 @@ uint32_t virtio_net_rx_poll(uint8_t *buffer, uint64_t buffer_size) {
   return 0;
 }
 
-osai_status_t virtio_net_get_mac(uint8_t mac[6]) {
+xaios_status_t virtio_net_get_mac(uint8_t mac[6]) {
   if (g_net == 0 || mac == 0) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   for (uint32_t i = 0; i < 6; ++i) {
     mac[i] = (uint8_t)virtio_mmio_read32(g_net->device.base, 0x100U + i);
   }
-  return OSAI_OK;
+  return XAIOS_OK;
 }

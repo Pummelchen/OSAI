@@ -1,10 +1,10 @@
-#include <osai/agent_protocol.h>
-#include <osai/assert.h>
-#include <osai/cpu_ai_runtime.h>
-#include <osai/git_workspace.h>
-#include <osai/klog.h>
-#include <osai/sandbox.h>
-#include <osai/source_index.h>
+#include <xaios/agent_protocol.h>
+#include <xaios/assert.h>
+#include <xaios/cpu_ai_runtime.h>
+#include <xaios/git_workspace.h>
+#include <xaios/klog.h>
+#include <xaios/sandbox.h>
+#include <xaios/source_index.h>
 
 #define AGENT_REQUEST_MAGIC UINT32_C(0x41475251)
 #define AGENT_RESPONSE_MAGIC UINT32_C(0x41475253)
@@ -53,7 +53,7 @@ static void runtime_append_u64(char *output, uint64_t capacity,
   }
 }
 
-static void fill_response(osai_agent_response_t *response, uint32_t status,
+static void fill_response(xaios_agent_response_t *response, uint32_t status,
                           uint32_t command, uint64_t payload_size) {
   bytes_zero(response, sizeof(*response));
   response->magic = AGENT_RESPONSE_MAGIC;
@@ -63,37 +63,37 @@ static void fill_response(osai_agent_response_t *response, uint32_t status,
   response->payload_size = payload_size;
 }
 
-static osai_status_t handle_inference(const osai_agent_request_t *request,
-                                      osai_agent_response_t *response,
+static xaios_status_t handle_inference(const xaios_agent_request_t *request,
+                                      xaios_agent_response_t *response,
                                       const uint8_t *payload,
                                       char *output,
                                       uint64_t output_capacity,
                                       uint64_t *output_bytes) {
   if (payload == 0 || request->payload_size < 1) {
-    fill_response(response, OSAI_AGENT_STATUS_INVALID, request->command, 0);
+    fill_response(response, XAIOS_AGENT_STATUS_INVALID, request->command, 0);
     ++g_error_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   uint64_t model_kind = (uint64_t)payload[0];
   const uint8_t *model_input = payload + 1;
   uint64_t model_input_size = request->payload_size - 1;
 
-  osai_status_t status = cpu_ai_runtime_run_model(
+  xaios_status_t status = cpu_ai_runtime_run_model(
       request->cell_id, model_kind, model_input, model_input_size,
       output, output_capacity, output_bytes);
-  if (status != OSAI_OK) {
-    fill_response(response, OSAI_AGENT_STATUS_INTERNAL_ERROR,
+  if (status != XAIOS_OK) {
+    fill_response(response, XAIOS_AGENT_STATUS_INTERNAL_ERROR,
                   request->command, 0);
     ++g_error_count;
     return status;
   }
-  fill_response(response, OSAI_AGENT_STATUS_OK, request->command,
+  fill_response(response, XAIOS_AGENT_STATUS_OK, request->command,
                 *output_bytes);
-  return OSAI_OK;
+  return XAIOS_OK;
 }
 
-static osai_status_t handle_index_query(const osai_agent_request_t *request,
-                                        osai_agent_response_t *response,
+static xaios_status_t handle_index_query(const xaios_agent_request_t *request,
+                                        xaios_agent_response_t *response,
                                         const uint8_t *payload,
                                         char *output,
                                         uint64_t output_capacity,
@@ -110,12 +110,12 @@ static osai_status_t handle_index_query(const osai_agent_request_t *request,
   runtime_append_u64(output, output_capacity, &offset,
                      source_index_total_symbol_records());
   *output_bytes = offset;
-  fill_response(response, OSAI_AGENT_STATUS_OK, request->command, offset);
-  return OSAI_OK;
+  fill_response(response, XAIOS_AGENT_STATUS_OK, request->command, offset);
+  return XAIOS_OK;
 }
 
-static osai_status_t handle_git_status(const osai_agent_request_t *request,
-                                       osai_agent_response_t *response,
+static xaios_status_t handle_git_status(const xaios_agent_request_t *request,
+                                       xaios_agent_response_t *response,
                                        char *output,
                                        uint64_t output_capacity,
                                        uint64_t *output_bytes) {
@@ -130,12 +130,12 @@ static osai_status_t handle_git_status(const osai_agent_request_t *request,
   runtime_append_u64(output, output_capacity, &offset,
                      git_workspace_apply_count());
   *output_bytes = offset;
-  fill_response(response, OSAI_AGENT_STATUS_OK, request->command, offset);
-  return OSAI_OK;
+  fill_response(response, XAIOS_AGENT_STATUS_OK, request->command, offset);
+  return XAIOS_OK;
 }
 
-static osai_status_t handle_build(const osai_agent_request_t *request,
-                                  osai_agent_response_t *response,
+static xaios_status_t handle_build(const xaios_agent_request_t *request,
+                                  xaios_agent_response_t *response,
                                   char *output,
                                   uint64_t output_capacity,
                                   uint64_t *output_bytes) {
@@ -150,8 +150,8 @@ static osai_status_t handle_build(const osai_agent_request_t *request,
   runtime_append_u64(output, output_capacity, &offset,
                      sandbox_vm_exec_count());
   *output_bytes = offset;
-  fill_response(response, OSAI_AGENT_STATUS_OK, request->command, offset);
-  return OSAI_OK;
+  fill_response(response, XAIOS_AGENT_STATUS_OK, request->command, offset);
+  return XAIOS_OK;
 }
 
 void agent_protocol_init(void) {
@@ -160,29 +160,29 @@ void agent_protocol_init(void) {
   klog("agent-protocol: initialized version=%u\n", AGENT_PROTOCOL_VERSION);
 }
 
-osai_status_t agent_protocol_dispatch(const osai_agent_request_t *request,
-                                      osai_agent_response_t *response,
+xaios_status_t agent_protocol_dispatch(const xaios_agent_request_t *request,
+                                      xaios_agent_response_t *response,
                                       const uint8_t *payload,
                                       uint64_t payload_size,
                                       char *output, uint64_t output_capacity,
                                       uint64_t *output_bytes) {
   if (request == 0 || response == 0 || output == 0 || output_bytes == 0) {
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   if (request->magic != AGENT_REQUEST_MAGIC) {
-    fill_response(response, OSAI_AGENT_STATUS_INVALID, request->command, 0);
+    fill_response(response, XAIOS_AGENT_STATUS_INVALID, request->command, 0);
     ++g_error_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
   if (request->version != AGENT_PROTOCOL_VERSION) {
-    fill_response(response, OSAI_AGENT_STATUS_INVALID, request->command, 0);
+    fill_response(response, XAIOS_AGENT_STATUS_INVALID, request->command, 0);
     ++g_error_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
-  if (payload_size > OSAI_AGENT_MAX_PAYLOAD) {
-    fill_response(response, OSAI_AGENT_STATUS_INVALID, request->command, 0);
+  if (payload_size > XAIOS_AGENT_MAX_PAYLOAD) {
+    fill_response(response, XAIOS_AGENT_STATUS_INVALID, request->command, 0);
     ++g_error_count;
-    return OSAI_ERR_INVALID;
+    return XAIOS_ERR_INVALID;
   }
 
   ++g_request_count;
@@ -193,55 +193,55 @@ osai_status_t agent_protocol_dispatch(const osai_agent_request_t *request,
        request->command, request->cell_id, payload_size);
 
   switch (request->command) {
-    case OSAI_AGENT_CMD_INFERENCE:
+    case XAIOS_AGENT_CMD_INFERENCE:
       return handle_inference(request, response, payload, output,
                               output_capacity, output_bytes);
-    case OSAI_AGENT_CMD_INDEX_QUERY:
+    case XAIOS_AGENT_CMD_INDEX_QUERY:
       return handle_index_query(request, response, payload, output,
                                 output_capacity, output_bytes);
-    case OSAI_AGENT_CMD_GIT_STATUS:
+    case XAIOS_AGENT_CMD_GIT_STATUS:
       return handle_git_status(request, response, output, output_capacity,
                                output_bytes);
-    case OSAI_AGENT_CMD_GIT_DIFF:
+    case XAIOS_AGENT_CMD_GIT_DIFF:
       /* Git diff dispatches to git_workspace_compute_diff with payload data */
       if (payload != 0 && payload_size >= 4) {
-        osai_git_workspace_diff_hunk_t hunks[OSAI_GIT_WORKSPACE_DIFF_MAX_HUNKS];
+        xaios_git_workspace_diff_hunk_t hunks[XAIOS_GIT_WORKSPACE_DIFF_MAX_HUNKS];
         uint32_t hunk_count = 0;
-        osai_status_t st = git_workspace_compute_diff(
+        xaios_status_t st = git_workspace_compute_diff(
             (const char *)payload, payload_size,
             (const char *)payload, payload_size,
-            hunks, OSAI_GIT_WORKSPACE_DIFF_MAX_HUNKS, &hunk_count);
-        if (st == OSAI_OK) {
+            hunks, XAIOS_GIT_WORKSPACE_DIFF_MAX_HUNKS, &hunk_count);
+        if (st == XAIOS_OK) {
           uint64_t off = 0;
           runtime_append(output, output_capacity, &off, "diff:hunks=");
           runtime_append_u64(output, output_capacity, &off, hunk_count);
           *output_bytes = off;
-          fill_response(response, OSAI_AGENT_STATUS_OK, request->command, off);
-          return OSAI_OK;
+          fill_response(response, XAIOS_AGENT_STATUS_OK, request->command, off);
+          return XAIOS_OK;
         }
-        fill_response(response, OSAI_AGENT_STATUS_INTERNAL_ERROR,
+        fill_response(response, XAIOS_AGENT_STATUS_INTERNAL_ERROR,
                       request->command, 0);
         ++g_error_count;
         return st;
       }
-      fill_response(response, OSAI_AGENT_STATUS_INVALID, request->command, 0);
+      fill_response(response, XAIOS_AGENT_STATUS_INVALID, request->command, 0);
       ++g_error_count;
-      return OSAI_ERR_INVALID;
-    case OSAI_AGENT_CMD_BUILD:
+      return XAIOS_ERR_INVALID;
+    case XAIOS_AGENT_CMD_BUILD:
       return handle_build(request, response, output, output_capacity,
                           output_bytes);
-    case OSAI_AGENT_CMD_PING: {
+    case XAIOS_AGENT_CMD_PING: {
       uint64_t off = 0;
       runtime_append(output, output_capacity, &off, "pong:");
       runtime_append_u64(output, output_capacity, &off, g_request_count);
       *output_bytes = off;
-      fill_response(response, OSAI_AGENT_STATUS_OK, request->command, off);
-      return OSAI_OK;
+      fill_response(response, XAIOS_AGENT_STATUS_OK, request->command, off);
+      return XAIOS_OK;
     }
     default:
-      fill_response(response, OSAI_AGENT_STATUS_INVALID, request->command, 0);
+      fill_response(response, XAIOS_AGENT_STATUS_INVALID, request->command, 0);
       ++g_error_count;
-      return OSAI_ERR_INVALID;
+      return XAIOS_ERR_INVALID;
   }
 }
 
@@ -257,63 +257,63 @@ void agent_protocol_self_test(void) {
   agent_protocol_init();
 
   /* Test PING */
-  osai_agent_request_t req;
-  osai_agent_response_t resp;
+  xaios_agent_request_t req;
+  xaios_agent_response_t resp;
   char output[256];
   uint64_t out_bytes = 0;
 
   bytes_zero(&req, sizeof(req));
   req.magic = AGENT_REQUEST_MAGIC;
   req.version = AGENT_PROTOCOL_VERSION;
-  req.command = OSAI_AGENT_CMD_PING;
+  req.command = XAIOS_AGENT_CMD_PING;
   req.cell_id = 0;
   req.payload_size = 0;
 
   kassert(agent_protocol_dispatch(&req, &resp, 0, 0, output,
-                                  sizeof(output), &out_bytes) == OSAI_OK);
+                                  sizeof(output), &out_bytes) == XAIOS_OK);
   kassert(resp.magic == AGENT_RESPONSE_MAGIC);
-  kassert(resp.status == OSAI_AGENT_STATUS_OK);
-  kassert(resp.command == OSAI_AGENT_CMD_PING);
+  kassert(resp.status == XAIOS_AGENT_STATUS_OK);
+  kassert(resp.command == XAIOS_AGENT_CMD_PING);
   kassert(out_bytes > 0);
 
   /* Test bad magic */
   req.magic = 0xDEAD;
   kassert(agent_protocol_dispatch(&req, &resp, 0, 0, output,
                                   sizeof(output), &out_bytes) ==
-          OSAI_ERR_INVALID);
-  kassert(resp.status == OSAI_AGENT_STATUS_INVALID);
+          XAIOS_ERR_INVALID);
+  kassert(resp.status == XAIOS_AGENT_STATUS_INVALID);
 
   /* Test bad version */
   req.magic = AGENT_REQUEST_MAGIC;
   req.version = 99;
   kassert(agent_protocol_dispatch(&req, &resp, 0, 0, output,
                                   sizeof(output), &out_bytes) ==
-          OSAI_ERR_INVALID);
+          XAIOS_ERR_INVALID);
 
   /* Test invalid command */
   req.version = AGENT_PROTOCOL_VERSION;
   req.command = 99;
   kassert(agent_protocol_dispatch(&req, &resp, 0, 0, output,
                                   sizeof(output), &out_bytes) ==
-          OSAI_ERR_INVALID);
+          XAIOS_ERR_INVALID);
 
   /* Test INDEX_QUERY */
-  req.command = OSAI_AGENT_CMD_INDEX_QUERY;
+  req.command = XAIOS_AGENT_CMD_INDEX_QUERY;
   kassert(agent_protocol_dispatch(&req, &resp, 0, 0, output,
-                                  sizeof(output), &out_bytes) == OSAI_OK);
-  kassert(resp.status == OSAI_AGENT_STATUS_OK);
+                                  sizeof(output), &out_bytes) == XAIOS_OK);
+  kassert(resp.status == XAIOS_AGENT_STATUS_OK);
 
   /* Test GIT_STATUS */
-  req.command = OSAI_AGENT_CMD_GIT_STATUS;
+  req.command = XAIOS_AGENT_CMD_GIT_STATUS;
   kassert(agent_protocol_dispatch(&req, &resp, 0, 0, output,
-                                  sizeof(output), &out_bytes) == OSAI_OK);
-  kassert(resp.status == OSAI_AGENT_STATUS_OK);
+                                  sizeof(output), &out_bytes) == XAIOS_OK);
+  kassert(resp.status == XAIOS_AGENT_STATUS_OK);
 
   /* Test BUILD */
-  req.command = OSAI_AGENT_CMD_BUILD;
+  req.command = XAIOS_AGENT_CMD_BUILD;
   kassert(agent_protocol_dispatch(&req, &resp, 0, 0, output,
-                                  sizeof(output), &out_bytes) == OSAI_OK);
-  kassert(resp.status == OSAI_AGENT_STATUS_OK);
+                                  sizeof(output), &out_bytes) == XAIOS_OK);
+  kassert(resp.status == XAIOS_AGENT_STATUS_OK);
 
   kassert(agent_protocol_request_count() == 5);
   kassert(agent_protocol_error_count() == 3);

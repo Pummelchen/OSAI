@@ -1,0 +1,1 @@
+Orchestrates bare-metal AArch64 userspace execution by defining the system call boundary, bootstrapping service policies, and providing a freestanding C library for kernel interaction.

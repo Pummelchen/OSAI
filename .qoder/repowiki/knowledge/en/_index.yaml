@@ -1,0 +1,334 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: en-US
+branch: main
+exported_at: "2026-06-16T12:23:58Z"
+modules:
+    "":
+        dir_name: OSAI Freestanding OS Platform
+        title: OSAI Freestanding OS Platform
+        scope: []
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    decisions:
+        dir_name: Decisions
+        title: Decisions
+        scope: []
+        source_files: []
+        children:
+            - decisions/808394076012_b2c6223a89b8
+            - decisions/808394076012_0b38adbc5e38
+            - decisions/808394076012_73fb377e7311
+        depends_on: []
+        related_to: []
+    decisions/808394076012_0b38adbc5e38:
+        dir_name: Restrict preemptive scheduling to CPU 0 only
+        title: Restrict preemptive scheduling to CPU 0 only
+        scope: []
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    decisions/808394076012_73fb377e7311:
+        dir_name: Implement userspace SSH daemon with custom freestanding crypto
+        title: Implement userspace SSH daemon with custom freestanding crypto
+        scope: []
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    decisions/808394076012_b2c6223a89b8:
+        dir_name: Adopt hybrid page table structure for user address space isolation
+        title: Adopt hybrid page table structure for user address space isolation
+        scope: []
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    kernel:
+        dir_name: OSAI Kernel Orchestration & Runtime Integration
+        title: OSAI Kernel Orchestration & Runtime Integration
+        scope:
+            - kernel/
+        source_files: []
+        children:
+            - kernel/scheduler
+            - kernel/networking
+            - kernel/user_interface
+            - kernel/device_drivers
+            - kernel/arch_ports
+            - kernel/core_boot
+            - kernel/memory_mgmt
+            - kernel/runtime_services
+        depends_on: []
+        related_to:
+            - path: userspace
+            - path: test_and_build_scripts
+            - path: uefi_bootloader
+    kernel/arch_ports:
+        dir_name: Architecture-Specific Hardware Abstraction Layer
+        title: Architecture-Specific Hardware Abstraction Layer
+        scope:
+            - kernel/arch/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: kernel/core_boot
+            - path: kernel/scheduler
+            - path: kernel/device_drivers
+            - path: kernel/memory_mgmt
+            - path: userspace/osai_user_lib
+            - path: uefi_bootloader
+            - path: test_and_build_scripts
+    kernel/core_boot:
+        dir_name: OSAI Kernel Core Boot & Runtime Diagnostics
+        title: OSAI Kernel Core Boot & Runtime Diagnostics
+        scope:
+            - kernel/core/
+            - kernel/include/osai/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: uefi_bootloader
+            - path: kernel/arch_ports
+            - path: test_and_build_scripts
+            - path: kernel/scheduler
+            - path: kernel/networking
+            - path: kernel/runtime_services
+            - path: kernel/memory_mgmt
+            - path: userspace/apps
+            - path: kernel/device_drivers
+    kernel/device_drivers:
+        dir_name: Virtio Device Drivers
+        title: Virtio Device Drivers
+        scope:
+            - kernel/dev/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: kernel/memory_mgmt
+            - path: kernel/networking
+            - path: kernel/arch_ports
+            - path: kernel/runtime_services
+            - path: userspace/apps
+            - path: test_and_build_scripts
+            - path: kernel/scheduler
+            - path: kernel/core_boot
+    kernel/memory_mgmt:
+        dir_name: Kernel Memory Management & ELF Loading
+        title: Kernel Memory Management & ELF Loading
+        scope:
+            - kernel/mm/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: kernel/scheduler
+            - path: kernel/runtime_services
+            - path: kernel/device_drivers
+            - path: kernel/user_interface
+            - path: kernel/arch_ports
+            - path: kernel/core_boot
+            - path: userspace/process_runtime
+            - path: uefi_bootloader
+    kernel/networking:
+        dir_name: IPv4 Network Protocol Stack
+        title: IPv4 Network Protocol Stack
+        scope:
+            - kernel/net/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: userspace/sshd
+            - path: kernel/device_drivers
+            - path: userspace/apps
+            - path: kernel/core_boot
+            - path: test_and_build_scripts
+            - path: kernel/scheduler
+    kernel/runtime_services:
+        dir_name: Secure Sandbox Runtime & Isolation
+        title: Secure Sandbox Runtime & Isolation
+        scope:
+            - kernel/runtime/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: kernel/memory_mgmt
+            - path: kernel/user_interface
+            - path: userspace/process_runtime
+            - path: kernel/device_drivers
+            - path: kernel/core_boot
+            - path: userspace/init_system
+            - path: test_and_build_scripts
+            - path: kernel/scheduler
+    kernel/scheduler:
+        dir_name: Preemptive Task Scheduler
+        title: Preemptive Task Scheduler
+        scope:
+            - kernel/sched/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: kernel/memory_mgmt
+            - path: kernel/user_interface
+            - path: kernel/arch_ports
+            - path: kernel/core_boot
+            - path: userspace/process_runtime
+            - path: test_and_build_scripts
+            - path: kernel/runtime_services
+            - path: kernel/device_drivers
+            - path: kernel/networking
+    kernel/user_interface:
+        dir_name: User-Space Interface & Service Supervision
+        title: User-Space Interface & Service Supervision
+        scope:
+            - kernel/user/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: userspace/process_runtime
+            - path: userspace/osai_user_lib
+            - path: kernel/runtime_services
+            - path: kernel/scheduler
+            - path: userspace/init_system
+            - path: kernel/memory_mgmt
+            - path: userspace/sshd
+            - path: test_and_build_scripts
+    test_and_build_scripts:
+        dir_name: OSAI Build, Test, and Validation Automation
+        title: OSAI Build, Test, and Validation Automation
+        scope:
+            - scripts/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: uefi_bootloader
+            - path: kernel/core_boot
+            - path: userspace/osai_user_lib
+            - path: userspace/apps
+            - path: kernel
+            - path: userspace
+            - path: kernel/scheduler
+            - path: kernel/device_drivers
+            - path: kernel/runtime_services
+            - path: kernel/networking
+            - path: kernel/user_interface
+            - path: kernel/arch_ports
+    uefi_bootloader:
+        dir_name: UEFI Bootloader
+        title: UEFI Bootloader
+        scope:
+            - boot/uefi/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: kernel/core_boot
+            - path: test_and_build_scripts
+            - path: kernel
+            - path: kernel/memory_mgmt
+            - path: kernel/arch_ports
+    userspace:
+        dir_name: OSAI Userspace Runtime Environment
+        title: OSAI Userspace Runtime Environment
+        scope:
+            - userspace/
+        source_files: []
+        children:
+            - userspace/process_runtime
+            - userspace/apps
+            - userspace/sshd
+            - userspace/osai_user_lib
+            - userspace/init_system
+        depends_on: []
+        related_to:
+            - path: kernel
+            - path: test_and_build_scripts
+    userspace/apps:
+        dir_name: OSAI Userspace Application Suite
+        title: OSAI Userspace Application Suite
+        scope:
+            - userspace/apps/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: userspace/osai_user_lib
+            - path: userspace/sshd
+            - path: kernel/networking
+            - path: test_and_build_scripts
+            - path: kernel/device_drivers
+            - path: kernel/core_boot
+            - path: userspace/init_system
+            - path: userspace/process_runtime
+    userspace/init_system:
+        dir_name: Userspace Init & Service Bootstrap
+        title: Userspace Init & Service Bootstrap
+        scope:
+            - userspace/init/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: userspace/process_runtime
+            - path: kernel/user_interface
+            - path: userspace/osai_user_lib
+            - path: kernel/runtime_services
+            - path: userspace/apps
+    userspace/osai_user_lib:
+        dir_name: OSAI Userspace System Call Library
+        title: OSAI Userspace System Call Library
+        scope:
+            - userspace/lib/
+            - userspace/include/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: kernel/user_interface
+            - path: userspace/apps
+            - path: test_and_build_scripts
+            - path: userspace/init_system
+            - path: userspace/sshd
+            - path: userspace/process_runtime
+            - path: kernel/arch_ports
+    userspace/process_runtime:
+        dir_name: Process Runtime & Service Management
+        title: Process Runtime & Service Management
+        scope:
+            - userspace/service-manager/
+            - userspace/worker/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: kernel/user_interface
+            - path: userspace/init_system
+            - path: kernel/runtime_services
+            - path: userspace/osai_user_lib
+            - path: kernel/scheduler
+            - path: kernel/memory_mgmt
+            - path: userspace/apps
+    userspace/sshd:
+        dir_name: SSH Server Implementation
+        title: SSH Server Implementation
+        scope:
+            - userspace/sshd/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: kernel/networking
+            - path: userspace/apps
+            - path: kernel/user_interface
+            - path: userspace/osai_user_lib

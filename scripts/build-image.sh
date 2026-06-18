@@ -6,9 +6,9 @@ BUILD_DIR="$ROOT_DIR/build"
 EFI_BUILD_DIR="$BUILD_DIR/uefi"
 KERNEL_BUILD_DIR="$BUILD_DIR/kernel"
 INIT_BUILD_DIR="$BUILD_DIR/init"
-IMAGE_PATH="${OSAI_AARCH64_IMAGE:-$BUILD_DIR/osai-aarch64.img}"
-TEST_BLOCK_IMAGE="${OSAI_TEST_BLOCK_IMAGE:-$BUILD_DIR/osai-virtio-test.img}"
-PERSISTENT_IMAGE="${OSAI_PERSISTENT_IMAGE:-$BUILD_DIR/osai-persistent.img}"
+IMAGE_PATH="${XAIOS_AARCH64_IMAGE:-$BUILD_DIR/xaios-aarch64.img}"
+TEST_BLOCK_IMAGE="${XAIOS_TEST_BLOCK_IMAGE:-$BUILD_DIR/xaios-virtio-test.img}"
+PERSISTENT_IMAGE="${XAIOS_PERSISTENT_IMAGE:-$BUILD_DIR/xaios-persistent.img}"
 LOADER_OBJ="$EFI_BUILD_DIR/loader_main.obj"
 LOADER_EFI="$EFI_BUILD_DIR/BOOTAA64.EFI"
 KERNEL_ELF="$KERNEL_BUILD_DIR/kernel.elf"
@@ -19,8 +19,8 @@ SERVICE_MANAGER_ELF="$INIT_BUILD_DIR/service-manager.elf"
 WORKER_OBJ="$INIT_BUILD_DIR/worker.o"
 WORKER_ELF="$INIT_BUILD_DIR/worker.elf"
 USER_START_OBJ="$INIT_BUILD_DIR/user-start.o"
-USER_LIB_OBJ="$INIT_BUILD_DIR/osai-user.o"
-USER_APPS="osai-shell hello sysinfo systest smptest nettest lstm-xor sshtest mltest posix-shell agenttest"
+USER_LIB_OBJ="$INIT_BUILD_DIR/xaios-user.o"
+USER_APPS="xaios-shell hello sysinfo systest smptest nettest lstm-xor sshtest mltest posix-shell agenttest"
 
 find_tool() {
   tool_name="$1"
@@ -124,13 +124,13 @@ KERNEL_CFLAGS="
   -I$ROOT_DIR/kernel/include
 "
 
-case "${OSAI_FAULT_TEST:-}" in
+case "${XAIOS_FAULT_TEST:-}" in
   "") ;;
-  page) KERNEL_CFLAGS="$KERNEL_CFLAGS -DOSAI_FAULT_TEST_PAGE=1" ;;
-  ro) KERNEL_CFLAGS="$KERNEL_CFLAGS -DOSAI_FAULT_TEST_RO=1" ;;
-  nx) KERNEL_CFLAGS="$KERNEL_CFLAGS -DOSAI_FAULT_TEST_NX=1" ;;
+  page) KERNEL_CFLAGS="$KERNEL_CFLAGS -DXAIOS_FAULT_TEST_PAGE=1" ;;
+  ro) KERNEL_CFLAGS="$KERNEL_CFLAGS -DXAIOS_FAULT_TEST_RO=1" ;;
+  nx) KERNEL_CFLAGS="$KERNEL_CFLAGS -DXAIOS_FAULT_TEST_NX=1" ;;
   *)
-    printf '%s\n' "error: unsupported OSAI_FAULT_TEST=${OSAI_FAULT_TEST}" >&2
+    printf '%s\n' "error: unsupported XAIOS_FAULT_TEST=${XAIOS_FAULT_TEST}" >&2
     exit 2
     ;;
 esac
@@ -289,7 +289,7 @@ printf '%s\n' "Building userspace /bin/service-manager ELF..."
   -o "$SERVICE_MANAGER_ELF" \
   "$SERVICE_MANAGER_OBJ"
 
-printf '%s\n' "Building userspace /bin/osai-worker ELF..."
+printf '%s\n' "Building userspace /bin/xaios-worker ELF..."
 "$CLANG" \
   --target=aarch64-none-elf \
   -ffreestanding \
@@ -336,7 +336,7 @@ printf '%s\n' "Building userspace C runtime..."
   -Wextra \
   -Werror \
   -I"$ROOT_DIR/userspace/include" \
-  -c "$ROOT_DIR/userspace/lib/osai_user.c" \
+  -c "$ROOT_DIR/userspace/lib/xaios_user.c" \
   -o "$USER_LIB_OBJ"
 
 APP_INITFS_ARGS=""
@@ -404,25 +404,25 @@ mkdir -p "$(dirname -- "$IMAGE_PATH")"
 
 printf '%s\n' "Creating FAT boot image: $IMAGE_PATH"
 dd if=/dev/zero of="$IMAGE_PATH" bs=1m count=64 status=none
-"$MFORMAT" -i "$IMAGE_PATH" -F -v OSAI ::
+"$MFORMAT" -i "$IMAGE_PATH" -F -v XAIOS ::
 "$MMD" -i "$IMAGE_PATH" ::/EFI
 "$MMD" -i "$IMAGE_PATH" ::/EFI/BOOT
-"$MMD" -i "$IMAGE_PATH" ::/EFI/OSAI
+"$MMD" -i "$IMAGE_PATH" ::/EFI/XAIOS
 "$MCOPY" -i "$IMAGE_PATH" "$LOADER_EFI" ::/EFI/BOOT/BOOTAA64.EFI
-"$MCOPY" -i "$IMAGE_PATH" "$KERNEL_ELF" ::/EFI/OSAI/kernel.elf
+"$MCOPY" -i "$IMAGE_PATH" "$KERNEL_ELF" ::/EFI/XAIOS/kernel.elf
 
 printf '%s\n' "Created $IMAGE_PATH"
 
 printf '%s\n' "Creating VirtIO block test image: $TEST_BLOCK_IMAGE"
 rm -f "$TEST_BLOCK_IMAGE"
 dd if=/dev/zero of="$TEST_BLOCK_IMAGE" bs=512 count=4096 status=none
-printf 'OSAI-VIRTIO-BLOCK-TEST\n' | dd of="$TEST_BLOCK_IMAGE" bs=512 count=1 conv=notrunc status=none
+printf 'XAIOS-VIRTIO-BLOCK-TEST\n' | dd of="$TEST_BLOCK_IMAGE" bs=512 count=1 conv=notrunc status=none
 "$PYTHON3" "$ROOT_DIR/scripts/create-initfs.py" \
   "$TEST_BLOCK_IMAGE" \
   "$INIT_ELF" \
   "$SERVICE_MANAGER_ELF" \
   "$WORKER_ELF" \
-  "$ROOT_DIR/userspace/init/osai-init.conf" \
+  "$ROOT_DIR/userspace/init/xaios-init.conf" \
   "$ROOT_DIR/userspace/service-manager/source-index.svc" \
   $APP_INITFS_ARGS
 printf '%s\n' "Created $TEST_BLOCK_IMAGE"

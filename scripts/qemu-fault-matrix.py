@@ -37,7 +37,7 @@ FAULTS = [
 
 def run_build(fault: str) -> int:
     env = os.environ.copy()
-    env["OSAI_FAULT_TEST"] = fault
+    env["XAIOS_FAULT_TEST"] = fault
     proc = subprocess.run(
         ["./scripts/build-image.sh"],
         stdout=subprocess.PIPE,
@@ -52,7 +52,7 @@ def run_build(fault: str) -> int:
 
 def run_fault_boot(name: str, targets) -> int:
     env = os.environ.copy()
-    env["OSAI_QEMU_HOSTFWD_PORT"] = "none"
+    env["XAIOS_QEMU_HOSTFWD_PORT"] = "none"
     proc = subprocess.Popen(
         ["./scripts/run-qemu-aarch64.sh"],
         stdout=subprocess.PIPE,
@@ -64,7 +64,7 @@ def run_fault_boot(name: str, targets) -> int:
     )
 
     seen = []
-    deadline = time.time() + int(os.environ.get("OSAI_QEMU_FAULT_TIMEOUT", "60"))
+    deadline = time.time() + int(os.environ.get("XAIOS_QEMU_FAULT_TIMEOUT", "60"))
     try:
         fd = proc.stdout.fileno()
         while time.time() < deadline:

@@ -1,7 +1,7 @@
-#include <osai/assert.h>
-#include <osai/klog.h>
-#include <osai/rtc.h>
-#include <osai/timer.h>
+#include <xaios/assert.h>
+#include <xaios/klog.h>
+#include <xaios/rtc.h>
+#include <xaios/timer.h>
 
 /* PL031 register offsets */
 #define PL031_RTCDR  0x00U  /* Data Register (read-only, epoch seconds) */
@@ -14,7 +14,7 @@ static volatile uint32_t *g_rtc_base;
 static uint32_t g_rtc_initialized;
 
 void rtc_init(void) {
-  g_rtc_base = (volatile uint32_t *)(uintptr_t)OSAI_PL031_RTC_BASE;
+  g_rtc_base = (volatile uint32_t *)(uintptr_t)XAIOS_PL031_RTC_BASE;
 
   /* Ensure RTC is enabled (bit 0 of RTCCR) */
   uint32_t cr = g_rtc_base[PL031_RTCCR / 4];

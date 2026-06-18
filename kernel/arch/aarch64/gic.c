@@ -1,6 +1,6 @@
-#include <osai/assert.h>
-#include <osai/gic.h>
-#include <osai/klog.h>
+#include <xaios/assert.h>
+#include <xaios/gic.h>
+#include <xaios/klog.h>
 
 #define QEMU_VIRT_GICD_BASE UINT64_C(0x08000000)
 #define QEMU_VIRT_GICR_BASE UINT64_C(0x080A0000)
@@ -29,7 +29,7 @@
 /* Physical timer INTID (PPI 14) */
 #define TIMER_PPI_INTID 30U
 
-static osai_gic_info_t g_gic_info;
+static xaios_gic_info_t g_gic_info;
 static uint32_t g_gic_full_init;
 
 static uint32_t mmio_read32(uint64_t base, uint32_t offset) {
@@ -121,7 +121,7 @@ void gic_disable_full(void) {
   klog("gic: full mode disabled\n");
 }
 
-const osai_gic_info_t *gic_info(void) {
+const xaios_gic_info_t *gic_info(void) {
   return &g_gic_info;
 }
 
