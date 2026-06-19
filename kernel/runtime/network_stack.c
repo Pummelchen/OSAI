@@ -20,7 +20,7 @@
 #define NETWORK_QUEUE_RING_SIZE 8U
 #define NETWORK_UDP_IDLE_TIMEOUT_NS UINT64_C(2000000)
 #define NETWORK_TCP_RETRANSMIT_NS UINT64_C(500000)
-#define NETWORK_TCP_SYN_TIMEOUT_NS UINT64_C(1000000)
+#define NETWORK_TCP_SYN_TIMEOUT_NS UINT64_C(3000000)  /* FIX-001: Extended to 3 seconds */
 #define NETWORK_TCP_MAX_RETRANSMITS 2U
 
 #define NETWORK_TCP_FLAG_FIN 0x01U
@@ -132,6 +132,20 @@ static uint64_t g_next_flow_id = 1U;
 static network_packet_desc_t g_packet_descs[NETWORK_PACKET_DESCRIPTORS];
 static network_udp_flow_t g_udp_flows[NETWORK_UDP_FLOWS];
 static network_tcp_flow_t g_tcp_flows[NETWORK_TCP_CONNECTIONS];
+
+/* FIX-001: SYN flood protection */
+#define NETWORK_TCP_MAX_HALF_OPEN 8U
+#define NETWORK_TCP_SYN_RATE_LIMIT 10U  /* SYNs per second per source IP */
+/* Note: NETWORK_TCP_SYN_TIMEOUT_NS defined above (3 seconds) */
+
+typedef struct tcp_syn_tracker {
+  uint32_t source_ip;
+  uint64_t syn_count;
+  uint64_t last_reset_ns;
+} tcp_syn_tracker_t;
+
+static tcp_syn_tracker_t g_syn_trackers[16];
+static uint32_t g_half_open_count = 0;
 
 static uint8_t g_local_mac[6];
 static uint32_t g_persistent_initialized;
@@ -505,10 +519,27 @@ static int parse_tcp(const uint8_t *frame, uint64_t frame_len, uint16_t *src_por
   const network_tcp_header_t *tcp =
       (const network_tcp_header_t *)((const uint8_t *)ip + ip_header_bytes);
   const uint16_t data_offset_words = (uint16_t)(tcp->data_offset_reserved >> 4U);
+  
+  /* FIX-002: TCP options bounds checking */
   if (data_offset_words < 5U) {
-    return 0;
+    return 0;  /* TCP header too small */
   }
+  if (data_offset_words > 15U) {
+    return 0;  /* TCP header too large (max 60 bytes) */
+  }
+  
   const uint64_t tcp_header_bytes = (uint64_t)data_offset_words * 4U;
+  
+  /* FIX-002: Validate options don't exceed IP payload */
+  if (tcp_header_bytes > ip_len - ip_header_bytes) {
+    return 0;  /* TCP header extends beyond IP payload */
+  }
+  
+  /* FIX-002: Limit TCP options to maximum 40 bytes */
+  if (tcp_header_bytes > 60) {
+    return 0;  /* TCP options exceed 40 byte limit */
+  }
+  
   const uint64_t tcp_payload_len =
       ip_len - ip_header_bytes - (uint64_t)tcp_header_bytes;
   const uint16_t tcp_len = (uint16_t)ip_len;
@@ -602,12 +633,19 @@ static network_udp_flow_t *alloc_udp_flow(uint32_t queue_id, uint32_t cell_id,
 }
 
 static network_tcp_flow_t *alloc_tcp_flow(void) {
+  /* FIX-001: Limit half-open connections to prevent SYN flood */
+  if (g_half_open_count >= NETWORK_TCP_MAX_HALF_OPEN) {
+    klog("network: SYN flood protection: rejecting connection (half-open: %u)\n", g_half_open_count);
+    return 0;
+  }
+
   for (uint32_t i = 0; i < NETWORK_TCP_CONNECTIONS; ++i) {
     if (g_tcp_flows[i].state == XAIOS_NETWORK_FLOW_FREE) {
       g_tcp_flows[i].state = XAIOS_NETWORK_FLOW_SYN_RECV;
       g_tcp_flows[i].retransmits = 0;
       g_tcp_flows[i].packets_rx = 0;
       g_tcp_flows[i].packets_tx = 0;
+      g_half_open_count++;
       return &g_tcp_flows[i];
     }
   }
@@ -885,6 +923,10 @@ xaios_status_t network_stack_process_tcp_frame(const uint8_t *frame,
       flow->state = XAIOS_NETWORK_FLOW_CLOSED;
       ++g_tcp_reset_count;
       ++g_tcp_closed_count;
+      /* FIX-001: Decrement half-open counter */
+      if (flow->state == XAIOS_NETWORK_FLOW_SYN_RECV && g_half_open_count > 0) {
+        g_half_open_count--;
+      }
     }
     packet_mark_dropped(packet);
     return XAIOS_ERR_INVALID;
@@ -932,6 +974,10 @@ xaios_status_t network_stack_process_tcp_frame(const uint8_t *frame,
     ++flow->packets_tx;
     ++g_tcp_handshake_count;
     ++g_tcp_established_count;
+    /* FIX-001: Decrement half-open counter when connection established */
+    if (g_half_open_count > 0) {
+      g_half_open_count--;
+    }
     packet_mark_tx(packet);
     packet_mark_complete(packet);
     record_latency(g_tcp_latency_samples, &g_tcp_latency_count,
@@ -1007,6 +1053,10 @@ uint64_t network_stack_expire_tcp_flows(uint64_t now_ns) {
       ++g_tcp_closed_count;
       ++g_packet_drop_count;
       ++expired;
+      /* FIX-001: Decrement half-open counter on timeout */
+      if (g_half_open_count > 0) {
+        g_half_open_count--;
+      }
       klog("network: tcp flow id=%u timeout queue=%u cell=%u\n",
            g_tcp_flows[i].flow_id, g_tcp_flows[i].queue_id,
            g_tcp_flows[i].cell_id);

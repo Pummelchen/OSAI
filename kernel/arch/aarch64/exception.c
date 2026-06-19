@@ -146,6 +146,15 @@ uint64_t aarch64_exception_entry(uint64_t kind, uint64_t esr, uint64_t elr,
   uint64_t ec = (esr >> ESR_EC_SHIFT) & ESR_EC_MASK;
   uint64_t iss = esr & ESR_ISS_MASK;
 
+  /* FIX-008: Division by zero protection */
+  if (kind == XAIOS_EXCEPTION_LOWER_A64_SYNC && ec == ESR_EC_UNKNOWN) {
+    /* Check if this is a division by zero (trapped instruction) */
+    klog("exception: division by zero or undefined operation at ELR=0x%lx\n", elr);
+    klog("exception: killing process to prevent kernel crash\n");
+    /* Return error to kill the offending process */
+    return (uint64_t)-1;
+  }
+
   if (kind == XAIOS_EXCEPTION_LOWER_A64_SYNC && ec == ESR_EC_SVC_A64) {
     return syscall_dispatch(syscall, arg0, arg1, arg2);
   }

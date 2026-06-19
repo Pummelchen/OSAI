@@ -72,6 +72,10 @@ static uint32_t g_cpu_ai_app_bound;
 #define KERNEL_SOCK_CONNECTED UINT32_C(2)
 #define KERNEL_SOCK_MAX UINT32_C(16)
 
+/* FIX-007: Socket connection limits */
+#define KERNEL_SOCK_MAX_PER_PORT UINT32_C(8)
+#define KERNEL_SOCK_MAX_TOTAL UINT32_C(64)
+
 typedef struct kernel_socket {
   uint32_t state;   /* 0=free, KERNEL_SOCK_LISTEN, KERNEL_SOCK_CONNECTED */
   uint16_t port;
@@ -79,12 +83,36 @@ typedef struct kernel_socket {
 
 static kernel_socket_t g_kernel_sockets[KERNEL_SOCK_MAX];
 static uint64_t g_socket_next_id = 1;
+static uint32_t g_total_connections = 0;  /* FIX-007: Track total connections */
 
 static uint64_t kernel_socket_alloc(uint32_t type, uint16_t port) {
+  /* FIX-007: Enforce total connection limit */
+  if (g_total_connections >= KERNEL_SOCK_MAX_TOTAL) {
+    klog("syscall: socket allocation denied (max connections reached: %u)\n", g_total_connections);
+    return 0;
+  }
+
+  /* FIX-007: Enforce per-port connection limit for connected sockets */
+  if (type == KERNEL_SOCK_CONNECTED) {
+    uint32_t port_count = 0;
+    for (uint32_t i = 0; i < KERNEL_SOCK_MAX; ++i) {
+      if (g_kernel_sockets[i].state == KERNEL_SOCK_CONNECTED &&
+          g_kernel_sockets[i].port == port) {
+        port_count++;
+      }
+    }
+    if (port_count >= KERNEL_SOCK_MAX_PER_PORT) {
+      klog("syscall: socket allocation denied (max per-port: %u for port %u)\n",
+           port_count, port);
+      return 0;
+    }
+  }
+
   for (uint32_t i = 0; i < KERNEL_SOCK_MAX; ++i) {
     if (g_kernel_sockets[i].state == 0) {
       g_kernel_sockets[i].state = type;
       g_kernel_sockets[i].port = port;
+      g_total_connections++;
       return g_socket_next_id++;
     }
   }
@@ -98,6 +126,10 @@ static void kernel_socket_free(uint64_t sockfd) {
     if (g_kernel_sockets[i].state != 0) {
       g_kernel_sockets[i].state = 0;
       g_kernel_sockets[i].port = 0;
+      /* FIX-007: Decrement connection counter */
+      if (g_total_connections > 0) {
+        g_total_connections--;
+      }
       return;
     }
   }

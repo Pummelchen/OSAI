@@ -54,6 +54,12 @@ int ssh_recv_version(int sockfd, uint8_t *buf, uint32_t buf_size,
     u64 n = 0;
     int r = xaios_net_recv((u64)(uint64_t)sockfd, buf + pos, 1, &n);
     if (r != 0 || n == 0) return -1;
+    
+    /* FIX-003: Reject overly long version strings (buffer overflow protection) */
+    if (pos > 255) {
+      return -1;  /* Version string too long */
+    }
+    
     if (buf[pos] == '\n') {
       *out_len = pos + 1;
       return 0;
@@ -68,11 +74,30 @@ int ssh_packet_read(int sockfd, ssh_packet_t *pkt) {
   uint8_t len_buf[4];
   if (recv_all(sockfd, len_buf, 4) != 0) return -1;
   uint32_t pkt_len = ssh_read_u32_be(len_buf);
-  if (pkt_len > SSH_MAX_PACKET_SIZE || pkt_len < 2) return -1;
+  
+  /* FIX-003: Comprehensive packet size validation */
+  if (pkt_len > SSH_MAX_PACKET_SIZE) {
+    return -1;  /* Packet too large */
+  }
+  if (pkt_len < 2) {
+    return -1;  /* Packet too small */
+  }
+  
   if (recv_all(sockfd, pkt->data, pkt_len) != 0) return -1;
-  /* pkt->data[0] = padding_length, data starts at [1+padding_length] */
+  
+  /* FIX-003: Validate padding length */
   uint32_t padding = pkt->data[0];
+  if (padding >= pkt_len - 1) {
+    return -1;  /* Invalid padding */
+  }
+  
   pkt->len = pkt_len - padding - 1;
+  
+  /* FIX-003: Validate payload length */
+  if (pkt->len > SSH_MAX_PACKET_SIZE - 5) {
+    return -1;  /* Payload too large */
+  }
+  
   /* Shift payload to start */
   for (uint32_t i = 0; i < pkt->len; ++i) {
     pkt->data[i] = pkt->data[1 + padding + i];

@@ -6,6 +6,18 @@
 static uint64_t g_total_pages;
 static uint64_t g_reserved_pages;
 
+/* FIX-005: Double-free detection */
+#define PMM_FREE_MAGIC UINT64_C(0xDEADBEEFCAFEBABE)
+#define PMM_MAX_FREED_TRACK 64
+
+typedef struct pmm_freed_entry {
+  uint64_t page_addr;
+  uint64_t freed_count;
+} pmm_freed_entry_t;
+
+static pmm_freed_entry_t g_freed_pages[PMM_MAX_FREED_TRACK];
+static uint32_t g_freed_count = 0;
+
 void pmm_init(const xaios_boot_info_t *boot) {
   /* numa_init(boot) must be called before pmm_init().
    * PMM now delegates to NUMA node free-stacks. */
@@ -71,6 +83,34 @@ void *pmm_alloc_page_near(uint32_t preferred_node) {
 }
 
 void pmm_free_page(void *page) {
+  if (page == 0) {
+    klog("pmm: WARNING: attempt to free NULL page\n");
+    return;
+  }
+
+  /* FIX-005: Check for double-free */
+  uint64_t page_addr = (uint64_t)(uintptr_t)page;
+  for (uint32_t i = 0; i < g_freed_count && i < PMM_MAX_FREED_TRACK; ++i) {
+    if (g_freed_pages[i].page_addr == page_addr) {
+      klog("pmm: CRITICAL: double-free detected at page 0x%lx (freed %lu times)\n",
+           page_addr, g_freed_pages[i].freed_count);
+      g_freed_pages[i].freed_count++;
+      return;  /* Reject double-free */
+    }
+  }
+
+  /* Track this freed page */
+  if (g_freed_count < PMM_MAX_FREED_TRACK) {
+    g_freed_pages[g_freed_count].page_addr = page_addr;
+    g_freed_pages[g_freed_count].freed_count = 1;
+    g_freed_count++;
+  }
+
+  /* Mark page with magic number for detection */
+  uint64_t *page_ptr = (uint64_t *)page;
+  page_ptr[0] = PMM_FREE_MAGIC;
+  page_ptr[1] = PMM_FREE_MAGIC;
+
   numa_free_page(page);
 }
 

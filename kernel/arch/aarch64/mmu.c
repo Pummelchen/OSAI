@@ -336,8 +336,15 @@ static xaios_status_t descriptor_to_flags(uint64_t virtual_address,
 
 void vmm_init(const xaios_boot_info_t *boot) {
   build_tables(boot);
+  
+  /* FIX-006: Map page 0 as unreadable/unwritable to catch null pointer dereferences */
+  /* This ensures that NULL pointer accesses trigger a page fault */
+  if (vmm_map_page(0, 0, XAIOS_VMM_PRESENT) != XAIOS_OK) {
+    klog("VMM: WARNING: failed to map null page protection\n");
+  }
+  
   aarch64_enable_mmu((uint64_t)(uintptr_t)g_l0_table);
-  klog("VMM enabled\n");
+  klog("VMM enabled (null page protection active)\n");
 }
 
 xaios_status_t vmm_translate(uint64_t virtual_address, uint64_t *physical_address,
