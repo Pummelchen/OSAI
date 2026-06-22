@@ -9,6 +9,17 @@
 /* Forward declarations for local utility functions */
 static void mem_copy(void *d, const void *s, uint64_t n);
 
+/* Compare two IP addresses (IPv4 or IPv6) */
+static int ip_addr_equal(const xaios_ip_addr_user_t *a,
+                         const xaios_ip_addr_user_t *b) {
+  if (a->family != b->family) return 0;
+  uint32_t len = (a->family == 4) ? 4U : 16U;
+  for (uint32_t i = 0; i < len; ++i) {
+    if (a->addr[i] != b->addr[i]) return 0;
+  }
+  return 1;
+}
+
 /* Connection encryption state (RFC 4253 compliant) */
 typedef struct {
   int enabled;
@@ -502,17 +513,18 @@ static int authenticate_password(const char *username, const char *password) {
 }
 
 /* ---- Rate Limiting ---- */
-static sshd_rate_limit_entry_t *find_rate_limit_entry(uint32_t ip) {
+static sshd_rate_limit_entry_t *find_rate_limit_entry(
+    const xaios_ip_addr_user_t *ip) {
   for (uint32_t i = 0; i < g_rate_limit_count; ++i) {
-    if (g_rate_limits[i].ip_address == ip) {
+    if (ip_addr_equal(&g_rate_limits[i].ip_address, ip)) {
       return &g_rate_limits[i];
     }
   }
   return 0;
 }
 
-static int check_rate_limit(uint32_t client_ip) {
-  sshd_rate_limit_entry_t *entry = find_rate_limit_entry(client_ip);
+static int check_rate_limit(const xaios_ip_addr_user_t *client_addr) {
+  sshd_rate_limit_entry_t *entry = find_rate_limit_entry(client_addr);
   
   if (entry == 0) {
     /* New IP, allow */
@@ -523,7 +535,7 @@ static int check_rate_limit(uint32_t client_ip) {
   
   /* Check if banned */
   if (entry->ban_until > now) {
-    ssh_log(SSH_LOG_WARN, "IP %u banned until %lu\n", client_ip, entry->ban_until);
+    ssh_log(SSH_LOG_WARN, "IP banned until %lu\n", entry->ban_until);
     return -1;
   }
   
@@ -536,15 +548,15 @@ static int check_rate_limit(uint32_t client_ip) {
   return 0;
 }
 
-static void record_auth_failure(uint32_t client_ip) {
-  sshd_rate_limit_entry_t *entry = find_rate_limit_entry(client_ip);
+static void record_auth_failure(const xaios_ip_addr_user_t *client_addr) {
+  sshd_rate_limit_entry_t *entry = find_rate_limit_entry(client_addr);
   uint64_t now = timer_now();
   
   if (entry == 0) {
     /* Create new entry */
     if (g_rate_limit_count < SSHD_RATE_LIMIT_MAX_ENTRIES) {
       entry = &g_rate_limits[g_rate_limit_count++];
-      entry->ip_address = client_ip;
+      entry->ip_address = *client_addr;
       entry->last_attempt_time = now;
       entry->failure_count = 1;
       entry->ban_until = 0;
@@ -556,14 +568,14 @@ static void record_auth_failure(uint32_t client_ip) {
     /* Ban if too many failures */
     if (entry->failure_count >= SSHD_RATE_LIMIT_MAX_FAILURES) {
       entry->ban_until = now + SSHD_RATE_LIMIT_BAN_DURATION;
-      ssh_log(SSH_LOG_WARN, "IP %u banned for %d failures\n", 
-              client_ip, entry->failure_count);
+      ssh_log(SSH_LOG_WARN, "IP banned for %d failures\n", 
+              entry->failure_count);
     }
   }
 }
 
-static void record_auth_success(uint32_t client_ip) {
-  sshd_rate_limit_entry_t *entry = find_rate_limit_entry(client_ip);
+static void record_auth_success(const xaios_ip_addr_user_t *client_addr) {
+  sshd_rate_limit_entry_t *entry = find_rate_limit_entry(client_addr);
   if (entry) {
     entry->failure_count = 0;
     entry->ban_until = 0;
@@ -641,8 +653,10 @@ static uint32_t build_kexinit(uint8_t *buf) {
 }
 
 /* ---- Handle One SSH Connection (Production Version) ---- */
-static int handle_connection(int sockfd, uint32_t client_ip, uint16_t client_port) {
-  ssh_log(SSH_LOG_INFO, "Connection accepted from %u:%u\n", client_ip, client_port);
+static int handle_connection(int sockfd,
+                             const xaios_ip_addr_user_t *client_addr,
+                             uint16_t client_port) {
+  ssh_log(SSH_LOG_INFO, "Connection accepted on port %u\n", client_port);
   
   uint64_t connect_time = timer_now();
   ssh_connection_state_t state = SSH_STATE_CONNECTING;
@@ -916,8 +930,8 @@ static int handle_connection(int sockfd, uint32_t client_ip, uint16_t client_por
       password[pass_len] = '\0';
       
       /* Rate limiting */
-      if (check_rate_limit(client_ip) != 0) {
-        ssh_log(SSH_LOG_WARN, "Rate limited IP %u\n", client_ip);
+      if (check_rate_limit(client_addr) != 0) {
+        ssh_log(SSH_LOG_WARN, "Rate limited connection\n");
         uint8_t reject[64];
         reject[0] = 51; /* SSH_MSG_USERAUTH_FAILURE */
         const char *methods = "password";
@@ -932,7 +946,7 @@ static int handle_connection(int sockfd, uint32_t client_ip, uint16_t client_por
       /* Check max attempts */
       if (auth_attempts >= SSHD_MAX_AUTH_ATTEMPTS) {
         ssh_log(SSH_LOG_WARN, "Max auth attempts exceeded\n");
-        record_auth_failure(client_ip);
+        record_auth_failure(client_addr);
         uint8_t reject[64];
         reject[0] = 51;
         const char *methods = "password";
@@ -951,12 +965,12 @@ static int handle_connection(int sockfd, uint32_t client_ip, uint16_t client_por
         ssh_packet_write_encrypted(sockfd, auth_reply, 1);
         state = SSH_STATE_AUTHENTICATED;
         auth_attempts = 0;
-        record_auth_success(client_ip);
+        record_auth_success(client_addr);
         ssh_log(SSH_LOG_INFO, "Authentication successful for user '%s'\n", username);
       } else {
         /* Authentication FAILURE */
         auth_attempts++;
-        record_auth_failure(client_ip);
+        record_auth_failure(client_addr);
         uint8_t reject[64];
         reject[0] = 51; /* SSH_MSG_USERAUTH_FAILURE */
         const char *methods = "password";
@@ -1030,7 +1044,10 @@ int sshd_run(void) {
   /* Accept loop with atomic queue (Fix #4: Race condition free) */
   for (;;) {
     u64 conn_fd = 0;
-    if (xaios_net_accept(listen_fd, &conn_fd) != 0) {
+    xaios_ip_addr_user_t peer_addr;
+    u64 peer_port = 0;
+    xaios_memzero(&peer_addr, sizeof(peer_addr));
+    if (xaios_net_accept_addr(listen_fd, &conn_fd, &peer_addr, &peer_port) != 0) {
       continue;
     }
     
@@ -1056,7 +1073,7 @@ int sshd_run(void) {
     
     /* Handle connection synchronously (safe for QEMU/freestanding) */
     /* TODO(XAIOS-43): When xaios_thread_create() is available, use worker pool */
-    handle_connection((int)conn_fd, 0, 0);
+    handle_connection((int)conn_fd, &peer_addr, (uint16_t)peer_port);
     xaios_net_close(conn_fd);
     __atomic_sub_fetch(&g_server_stats.active_connections, 1, __ATOMIC_RELEASE);
   }

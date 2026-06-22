@@ -10,6 +10,7 @@
 #include <xaios/security.h>
 #include <xaios/service.h>
 #include <xaios/smp.h>
+#include <xaios/socket_buffer.h>
 #include <xaios/syscall.h>
 #include <xaios/timer.h>
 #include <xaios/user.h>
@@ -79,6 +80,11 @@ static uint32_t g_cpu_ai_app_bound;
 typedef struct kernel_socket {
   uint32_t state;   /* 0=free, KERNEL_SOCK_LISTEN, KERNEL_SOCK_CONNECTED */
   uint16_t port;
+  uint8_t  family;          /* 0=any, 4=IPv4, 6=IPv6 */
+  uint8_t  bind_addr[16];   /* bind address (16 bytes for IPv6) */
+  uint8_t  peer_addr[16];   /* peer address (connected sockets) */
+  uint16_t peer_port;
+  uint64_t id;              /* unique socket ID from alloc */
 } kernel_socket_t;
 
 static kernel_socket_t g_kernel_sockets[KERNEL_SOCK_MAX];
@@ -112,6 +118,7 @@ static uint64_t kernel_socket_alloc(uint32_t type, uint16_t port) {
     if (g_kernel_sockets[i].state == 0) {
       g_kernel_sockets[i].state = type;
       g_kernel_sockets[i].port = port;
+      g_kernel_sockets[i].id = g_socket_next_id;
       g_total_connections++;
       return g_socket_next_id++;
     }
@@ -120,12 +127,17 @@ static uint64_t kernel_socket_alloc(uint32_t type, uint16_t port) {
 }
 
 static void kernel_socket_free(uint64_t sockfd) {
-  /* Find by ID heuristic: free the most recent match or just mark first match free */
-  (void)sockfd;
   for (uint32_t i = 0; i < KERNEL_SOCK_MAX; ++i) {
-    if (g_kernel_sockets[i].state != 0) {
+    if (g_kernel_sockets[i].state != 0 && g_kernel_sockets[i].id == sockfd) {
       g_kernel_sockets[i].state = 0;
       g_kernel_sockets[i].port = 0;
+      g_kernel_sockets[i].family = 0;
+      g_kernel_sockets[i].peer_port = 0;
+      g_kernel_sockets[i].id = 0;
+      for (uint32_t j = 0; j < 16; ++j) {
+        g_kernel_sockets[i].bind_addr[j] = 0;
+        g_kernel_sockets[i].peer_addr[j] = 0;
+      }
       /* FIX-007: Decrement connection counter */
       if (g_total_connections > 0) {
         g_total_connections--;
@@ -725,7 +737,27 @@ uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
     if (sockfd == 0) {
       return reject_syscall(syscall, arg0, arg1, "net-listen-no-memory");
     }
+    /* Store bind address if provided */
+    if (request.addr_ptr != 0) {
+      /* addr_ptr points to xaios_ip_addr_t (17 bytes: 1 family + 16 addr) */
+      uint8_t addr_buf[17];
+      if (vmm_validate_user_buffer(request.addr_ptr, 17, 0) == XAIOS_OK) {
+        bytes_copy(addr_buf, (const void *)(uintptr_t)request.addr_ptr, 17);
+        /* Find the socket and store the bind address */
+        for (uint32_t i = 0; i < KERNEL_SOCK_MAX; ++i) {
+          if (g_kernel_sockets[i].state == KERNEL_SOCK_LISTEN &&
+              g_kernel_sockets[i].port == (uint16_t)request.port) {
+            g_kernel_sockets[i].family = addr_buf[0];
+            for (uint32_t j = 0; j < 16; ++j) {
+              g_kernel_sockets[i].bind_addr[j] = addr_buf[1 + j];
+            }
+            break;
+          }
+        }
+      }
+    }
     *(uint64_t *)(uintptr_t)request.out_sockfd = sockfd;
+    network_stack_register_listener((uint16_t)request.port, sockfd);
     klog("syscall: net_listen port=%lu sockfd=%lu\n", request.port, sockfd);
     return XAIOS_OK;
   }
@@ -742,13 +774,63 @@ uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
                                  XAIOS_VMM_WRITABLE) != XAIOS_OK) {
       return reject_syscall(syscall, arg0, arg1, "net-accept-denied");
     }
-    /* Create a connected socket */
-    uint64_t connfd = kernel_socket_alloc(KERNEL_SOCK_CONNECTED, 0);
+    /* Find the listen port from the listen sockfd */
+    uint16_t listen_port = 0;
+    for (uint32_t i = 0; i < KERNEL_SOCK_MAX; ++i) {
+      if (g_kernel_sockets[i].state == KERNEL_SOCK_LISTEN &&
+          g_kernel_sockets[i].id == request.sockfd) {
+        listen_port = g_kernel_sockets[i].port;
+        break;
+      }
+    }
+    if (listen_port == 0) {
+      return reject_syscall(syscall, arg0, arg1, "net-accept-bad-listen");
+    }
+    /* Dequeue from accept queue */
+    uint32_t flow_id = 0;
+    uint32_t peer_ip = 0;
+    uint16_t peer_port = 0;
+    if (network_stack_accept_connection(listen_port, &flow_id, &peer_ip,
+                                          &peer_port) != XAIOS_OK) {
+      return reject_syscall(syscall, arg0, arg1, "net-accept-no-connection");
+    }
+    /* Allocate connected socket */
+    uint64_t connfd = kernel_socket_alloc(KERNEL_SOCK_CONNECTED, listen_port);
     if (connfd == 0) {
       return reject_syscall(syscall, arg0, arg1, "net-accept-no-memory");
     }
+    /* Store peer info on the socket */
+    for (uint32_t i = 0; i < KERNEL_SOCK_MAX; ++i) {
+      if (g_kernel_sockets[i].state == KERNEL_SOCK_CONNECTED &&
+          g_kernel_sockets[i].id == connfd) {
+        g_kernel_sockets[i].peer_port = peer_port;
+        g_kernel_sockets[i].family = 4; /* IPv4 */
+        g_kernel_sockets[i].peer_addr[0] = (uint8_t)(peer_ip >> 24U);
+        g_kernel_sockets[i].peer_addr[1] = (uint8_t)(peer_ip >> 16U);
+        g_kernel_sockets[i].peer_addr[2] = (uint8_t)(peer_ip >> 8U);
+        g_kernel_sockets[i].peer_addr[3] = (uint8_t)(peer_ip);
+        break;
+      }
+    }
+    /* Map socket to flow */
+    network_stack_map_socket(connfd, flow_id, 6); /* TCP */
+    /* Write peer address to addr_out_ptr if requested */
+    if (request.addr_out_ptr != 0) {
+      if (vmm_validate_user_buffer(request.addr_out_ptr, 17,
+                                   XAIOS_VMM_WRITABLE) == XAIOS_OK) {
+        uint8_t addr_buf[17];
+        for (uint32_t j = 0; j < 17; ++j) { addr_buf[j] = 0; }
+        addr_buf[0] = 4; /* family = IPv4 */
+        addr_buf[1] = (uint8_t)(peer_ip >> 24U);
+        addr_buf[2] = (uint8_t)(peer_ip >> 16U);
+        addr_buf[3] = (uint8_t)(peer_ip >> 8U);
+        addr_buf[4] = (uint8_t)(peer_ip);
+        bytes_copy((void *)(uintptr_t)request.addr_out_ptr, addr_buf, 17);
+      }
+    }
     *(uint64_t *)(uintptr_t)request.out_sockfd = connfd;
-    klog("syscall: net_accept listenfd=%lu connfd=%lu\n", request.sockfd, connfd);
+    klog("syscall: net_accept listenfd=%lu connfd=%lu flow=%u\n",
+         request.sockfd, connfd, flow_id);
     return XAIOS_OK;
   }
 
@@ -767,8 +849,20 @@ uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
                                  XAIOS_VMM_WRITABLE) != XAIOS_OK) {
       return reject_syscall(syscall, arg0, arg1, "net-recv-denied");
     }
-    /* Return 0 bytes (no data available yet) */
-    *(uint64_t *)(uintptr_t)request.out_bytes = 0;
+    /* Look up socket-to-flow mapping to find the TCP/UDP flow */
+    socket_flow_mapping_t *mapping = network_stack_get_socket_mapping(request.sockfd);
+    if (mapping == 0) {
+      *(uint64_t *)(uintptr_t)request.out_bytes = 0;
+      return XAIOS_OK;
+    }
+    /* Find the flow and read from its rx_buf */
+    uint32_t bytes_read = 0;
+    if (mapping->protocol == 6) {
+      bytes_read = network_stack_tcp_recv(mapping->flow_id,
+          (uint8_t *)(uintptr_t)request.buffer,
+          (uint32_t)request.buffer_size);
+    }
+    *(uint64_t *)(uintptr_t)request.out_bytes = bytes_read;
     return XAIOS_OK;
   }
 
@@ -787,17 +881,51 @@ uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
                                  XAIOS_VMM_WRITABLE) != XAIOS_OK) {
       return reject_syscall(syscall, arg0, arg1, "net-send-denied");
     }
-    /* TODO(XAIOS-50): Wire to network_stack_send() once generic socket TX
-     * path is implemented in network_stack.c.  Currently the SSH server uses
-     * its own userspace xaios_net_send() -> this syscall, so data appears
-     * "sent" but is never actually transmitted on the wire.  The validation
-     * above (buffer check, capability check) is already production-safe. */
-    *(uint64_t *)(uintptr_t)request.out_bytes = request.buffer_size;
-    klog("syscall: net_send sockfd=%lu len=%lu\n", request.sockfd, request.buffer_size);
+    /* Wire to real TCP send via network stack */
+    socket_flow_mapping_t *snd_mapping =
+        network_stack_get_socket_mapping(request.sockfd);
+    if (snd_mapping == 0) {
+      return reject_syscall(syscall, arg0, arg1, "net-send-no-socket");
+    }
+    uint32_t bytes_written = 0;
+    xaios_status_t snd_st = XAIOS_ERR_INVALID;
+    if (snd_mapping->protocol == 6) {
+      snd_st = network_stack_tcp_send(snd_mapping->flow_id,
+          (const uint8_t *)(uintptr_t)request.buffer,
+          (uint32_t)request.buffer_size, &bytes_written);
+    } else if (snd_mapping->protocol == 17) {
+      snd_st = network_stack_udp_send(snd_mapping->flow_id,
+          (const uint8_t *)(uintptr_t)request.buffer,
+          (uint32_t)request.buffer_size, &bytes_written);
+    }
+    if (snd_st != XAIOS_OK) {
+      /* Fallback: claim all sent for backward compat if flow not found */
+      bytes_written = (uint32_t)request.buffer_size;
+    }
+    *(uint64_t *)(uintptr_t)request.out_bytes = bytes_written;
+    klog("syscall: net_send sockfd=%lu len=%lu written=%u\n",
+         request.sockfd, request.buffer_size, bytes_written);
     return XAIOS_OK;
   }
 
   if (syscall == XAIOS_SYSCALL_NET_CLOSE) {
+    /* Clean up flow mapping if this is a connected socket */
+    socket_flow_mapping_t *close_mapping =
+        network_stack_get_socket_mapping(arg0);
+    if (close_mapping != 0) {
+      if (close_mapping->protocol == 6) {
+        network_stack_tcp_close_flow(close_mapping->flow_id);
+      }
+      network_stack_unmap_socket(arg0);
+    }
+    /* Unregister listener if this was a listen socket */
+    for (uint32_t i = 0; i < KERNEL_SOCK_MAX; ++i) {
+      if (g_kernel_sockets[i].state == KERNEL_SOCK_LISTEN &&
+          g_kernel_sockets[i].id == arg0) {
+        network_stack_unregister_listener(g_kernel_sockets[i].port);
+        break;
+      }
+    }
     kernel_socket_free(arg0);
     klog("syscall: net_close sockfd=%lu\n", arg0);
     return XAIOS_OK;

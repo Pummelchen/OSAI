@@ -197,6 +197,12 @@ KERNEL_OBJECTS="
   $KERNEL_BUILD_DIR/arp.o
   $KERNEL_BUILD_DIR/ipv4.o
   $KERNEL_BUILD_DIR/icmp.o
+  $KERNEL_BUILD_DIR/ipv6.o
+  $KERNEL_BUILD_DIR/icmpv6.o
+  $KERNEL_BUILD_DIR/ndp.o
+  $KERNEL_BUILD_DIR/socket_buffer.o
+  $KERNEL_BUILD_DIR/routing.o
+  $KERNEL_BUILD_DIR/dns.o
   $KERNEL_BUILD_DIR/elf_loader.o
   $KERNEL_BUILD_DIR/string.o
   $KERNEL_BUILD_DIR/bpe_tokenizer.o
@@ -263,6 +269,12 @@ KERNEL_OBJECTS="
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/net/arp.c" -o "$KERNEL_BUILD_DIR/arp.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/net/ipv4.c" -o "$KERNEL_BUILD_DIR/ipv4.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/net/icmp.c" -o "$KERNEL_BUILD_DIR/icmp.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/net/ipv6.c" -o "$KERNEL_BUILD_DIR/ipv6.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/net/icmpv6.c" -o "$KERNEL_BUILD_DIR/icmpv6.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/net/ndp.c" -o "$KERNEL_BUILD_DIR/ndp.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/net/socket_buffer.c" -o "$KERNEL_BUILD_DIR/socket_buffer.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/net/routing.c" -o "$KERNEL_BUILD_DIR/routing.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/net/dns.c" -o "$KERNEL_BUILD_DIR/dns.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/mm/elf_loader.c" -o "$KERNEL_BUILD_DIR/elf_loader.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/lib/string.c" -o "$KERNEL_BUILD_DIR/string.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/bpe_tokenizer.c" -o "$KERNEL_BUILD_DIR/bpe_tokenizer.o"

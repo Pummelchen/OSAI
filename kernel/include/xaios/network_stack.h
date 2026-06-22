@@ -14,6 +14,10 @@ typedef enum xaios_network_flow_state {
   XAIOS_NETWORK_FLOW_SYN_RECV = 1,
   XAIOS_NETWORK_FLOW_ESTABLISHED = 2,
   XAIOS_NETWORK_FLOW_CLOSED = 3,
+  XAIOS_NETWORK_FLOW_FIN_WAIT = 4,
+  XAIOS_NETWORK_FLOW_CLOSE_WAIT = 5,
+  XAIOS_NETWORK_FLOW_LAST_ACK = 6,
+  XAIOS_NETWORK_FLOW_TIME_WAIT = 7,
 } xaios_network_flow_state_t;
 
 void network_stack_init(void);
@@ -24,6 +28,10 @@ xaios_status_t network_stack_process_udp_frame(const uint8_t *frame,
                                             uint64_t frame_len);
 xaios_status_t network_stack_process_tcp_frame(const uint8_t *frame,
                                             uint64_t frame_len);
+xaios_status_t network_stack_process_udp_frame_v6(const uint8_t *frame,
+                                                  uint64_t frame_len);
+xaios_status_t network_stack_process_tcp_frame_v6(const uint8_t *frame,
+                                                  uint64_t frame_len);
 xaios_status_t network_stack_app_udp_echo(const uint8_t *payload,
                                          uint64_t payload_len,
                                          uint64_t *echoed_bytes);
@@ -78,5 +86,40 @@ void network_poll_tick(void);
 uint64_t network_poll_tick_count(void);
 uint64_t network_icmp_reply_count(void);
 uint64_t network_arp_reply_sent_count(void);
+uint64_t network_icmpv6_reply_count(void);
+uint64_t network_ndp_reply_count(void);
+uint64_t network_ipv6_rx_count(void);
+
+/* Data plane: TCP send/close */
+xaios_status_t network_stack_tcp_send(uint32_t flow_id, const uint8_t *data,
+                                       uint32_t len, uint32_t *bytes_written);
+xaios_status_t network_stack_tcp_close_flow(uint32_t flow_id);
+xaios_status_t network_stack_udp_send(uint32_t flow_id, const uint8_t *data,
+                                       uint32_t len, uint32_t *bytes_written);
+uint32_t network_stack_tcp_recv(uint32_t flow_id, uint8_t *buffer,
+                                  uint32_t buffer_size);
+
+/* Listener registry */
+void network_stack_register_listener(uint16_t port, uint64_t sockfd);
+void network_stack_unregister_listener(uint16_t port);
+int  network_stack_has_listener(uint16_t port);
+
+/* Accept queue */
+xaios_status_t network_stack_accept_connection(uint16_t listen_port,
+                                                uint32_t *out_flow_id,
+                                                uint32_t *out_peer_ip,
+                                                uint16_t *out_peer_port);
+
+/* Socket-to-flow mapping */
+typedef struct socket_flow_mapping {
+  uint64_t sockfd;
+  uint32_t flow_id;
+  uint8_t  protocol;   /* 6=TCP, 17=UDP */
+  uint32_t active;
+} socket_flow_mapping_t;
+void network_stack_map_socket(uint64_t sockfd, uint32_t flow_id,
+                                uint8_t protocol);
+socket_flow_mapping_t *network_stack_get_socket_mapping(uint64_t sockfd);
+void network_stack_unmap_socket(uint64_t sockfd);
 
 #endif

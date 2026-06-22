@@ -138,6 +138,12 @@ typedef struct xaios_ml_run_request {
   u64 out_size;
 } xaios_ml_run_request_t;
 
+/* Userspace mirror of kernel xaios_ip_addr_t for dual-stack IPv4/IPv6 */
+typedef struct xaios_ip_addr_user {
+  unsigned char family;    /* 4 = IPv4, 6 = IPv6 */
+  unsigned char addr[16];  /* IPv4 in bytes 0-3, IPv6 full 16 bytes */
+} xaios_ip_addr_user_t;
+
 typedef struct xaios_socket_request {
   u64 sockfd;
   u64 port;
@@ -145,6 +151,9 @@ typedef struct xaios_socket_request {
   u64 buffer_size;
   u64 out_bytes;
   u64 out_sockfd;
+  /* IPv6 dual-stack: pointer to xaios_ip_addr_user_t for bind/peer address */
+  u64 addr_ptr;
+  u64 addr_out_ptr;
 } xaios_socket_request_t;
 
 typedef struct xaios_agent_request {
@@ -209,10 +218,18 @@ int xaios_thread_group_run(u64 thread_count, u64 iterations, u64 *ran_threads,
 int xaios_ml_run(u64 model_kind, const void *input, u64 input_size,
                 char *output, u64 output_size, u64 *out_size);
 int xaios_net_listen(u64 port, u64 *out_sockfd);
+int xaios_net_listen_addr(u64 port, const xaios_ip_addr_user_t *bind_addr,
+                          u64 *out_sockfd);
 int xaios_net_accept(u64 sockfd, u64 *out_sockfd);
+int xaios_net_accept_addr(u64 sockfd, u64 *out_sockfd,
+                          xaios_ip_addr_user_t *peer_addr, u64 *peer_port);
 int xaios_net_recv(u64 sockfd, void *buffer, u64 buffer_size, u64 *out_bytes);
+int xaios_net_recvfrom(u64 sockfd, void *buffer, u64 buffer_size,
+                       u64 *out_bytes, xaios_ip_addr_user_t *src_addr);
 int xaios_net_send(u64 sockfd, const void *buffer, u64 buffer_size,
                   u64 *out_bytes);
+int xaios_net_sendto(u64 sockfd, const void *buffer, u64 buffer_size,
+                     u64 *out_bytes, const xaios_ip_addr_user_t *dst_addr);
 int xaios_net_close(u64 sockfd);
 int xaios_write_file(const char *path, const char *content);
 int xaios_read_file(const char *path, char *buffer, u64 buffer_size);

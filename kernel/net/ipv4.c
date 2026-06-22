@@ -72,6 +72,38 @@ void ipv4_build_header(uint8_t *hdr, uint16_t total_length, uint8_t protocol,
   put_be16(hdr + 10, cksum);
 }
 
+int ipv4_validate_incoming(const uint8_t *frame, uint64_t frame_len) {
+  if (frame == 0 || frame_len < 34U) {
+    return 0; /* too short for Ethernet + min IPv4 header */
+  }
+  const uint8_t *ip = frame + 14U;
+  uint8_t version = (uint8_t)(ip[0] >> 4U);
+  uint8_t ihl = (uint8_t)(ip[0] & 0x0FU);
+  if (version != 4U) {
+    return 0;
+  }
+  if (ihl < 5U) {
+    return 0; /* IHL too small */
+  }
+  uint64_t ip_header_bytes = (uint64_t)ihl * 4U;
+  uint16_t total_length = (uint16_t)(((uint16_t)ip[2] << 8U) | ip[3]);
+  if ((uint64_t)total_length < ip_header_bytes) {
+    return 0; /* total_length less than header */
+  }
+  if (14U + (uint64_t)total_length > frame_len) {
+    return 0; /* frame truncated */
+  }
+  uint8_t ttl = ip[8];
+  if (ttl == 0U) {
+    return 0; /* TTL expired */
+  }
+  /* Verify header checksum */
+  if (ipv4_checksum(ip, (uint32_t)ip_header_bytes) != 0U) {
+    return 0;
+  }
+  return 1;
+}
+
 void ipv4_self_test(void) {
   uint8_t hdr[20];
   ipv4_build_header(hdr, 40, XAIOS_IPV4_PROTO_UDP, 0x0a00020f, 0x0a000202);

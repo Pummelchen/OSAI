@@ -9,6 +9,11 @@
 #include <xaios/exception.h>
 #include <xaios/gic.h>
 #include <xaios/icmp.h>
+#include <xaios/icmpv6.h>
+#include <xaios/ipv6.h>
+#include <xaios/ndp.h>
+#include <xaios/routing.h>
+#include <xaios/socket_buffer.h>
 #include <xaios/initramfs.h>
 #include <xaios/cpu_ai_runtime.h>
 #include <xaios/ipv4.h>
@@ -194,6 +199,11 @@ void kmain(const xaios_boot_info_t *boot) {
   arp_self_test();
   ipv4_self_test();
   icmp_self_test();
+  ipv6_self_test();
+  icmpv6_self_test();
+  ndp_self_test();
+  sockbuf_self_test();
+  routing_self_test();
   network_stack_self_test();
   initramfs_self_test();
   syscall_self_test();

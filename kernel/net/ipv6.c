@@ -1,0 +1,230 @@
+#include <xaios/assert.h>
+#include <xaios/ip_addr.h>
+#include <xaios/ipv4.h> /* reuse ipv4_checksum() for ones-complement fold */
+#include <xaios/ipv6.h>
+#include <xaios/klog.h>
+
+static void put_be16(uint8_t *dst, uint16_t value) {
+  dst[0] = (uint8_t)(value >> 8U);
+  dst[1] = (uint8_t)value;
+}
+
+static void put_be32(uint8_t *dst, uint32_t value) {
+  dst[0] = (uint8_t)(value >> 24U);
+  dst[1] = (uint8_t)(value >> 16U);
+  dst[2] = (uint8_t)(value >> 8U);
+  dst[3] = (uint8_t)value;
+}
+
+static uint16_t get_be16(const uint8_t *src) {
+  return (uint16_t)(((uint16_t)src[0] << 8U) | src[1]);
+}
+
+void ipv6_build_header(uint8_t *hdr, uint16_t payload_length,
+                       uint8_t next_header,
+                       const xaios_ip_addr_t *src,
+                       const xaios_ip_addr_t *dst) {
+  if (hdr == 0 || src == 0 || dst == 0) {
+    return;
+  }
+  /* Version (4 bits) = 6, Traffic Class (8 bits) = 0, Flow Label (20 bits) = 0 */
+  put_be32(hdr, XAIOS_IPV6_VERSION_TC_FLOW);
+  /* Payload length (excludes the 40-byte header) */
+  put_be16(hdr + 4, payload_length);
+  /* Next header (protocol) */
+  hdr[6] = next_header;
+  /* Hop limit */
+  hdr[7] = XAIOS_IPV6_DEFAULT_HOP_LIMIT;
+  /* Source address (16 bytes) */
+  for (uint32_t i = 0; i < 16; ++i) {
+    hdr[8 + i] = src->addr[i];
+  }
+  /* Destination address (16 bytes) */
+  for (uint32_t i = 0; i < 16; ++i) {
+    hdr[24 + i] = dst->addr[i];
+  }
+}
+
+int ipv6_parse_header(const uint8_t *hdr, uint64_t hdr_len,
+                      uint16_t *payload_length, uint8_t *next_header,
+                      xaios_ip_addr_t *src, xaios_ip_addr_t *dst) {
+  if (hdr == 0 || hdr_len < XAIOS_IPV6_HEADER_SIZE) {
+    return -1;
+  }
+  /* Verify version nibble = 6 */
+  if ((hdr[0] >> 4U) != 6U) {
+    return -1;
+  }
+  if (payload_length != 0) {
+    *payload_length = get_be16(hdr + 4);
+  }
+  if (next_header != 0) {
+    *next_header = hdr[6];
+  }
+  if (src != 0) {
+    xaios_ip_addr_from_raw_ipv6(src, hdr + 8);
+  }
+  if (dst != 0) {
+    xaios_ip_addr_from_raw_ipv6(dst, hdr + 24);
+  }
+  return 0;
+}
+
+uint16_t ipv6_pseudo_checksum(const xaios_ip_addr_t *src,
+                               const xaios_ip_addr_t *dst,
+                               uint8_t next_header,
+                               uint32_t upper_layer_length,
+                               const uint8_t *payload,
+                               uint32_t payload_len) {
+  /*
+   * IPv6 pseudo-header (RFC 8200 Section 8.1):
+   *   16 bytes source address
+   *   16 bytes destination address
+   *   4 bytes  upper-layer packet length (big-endian)
+   *   3 bytes  zero
+   *   1 byte   next header
+   *   then the upper-layer payload
+   *
+   * We build a temporary buffer for the pseudo-header and use
+   * ipv4_checksum() for the ones-complement sum.
+   */
+  uint8_t pseudo[40]; /* 16+16+4+3+1 = 40 */
+  /* Source address */
+  for (uint32_t i = 0; i < 16; ++i) {
+    pseudo[i] = src->addr[i];
+  }
+  /* Destination address */
+  for (uint32_t i = 0; i < 16; ++i) {
+    pseudo[16 + i] = dst->addr[i];
+  }
+  /* Upper-layer length (4 bytes, big-endian) */
+  put_be32(pseudo + 32, upper_layer_length);
+  /* 3 zero bytes + next header */
+  pseudo[36] = 0;
+  pseudo[37] = 0;
+  pseudo[38] = 0;
+  pseudo[39] = next_header;
+
+  /*
+   * Sum the pseudo-header and payload together using ipv4_checksum().
+   * We concatenate pseudo (40 bytes) + payload in a single checksum pass.
+   * ipv4_checksum operates on a contiguous byte buffer, so we compute
+   * the sum manually to avoid copying.
+   */
+  uint64_t sum = 0;
+  /* Sum pseudo-header (always 40 bytes, even length) */
+  for (uint32_t i = 0; i < 40; i += 2U) {
+    sum += ((uint64_t)pseudo[i] << 8U) | (uint64_t)pseudo[i + 1U];
+  }
+  /* Sum payload */
+  if (payload != 0) {
+    for (uint32_t i = 0; i + 1U < payload_len; i += 2U) {
+      sum += ((uint64_t)payload[i] << 8U) | (uint64_t)payload[i + 1U];
+    }
+    if ((payload_len & 1U) != 0U) {
+      sum += ((uint64_t)payload[payload_len - 1U] << 8U);
+    }
+  }
+  /* Fold carries */
+  while ((sum >> 16U) != 0U) {
+    sum = (sum & 0xFFFFU) + (sum >> 16U);
+  }
+  return (uint16_t)(~sum & 0xFFFFU);
+}
+
+void ipv6_link_local_from_mac(xaios_ip_addr_t *addr, const uint8_t mac[6]) {
+  if (addr == 0 || mac == 0) {
+    return;
+  }
+  addr->family = XAIOS_IP_FAMILY_V6;
+  /* fe80:: prefix */
+  addr->addr[0] = 0xFE;
+  addr->addr[1] = 0x80;
+  for (uint32_t i = 2; i < 8; ++i) {
+    addr->addr[i] = 0;
+  }
+  /* EUI-64: insert ff:fe in the middle, flip bit 1 of byte 0 */
+  addr->addr[8]  = mac[0] ^ 0x02U; /* flip universal/local bit */
+  addr->addr[9]  = mac[1];
+  addr->addr[10] = mac[2];
+  addr->addr[11] = 0xFF;
+  addr->addr[12] = 0xFE;
+  addr->addr[13] = mac[3];
+  addr->addr[14] = mac[4];
+  addr->addr[15] = mac[5];
+}
+
+void ipv6_self_test(void) {
+  /* Test header build */
+  uint8_t hdr[40];
+  xaios_ip_addr_t src;
+  src.family = XAIOS_IP_FAMILY_V6;
+  for (uint32_t i = 0; i < 16; ++i) {
+    src.addr[i] = 0;
+  }
+  src.addr[0] = 0xFE;
+  src.addr[1] = 0x80;
+  src.addr[15] = 0x01;
+
+  xaios_ip_addr_t dst;
+  dst.family = XAIOS_IP_FAMILY_V6;
+  for (uint32_t i = 0; i < 16; ++i) {
+    dst.addr[i] = 0;
+  }
+  dst.addr[0] = 0xFE;
+  dst.addr[1] = 0x80;
+  dst.addr[15] = 0x02;
+
+  ipv6_build_header(hdr, 8, XAIOS_IPV6_NEXT_ICMPV6, &src, &dst);
+
+  /* Verify version nibble = 6 */
+  kassert((hdr[0] >> 4U) == 6U);
+  /* Payload length = 8 */
+  kassert(get_be16(hdr + 4) == 8);
+  /* Next header = 58 (ICMPv6) */
+  kassert(hdr[6] == 58);
+  /* Hop limit = 64 */
+  kassert(hdr[7] == 64);
+  /* Source address: fe80::1 */
+  kassert(hdr[8] == 0xFE && hdr[9] == 0x80);
+  kassert(hdr[23] == 0x01);
+  /* Destination address: fe80::2 */
+  kassert(hdr[24] == 0xFE && hdr[25] == 0x80);
+  kassert(hdr[39] == 0x02);
+
+  /* Test parse round-trip */
+  uint16_t plen = 0;
+  uint8_t nh = 0;
+  xaios_ip_addr_t parsed_src;
+  xaios_ip_addr_t parsed_dst;
+  kassert(ipv6_parse_header(hdr, 40, &plen, &nh, &parsed_src, &parsed_dst) == 0);
+  kassert(plen == 8);
+  kassert(nh == 58);
+  kassert(xaios_ip_addr_equal(&parsed_src, &src));
+  kassert(xaios_ip_addr_equal(&parsed_dst, &dst));
+
+  /* Test pseudo-header checksum */
+  uint8_t payload[8] = {0x80, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01};
+  uint16_t cksum = ipv6_pseudo_checksum(&src, &dst, XAIOS_IPV6_NEXT_ICMPV6,
+                                         8, payload, 8);
+  kassert(cksum != 0);
+
+  /* Verify checksum validates: set payload[2..3] = checksum, recompute */
+  put_be16(payload + 2, cksum);
+  uint16_t verify = ipv6_pseudo_checksum(&src, &dst, XAIOS_IPV6_NEXT_ICMPV6,
+                                          8, payload, 8);
+  kassert(verify == 0);
+
+  /* Test link-local from MAC */
+  uint8_t mac[6] = {0x52, 0x54, 0x00, 0x12, 0x34, 0x56};
+  xaios_ip_addr_t ll;
+  ipv6_link_local_from_mac(&ll, mac);
+  kassert(ll.family == XAIOS_IP_FAMILY_V6);
+  kassert(ll.addr[0] == 0xFE && ll.addr[1] == 0x80);
+  kassert(ll.addr[8] == (0x52 ^ 0x02));
+  kassert(ll.addr[11] == 0xFF && ll.addr[12] == 0xFE);
+  kassert(ll.addr[15] == 0x56);
+
+  klog("ipv6: self-test passed header=40B plen=%u nh=%u cksum=0x%04x\n",
+       plen, nh, cksum);
+}

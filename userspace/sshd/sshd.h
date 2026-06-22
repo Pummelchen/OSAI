@@ -35,9 +35,9 @@ typedef struct {
   int active;
 } sshd_user_t;
 
-/* Rate limiting entry */
+/* Rate limiting entry — supports both IPv4 and IPv6 addresses */
 typedef struct {
-  uint32_t ip_address;
+  xaios_ip_addr_user_t ip_address;
   uint64_t last_attempt_time;
   uint32_t failure_count;
   uint64_t ban_until;
@@ -64,7 +64,7 @@ typedef struct {
 typedef struct {
   u64 sockfd;
   int active;
-  uint32_t client_ip;
+  xaios_ip_addr_user_t client_addr;
   uint64_t last_activity;
 } sshd_active_conn_t;
 

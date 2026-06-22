@@ -232,12 +232,21 @@ int xaios_ml_run(u64 model_kind, const void *input, u64 input_size,
 
 int xaios_net_listen(u64 port, u64 *out_sockfd) {
   xaios_socket_request_t request;
-  request.sockfd = 0;
+  xaios_memzero(&request, sizeof(request));
   request.port = port;
-  request.buffer = 0;
-  request.buffer_size = 0;
-  request.out_bytes = 0;
   request.out_sockfd = (u64)out_sockfd;
+  u64 rc = xaios_syscall3(XAIOS_SYSCALL_NET_LISTEN, (u64)&request,
+                         sizeof(request), 0);
+  return rc == ~0ULL ? -1 : (int)rc;
+}
+
+int xaios_net_listen_addr(u64 port, const xaios_ip_addr_user_t *bind_addr,
+                          u64 *out_sockfd) {
+  xaios_socket_request_t request;
+  xaios_memzero(&request, sizeof(request));
+  request.port = port;
+  request.out_sockfd = (u64)out_sockfd;
+  request.addr_ptr = (u64)bind_addr;
   u64 rc = xaios_syscall3(XAIOS_SYSCALL_NET_LISTEN, (u64)&request,
                          sizeof(request), 0);
   return rc == ~0ULL ? -1 : (int)rc;
@@ -245,12 +254,23 @@ int xaios_net_listen(u64 port, u64 *out_sockfd) {
 
 int xaios_net_accept(u64 sockfd, u64 *out_sockfd) {
   xaios_socket_request_t request;
+  xaios_memzero(&request, sizeof(request));
   request.sockfd = sockfd;
-  request.port = 0;
-  request.buffer = 0;
-  request.buffer_size = 0;
-  request.out_bytes = 0;
   request.out_sockfd = (u64)out_sockfd;
+  u64 rc = xaios_syscall3(XAIOS_SYSCALL_NET_ACCEPT, (u64)&request,
+                         sizeof(request), 0);
+  return rc == ~0ULL ? -1 : (int)rc;
+}
+
+int xaios_net_accept_addr(u64 sockfd, u64 *out_sockfd,
+                          xaios_ip_addr_user_t *peer_addr, u64 *peer_port) {
+  xaios_socket_request_t request;
+  xaios_memzero(&request, sizeof(request));
+  request.sockfd = sockfd;
+  request.out_sockfd = (u64)out_sockfd;
+  request.addr_out_ptr = (u64)peer_addr;
+  /* peer_port is written to request.port by kernel if provided */
+  request.port = (u64)peer_port;
   u64 rc = xaios_syscall3(XAIOS_SYSCALL_NET_ACCEPT, (u64)&request,
                          sizeof(request), 0);
   return rc == ~0ULL ? -1 : (int)rc;
@@ -258,12 +278,25 @@ int xaios_net_accept(u64 sockfd, u64 *out_sockfd) {
 
 int xaios_net_recv(u64 sockfd, void *buffer, u64 buffer_size, u64 *out_bytes) {
   xaios_socket_request_t request;
+  xaios_memzero(&request, sizeof(request));
   request.sockfd = sockfd;
-  request.port = 0;
   request.buffer = (u64)buffer;
   request.buffer_size = buffer_size;
   request.out_bytes = (u64)out_bytes;
-  request.out_sockfd = 0;
+  u64 rc = xaios_syscall3(XAIOS_SYSCALL_NET_RECV, (u64)&request,
+                         sizeof(request), 0);
+  return rc == ~0ULL ? -1 : (int)rc;
+}
+
+int xaios_net_recvfrom(u64 sockfd, void *buffer, u64 buffer_size,
+                       u64 *out_bytes, xaios_ip_addr_user_t *src_addr) {
+  xaios_socket_request_t request;
+  xaios_memzero(&request, sizeof(request));
+  request.sockfd = sockfd;
+  request.buffer = (u64)buffer;
+  request.buffer_size = buffer_size;
+  request.out_bytes = (u64)out_bytes;
+  request.addr_out_ptr = (u64)src_addr;
   u64 rc = xaios_syscall3(XAIOS_SYSCALL_NET_RECV, (u64)&request,
                          sizeof(request), 0);
   return rc == ~0ULL ? -1 : (int)rc;
@@ -272,12 +305,25 @@ int xaios_net_recv(u64 sockfd, void *buffer, u64 buffer_size, u64 *out_bytes) {
 int xaios_net_send(u64 sockfd, const void *buffer, u64 buffer_size,
                   u64 *out_bytes) {
   xaios_socket_request_t request;
+  xaios_memzero(&request, sizeof(request));
   request.sockfd = sockfd;
-  request.port = 0;
   request.buffer = (u64)buffer;
   request.buffer_size = buffer_size;
   request.out_bytes = (u64)out_bytes;
-  request.out_sockfd = 0;
+  u64 rc = xaios_syscall3(XAIOS_SYSCALL_NET_SEND, (u64)&request,
+                         sizeof(request), 0);
+  return rc == ~0ULL ? -1 : (int)rc;
+}
+
+int xaios_net_sendto(u64 sockfd, const void *buffer, u64 buffer_size,
+                     u64 *out_bytes, const xaios_ip_addr_user_t *dst_addr) {
+  xaios_socket_request_t request;
+  xaios_memzero(&request, sizeof(request));
+  request.sockfd = sockfd;
+  request.buffer = (u64)buffer;
+  request.buffer_size = buffer_size;
+  request.out_bytes = (u64)out_bytes;
+  request.addr_ptr = (u64)dst_addr;
   u64 rc = xaios_syscall3(XAIOS_SYSCALL_NET_SEND, (u64)&request,
                          sizeof(request), 0);
   return rc == ~0ULL ? -1 : (int)rc;

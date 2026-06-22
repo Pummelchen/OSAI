@@ -21,6 +21,7 @@ uint16_t ipv4_checksum(const uint8_t *data, uint32_t length);
 uint16_t ipv4_pseudo_checksum(uint32_t src_ip, uint32_t dst_ip,
                                uint8_t protocol, uint16_t payload_length,
                                const uint8_t *payload, uint32_t payload_len);
+int ipv4_validate_incoming(const uint8_t *frame, uint64_t frame_len);
 void ipv4_self_test(void);
 
 #endif
