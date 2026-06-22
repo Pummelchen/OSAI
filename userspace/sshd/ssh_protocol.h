@@ -34,6 +34,10 @@ int ssh_recv_version(int sockfd, uint8_t *buf, uint32_t buf_size,
 int ssh_packet_read(int sockfd, ssh_packet_t *pkt);
 int ssh_packet_write(int sockfd, const uint8_t *data, uint32_t len);
 
+/* Encrypted packet I/O (used after NEWKEYS) */
+int ssh_packet_write_encrypted(int sockfd, const uint8_t *data, uint32_t len);
+int ssh_packet_read_encrypted(int sockfd, ssh_packet_t *out_pkt);
+
 /* Helpers */
 uint32_t ssh_read_u32_be(const uint8_t *p);
 void ssh_write_u32_be(uint8_t *p, uint32_t v);

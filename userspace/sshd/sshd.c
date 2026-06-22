@@ -38,32 +38,30 @@ static ssh_crypto_state_t g_crypto;
 /* Initialize encryption after NEWKEYS (RFC 4253 Section 7.2) */
 static void init_encryption(const uint8_t *shared_secret, uint32_t secret_len,
                             const uint8_t *exchange_hash, uint32_t hash_len) {
-  /* RFC 4253 key derivation: K1 = HASH(K || H || "A" || session_id) */
-  /* Derive multiple keys using hash chaining */
+  /* RFC 4253 §7.2 key derivation:
+   * A = Initial IV client to server
+   * B = Initial IV server to client
+   * C = Encryption key client to server
+   * D = Encryption key server to client
+   * E = Integrity key client to server
+   * F = Integrity key server to client
+   * 
+   * Server perspective: decrypts C2S (key C), encrypts S2C (key D)
+   */
   
-  /* Client-to-server encryption key */
   uint8_t derive_buf[128];
   sha256_ctx_t ctx;
   
-  /* First 16 bytes: Initial key for C2S encryption */
+  /* A = C2S IV → server uses for decrypt */
   sha256_init(&ctx);
   sha256_update(&ctx, shared_secret, secret_len);
   sha256_update(&ctx, exchange_hash, hash_len);
   sha256_update(&ctx, (const uint8_t*)"A", 1);
-  sha256_update(&ctx, exchange_hash, hash_len);  /* session_id = exchange_hash */
-  sha256_final(&ctx, derive_buf);
-  aes128_init(&g_crypto.encrypt_ctx, derive_buf);
-  
-  /* Next 16 bytes: Initial key for S2C encryption */
-  sha256_init(&ctx);
-  sha256_update(&ctx, shared_secret, secret_len);
-  sha256_update(&ctx, exchange_hash, hash_len);
-  sha256_update(&ctx, (const uint8_t*)"C", 1);  /* Different label */
   sha256_update(&ctx, exchange_hash, hash_len);
   sha256_final(&ctx, derive_buf);
-  aes128_init(&g_crypto.decrypt_ctx, derive_buf);
+  mem_copy(g_crypto.decrypt_iv, derive_buf, 16);
   
-  /* IVs: Continue hash chain */
+  /* B = S2C IV → server uses for encrypt */
   sha256_init(&ctx);
   sha256_update(&ctx, shared_secret, secret_len);
   sha256_update(&ctx, exchange_hash, hash_len);
@@ -72,28 +70,39 @@ static void init_encryption(const uint8_t *shared_secret, uint32_t secret_len,
   sha256_final(&ctx, derive_buf);
   mem_copy(g_crypto.encrypt_iv, derive_buf, 16);
   
+  /* C = C2S key → server uses for decrypt */
+  sha256_init(&ctx);
+  sha256_update(&ctx, shared_secret, secret_len);
+  sha256_update(&ctx, exchange_hash, hash_len);
+  sha256_update(&ctx, (const uint8_t*)"C", 1);
+  sha256_update(&ctx, exchange_hash, hash_len);
+  sha256_final(&ctx, derive_buf);
+  aes128_init(&g_crypto.decrypt_ctx, derive_buf);
+  
+  /* D = S2C key → server uses for encrypt */
   sha256_init(&ctx);
   sha256_update(&ctx, shared_secret, secret_len);
   sha256_update(&ctx, exchange_hash, hash_len);
   sha256_update(&ctx, (const uint8_t*)"D", 1);
   sha256_update(&ctx, exchange_hash, hash_len);
   sha256_final(&ctx, derive_buf);
-  mem_copy(g_crypto.decrypt_iv, derive_buf, 16);
+  aes128_init(&g_crypto.encrypt_ctx, derive_buf);
   
-  /* MAC keys: Separate derivation for integrity */
+  /* E = C2S MAC key → server uses for decrypt (verify) */
   sha256_init(&ctx);
   sha256_update(&ctx, shared_secret, secret_len);
   sha256_update(&ctx, exchange_hash, hash_len);
-  sha256_update(&ctx, (const uint8_t*)"E", 1);  /* C2S MAC key */
-  sha256_update(&ctx, exchange_hash, hash_len);
-  sha256_final(&ctx, g_crypto.encrypt_mac_key);
-  
-  sha256_init(&ctx);
-  sha256_update(&ctx, shared_secret, secret_len);
-  sha256_update(&ctx, exchange_hash, hash_len);
-  sha256_update(&ctx, (const uint8_t*)"F", 1);  /* S2C MAC key */
+  sha256_update(&ctx, (const uint8_t*)"E", 1);
   sha256_update(&ctx, exchange_hash, hash_len);
   sha256_final(&ctx, g_crypto.decrypt_mac_key);
+  
+  /* F = S2C MAC key → server uses for encrypt (generate) */
+  sha256_init(&ctx);
+  sha256_update(&ctx, shared_secret, secret_len);
+  sha256_update(&ctx, exchange_hash, hash_len);
+  sha256_update(&ctx, (const uint8_t*)"F", 1);
+  sha256_update(&ctx, exchange_hash, hash_len);
+  sha256_final(&ctx, g_crypto.encrypt_mac_key);
   
   g_crypto.encrypt_seq = 0;
   g_crypto.decrypt_seq = 0;
@@ -103,7 +112,7 @@ static void init_encryption(const uint8_t *shared_secret, uint32_t secret_len,
 }
 
 /* Encrypt and send a packet with HMAC-SHA256 integrity (RFC 4253 Section 6) */
-static int ssh_packet_write_encrypted(int sockfd, const uint8_t *data, uint32_t len) {
+int ssh_packet_write_encrypted(int sockfd, const uint8_t *data, uint32_t len) {
   if (!g_crypto.enabled) {
     return ssh_packet_write(sockfd, data, len);
   }
@@ -152,7 +161,7 @@ static int ssh_packet_write_encrypted(int sockfd, const uint8_t *data, uint32_t 
 }
 
 /* Receive and decrypt a packet with HMAC-SHA256 verification */
-static int ssh_packet_read_encrypted(int sockfd, ssh_packet_t *out_pkt) {
+int ssh_packet_read_encrypted(int sockfd, ssh_packet_t *out_pkt) {
   if (!g_crypto.enabled) {
     return ssh_packet_read(sockfd, out_pkt);
   }
@@ -996,6 +1005,15 @@ static int handle_connection(int sockfd,
       ssh_log(SSH_LOG_WARN, "Unknown message type: %u\n", msg);
     }
   }
+  
+  /* Send SSH_MSG_DISCONNECT before closing */
+  uint8_t disconnect_msg[17];
+  mem_zero(disconnect_msg, sizeof(disconnect_msg));
+  disconnect_msg[0] = 1; /* SSH_MSG_DISCONNECT */
+  ssh_write_u32_be(disconnect_msg + 1, 11); /* SSH_DISCONNECT_BY_APPLICATION */
+  ssh_write_u32_be(disconnect_msg + 5, 0); /* description length */
+  ssh_write_u32_be(disconnect_msg + 9, 0); /* language tag length */
+  ssh_packet_write_encrypted(sockfd, disconnect_msg, 13);
   
   /* Zero out sensitive data */
   mem_zero(server_priv, 32);

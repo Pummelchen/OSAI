@@ -6,11 +6,18 @@
 
 #define SSH_CHANNEL_MAX 4U
 
+/* Channel request message types */
+#define SSH_MSG_CHANNEL_REQUEST       98U
+#define SSH_MSG_CHANNEL_SUCCESS       99U
+#define SSH_MSG_CHANNEL_FAILURE       100U
+#define SSH_MSG_CHANNEL_WINDOW_ADJUST 93U
+
 typedef struct ssh_channel {
   uint32_t active;
   uint32_t local_id;
   uint32_t remote_id;
   uint32_t window_size;
+  uint32_t bytes_consumed; /* Track bytes consumed for window management */
 } ssh_channel_t;
 
 void ssh_channel_init(void);
