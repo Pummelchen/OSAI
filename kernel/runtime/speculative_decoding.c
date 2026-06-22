@@ -17,6 +17,19 @@ static void bytes_zero(void *buffer, uint64_t size) {
   }
 }
 
+/* Extract token ID from model output buffer.
+ * Reads up to 4 bytes as little-endian uint32_t, which is the
+ * standard representation for BPE token IDs in the inference runtime.
+ * Single-byte ASCII tokens are correctly handled (upper bytes = 0). */
+static uint32_t extract_token_id(const char *output, uint64_t output_bytes) {
+  uint32_t token = 0;
+  uint64_t read_bytes = output_bytes < 4 ? output_bytes : 4;
+  for (uint64_t i = 0; i < read_bytes; ++i) {
+    token |= (uint32_t)(uint8_t)output[i] << (i * 8);
+  }
+  return token;
+}
+
 xaios_status_t speculative_decoding_init(xaios_speculative_state_t *state,
                                          uint32_t draft_cell_id,
                                          uint32_t target_cell_id) {
@@ -89,8 +102,8 @@ xaios_status_t speculative_generate_draft(
       return XAIOS_ERR_INVALID;
     }
     
-    /* Parse output token (simplified: assume first byte is token ID) */
-    state->draft_tokens[i] = output_buffer[0];
+    /* Extract full token ID from model output (supports multi-byte BPE tokens) */
+    state->draft_tokens[i] = extract_token_id(output_buffer, output_bytes);
   }
   
   state->num_draft_tokens = num_draft_tokens;
@@ -146,8 +159,8 @@ xaios_status_t speculative_verify_tokens(
       break;
     }
     
-    /* Compare with draft token */
-    uint32_t target_token = output_buffer[0];
+    /* Extract full token ID from target model output */
+    uint32_t target_token = extract_token_id(output_buffer, output_bytes);
     state->verified_tokens[i] = target_token;
     
     if (target_token == state->draft_tokens[i]) {

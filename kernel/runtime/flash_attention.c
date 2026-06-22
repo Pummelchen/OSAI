@@ -1,7 +1,9 @@
 #include <xaios/assert.h>
 #include <xaios/ai_kernels.h>
 #include <xaios/flash_attention.h>
+#include <xaios/kheap.h>
 #include <xaios/klog.h>
+#include <xaios/math_intrinsics.h>
 
 /*
  * Flash Attention Implementation
@@ -33,9 +35,18 @@ xaios_status_t flash_attention_init(xaios_flash_attention_config_t *config,
   config->output = output;
   config->output_bytes = output_bytes;
   
-  /* Allocate temporary QKV buffer */
+  /* Allocate temporary QKV buffer from kernel heap (arena-managed) */
   config->QKV_bytes = (uint64_t)num_tokens * head_dim * num_heads * sizeof(float) * 3U;
-  config->QKV_buffer = (void *)__builtin_alloca(config->QKV_bytes);
+  if (config->QKV_bytes == 0) {
+    return XAIOS_ERR_INVALID;
+  }
+  config->QKV_buffer = kheap_alloc(config->QKV_bytes, 64);
+  if (config->QKV_buffer == 0) {
+    klog("flash-attention: failed to allocate QKV buffer (%lu bytes)\n",
+         config->QKV_bytes);
+    config->QKV_bytes = 0;
+    return XAIOS_ERR_NO_MEMORY;
+  }
   
   klog("flash-attention: initialized config_id=%u tokens=%u heads=%u head_dim=%u blocks=%u\n",
        config_id, num_tokens, num_heads, head_dim, config->num_blocks);
@@ -79,7 +90,7 @@ static void compute_block_attention(
       }
       score /= (float)head_dim;
       
-      float exp_score = score - max_score;  /* Simplified exp() */
+      float exp_score = xaios_expf(score - max_score);
       sum_exp += exp_score;
       
       /* Accumulate weighted V */

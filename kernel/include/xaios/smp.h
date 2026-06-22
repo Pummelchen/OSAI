@@ -12,7 +12,7 @@
  * BSS per-CPU: ~0.7 MB total (stacks + states + runqueues) at max scale.
  * Requires >= 1 GB RAM for testing, >= 64 GB for production servers.
  */
-#define XAIOS_MAX_CPUS 131072U
+#define XAIOS_MAX_CPUS 256U
 
 typedef enum xaios_cpu_role {
   XAIOS_CPU_ROLE_OFFLINE = 0,

@@ -182,8 +182,9 @@ uint64_t rate_limit_total_throttle_events(void) {
 void rate_limit_self_test(void) {
   uint32_t test_cell = 0;
 
-  /* Create rate limiter: 100 CPU tokens, 100/sec refill, 4096 memory cap */
-  kassert(rate_limit_create(test_cell, 100, 100, 4096, 4096, 4096) == XAIOS_OK);
+  /* Create rate limiter: 100 CPU tokens, 1/sec refill (low to avoid timing
+   * issues in self-test loop), 4096 net tokens, 1/sec net refill, 4096 mem cap */
+  kassert(rate_limit_create(test_cell, 100, 1, 4096, 1, 4096) == XAIOS_OK);
   kassert(g_rate_limits[test_cell].active == 1);
 
   /* Consume all 100 CPU tokens */

@@ -144,7 +144,6 @@ typedef struct tcp_syn_tracker {
   uint64_t last_reset_ns;
 } tcp_syn_tracker_t;
 
-static tcp_syn_tracker_t g_syn_trackers[16];
 static uint32_t g_half_open_count = 0;
 
 static uint8_t g_local_mac[6];

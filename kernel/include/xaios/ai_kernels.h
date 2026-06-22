@@ -193,7 +193,7 @@ xaios_status_t ai_execute_compiled(const xaios_compiled_kernel_t *kernel,
 /*
  * BPE Tokenizer Interface
  */
-typedef struct xaios_bpe_tokenizer xaios_bpe_tokenizer_t;
+#include <xaios/bpe_tokenizer.h>
 
 xaios_status_t ai_bpe_tokenizer_init(const uint8_t *data, uint64_t size,
                                      xaios_bpe_tokenizer_t *tokenizer);

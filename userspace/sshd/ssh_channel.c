@@ -73,7 +73,8 @@ int ssh_channel_handle_packet(int sockfd, const ssh_packet_t *pkt) {
     
     /* Execute command via remote_login */
     char output[8192];
-    int result = xaios_remote_login("admin", command, output, sizeof(output));
+    u64 out_size = 0;
+    int result = xaios_remote_login("admin", command, output, sizeof(output), &out_size);
     
     if (result != 0) {
       /* Command failed */

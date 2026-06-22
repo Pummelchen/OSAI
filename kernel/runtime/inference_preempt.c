@@ -1,5 +1,6 @@
 #include <xaios/assert.h>
 #include <xaios/inference_preempt.h>
+#include <xaios/kheap.h>
 #include <xaios/klog.h>
 
 /*
@@ -67,9 +68,11 @@ xaios_status_t inference_preempt_save(xaios_preempt_manager_t *mgr,
     return XAIOS_ERR_NO_MEMORY; /* No checkpoint slots available */
   }
   
-  /* Allocate activation buffer */
-  void *buffer = (void *)__builtin_alloca(activation_bytes);
+  /* Allocate activation buffer from kernel heap */
+  void *buffer = kheap_alloc(activation_bytes, 64);
   if (buffer == 0) {
+    klog("inference-preempt: failed to allocate activation buffer (%lu bytes)\n",
+         activation_bytes);
     return XAIOS_ERR_NO_MEMORY;
   }
   

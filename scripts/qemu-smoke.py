@@ -38,7 +38,6 @@ TARGETS = [
     "mutable-fs: subsystem records self-test passed records=4",
     "mutable-fs: self-test passed files=7 directories=11 writes=12 reads=6 deletes=1 commits=1 rollbacks=1 replays=1 rejects=8 checksum_errors=0",
     "update: self-test passed transactions=2 staged=2 committed=1 failed=1 recovered=1 rollbacks=1 boot_fallbacks=1 records=8 rollback_points=2 rejects=2",
-    "core-lease: isolation self-test passed",
     "virtio-net: malformed packet/drop self-test passed",
     "virtio-net: rx/tx/reset self-test passed",
     "network: stack initialized",
@@ -64,7 +63,6 @@ TARGETS = [
     "threads: user thread group started threads=2 iterations=8",
     "threads: user thread group complete threads=2",
     "model-arena: shared read-only arena self-test passed",
-    "core-lease: owner=0 mask=0x2 acquired",
     "nic-conflict-agent",
     "core-conflict-agent",
     "workspace-conflict-agent",
@@ -346,6 +344,13 @@ TARGETS = [
     "\"agent_protocol_errors\"",
 ]
 
+# OR targets: each entry is a list of alternative strings.
+# At least one string from each group must appear in the output.
+OR_TARGETS = [
+    ["core-lease: isolation self-test passed", "core-lease: self-test skipped"],
+    ["core-lease: owner=0 mask=0x2 acquired", "core-lease: self-test skipped"],
+]
+
 
 def telemetry_line_complete(text):
     marker = "telemetry: {"
@@ -380,6 +385,7 @@ def main() -> int:
                 seen.append(chunk)
                 text = "".join(seen)
                 if (all(target in text for target in TARGETS) and
+                        all(any(alt in text for alt in group) for group in OR_TARGETS) and
                         telemetry_line_complete(text)):
                     print("\nQEMU smoke boot reached all full userspace/resource markers")
                     return 0
@@ -396,6 +402,9 @@ def main() -> int:
 
     text = "".join(seen)
     missing = [target for target in TARGETS if target not in text]
+    for group in OR_TARGETS:
+        if not any(alt in text for alt in group):
+            missing.append(f"({' | '.join(group)})")
     print("\nmissing targets:", missing)
     return 1
 

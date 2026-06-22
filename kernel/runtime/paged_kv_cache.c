@@ -1,4 +1,5 @@
 #include <xaios/assert.h>
+#include <xaios/kheap.h>
 #include <xaios/klog.h>
 #include <xaios/paged_kv_cache.h>
 #include <xaios/vmm.h>
@@ -40,9 +41,17 @@ xaios_status_t paged_kv_cache_init(xaios_paged_kv_cache_t *cache,
   cache->bytes_per_block = 2U * (uint64_t)head_dim * block_size * sizeof(float);
   cache->bytes_per_block = align_up(cache->bytes_per_block, 4096U); /* Page-align */
   
-  /* Allocate block array */
-  cache->blocks = (xaios_kv_block_t *)__builtin_alloca(
-      num_blocks * sizeof(xaios_kv_block_t));
+  /* Allocate block array from kernel heap */
+  uint64_t block_array_bytes = (uint64_t)num_blocks * sizeof(xaios_kv_block_t);
+  if (block_array_bytes == 0) {
+    return XAIOS_ERR_INVALID;
+  }
+  cache->blocks = (xaios_kv_block_t *)kheap_alloc(block_array_bytes, 64);
+  if (cache->blocks == 0) {
+    klog("paged-kv-cache: failed to allocate block array (%lu bytes)\n",
+         block_array_bytes);
+    return XAIOS_ERR_NO_MEMORY;
+  }
   
   /* Allocate physical memory for all blocks */
   for (uint32_t i = 0; i < num_blocks; ++i) {
@@ -50,12 +59,19 @@ xaios_status_t paged_kv_cache_init(xaios_paged_kv_cache_t *cache,
     cache->blocks[i].ref_count = 0;
     cache->blocks[i].token_count = 0;
     
-    /* Allocate key and value cache (page-aligned) */
+    /* Allocate key and value cache from kernel heap (page-aligned) */
     uint64_t half_bytes = cache->bytes_per_block / 2U;
-    cache->blocks[i].key_cache = (void *)(uintptr_t)(0xFFFF000000000000ULL + 
-        (uint64_t)i * cache->bytes_per_block);
-    cache->blocks[i].value_cache = (void *)(uintptr_t)(0xFFFF000000000000ULL + 
-        (uint64_t)i * cache->bytes_per_block + half_bytes);
+    cache->blocks[i].key_cache = kheap_alloc(half_bytes, 4096);
+    cache->blocks[i].value_cache = kheap_alloc(half_bytes, 4096);
+    if (cache->blocks[i].key_cache == 0 || cache->blocks[i].value_cache == 0) {
+      klog("paged-kv-cache: failed to allocate KV data for block %u\n", i);
+      /* Zero remaining blocks and return error */
+      for (uint32_t j = i; j < num_blocks; ++j) {
+        cache->blocks[j].key_cache = 0;
+        cache->blocks[j].value_cache = 0;
+      }
+      return XAIOS_ERR_NO_MEMORY;
+    }
     
     bytes_zero(cache->blocks[i].key_cache, half_bytes);
     bytes_zero(cache->blocks[i].value_cache, half_bytes);

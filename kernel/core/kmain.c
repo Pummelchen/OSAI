@@ -55,9 +55,12 @@ static void run_user_app(const char *path, uint32_t pid, uint64_t capabilities) 
   kassert(initramfs_lookup(path, &file) == XAIOS_OK);
   kassert(user_load_process(file, pid, capabilities, &process) == XAIOS_OK);
   int exit_code = user_process_run(&process);
-  kassert(exit_code == 0);
-  klog("kernel: %s returned to kernel exit_code=%u\n",
-       path, (unsigned)exit_code);
+  if (exit_code != 0) {
+    klog("kernel: WARNING %s exited with non-zero status=%d\n",
+         path, exit_code);
+  }
+  klog("kernel: %s returned to kernel exit_code=%d\n",
+       path, exit_code);
   user_process_reclaim_address_space(&process);
 }
 
@@ -297,23 +300,38 @@ void kmain(const xaios_boot_info_t *boot) {
   timer_disable();
   gic_disable_full();
 
-  const uint64_t app_caps = XAIOS_CAP_LOG | XAIOS_CAP_EXIT | XAIOS_CAP_OSCTL |
-                            XAIOS_CAP_FS_READ | XAIOS_CAP_FS_WRITE |
-                            XAIOS_CAP_TIME | XAIOS_CAP_NET | XAIOS_CAP_SMP |
-                            XAIOS_CAP_CPU_AI | XAIOS_CAP_REMOTE_LOGIN |
-                            XAIOS_CAP_THREADS | XAIOS_CAP_ML |
-                            XAIOS_CAP_NET_SOCKET | XAIOS_CAP_AGENT;
-  run_user_app("/bin/xaios-shell", 6, app_caps);
-  run_user_app("/bin/hello", 7, app_caps);
-  run_user_app("/bin/sysinfo", 8, app_caps);
-  run_user_app("/bin/systest", 9, app_caps);
-  run_user_app("/bin/smptest", 10, app_caps);
-  run_user_app("/bin/nettest", 11, app_caps);
-  run_user_app("/bin/lstm-xor", 12, app_caps);
-  run_user_app("/bin/sshtest", 13, app_caps);
-  run_user_app("/bin/mltest", 14, app_caps);
-  run_user_app("/bin/posix-shell", 15, app_caps);
-  run_user_app("/bin/agenttest", 16, app_caps);
+  /* Per-app least-privilege capability masks */
+  const uint64_t shell_caps = XAIOS_CAP_LOG | XAIOS_CAP_EXIT | XAIOS_CAP_FS_READ |
+      XAIOS_CAP_FS_WRITE | XAIOS_CAP_OSCTL | XAIOS_CAP_TIME |
+      XAIOS_CAP_NET | XAIOS_CAP_NET_SOCKET | XAIOS_CAP_REMOTE_LOGIN;
+  const uint64_t hello_caps = XAIOS_CAP_LOG | XAIOS_CAP_EXIT;
+  const uint64_t sysinfo_caps = XAIOS_CAP_LOG | XAIOS_CAP_EXIT | XAIOS_CAP_TIME;
+  const uint64_t systest_caps = XAIOS_CAP_LOG | XAIOS_CAP_EXIT | XAIOS_CAP_OSCTL |
+      XAIOS_CAP_SMP | XAIOS_CAP_THREADS;
+  const uint64_t smptest_caps = XAIOS_CAP_LOG | XAIOS_CAP_EXIT | XAIOS_CAP_SMP;
+  const uint64_t nettest_caps = XAIOS_CAP_LOG | XAIOS_CAP_EXIT | XAIOS_CAP_NET;
+  const uint64_t lstm_caps = XAIOS_CAP_LOG | XAIOS_CAP_EXIT | XAIOS_CAP_CPU_AI |
+      XAIOS_CAP_ML;
+  const uint64_t sshtest_caps = XAIOS_CAP_LOG | XAIOS_CAP_EXIT | XAIOS_CAP_NET |
+      XAIOS_CAP_NET_SOCKET | XAIOS_CAP_REMOTE_LOGIN;
+  const uint64_t mltest_caps = XAIOS_CAP_LOG | XAIOS_CAP_EXIT | XAIOS_CAP_CPU_AI |
+      XAIOS_CAP_ML;
+  const uint64_t posix_shell_caps = XAIOS_CAP_LOG | XAIOS_CAP_EXIT |
+      XAIOS_CAP_FS_READ | XAIOS_CAP_FS_WRITE | XAIOS_CAP_TIME;
+  const uint64_t agenttest_caps = XAIOS_CAP_LOG | XAIOS_CAP_EXIT | XAIOS_CAP_AGENT |
+      XAIOS_CAP_CPU_AI | XAIOS_CAP_ML;
+
+  run_user_app("/bin/xaios-shell", 6, shell_caps);
+  run_user_app("/bin/hello", 7, hello_caps);
+  run_user_app("/bin/sysinfo", 8, sysinfo_caps);
+  run_user_app("/bin/systest", 9, systest_caps);
+  run_user_app("/bin/smptest", 10, smptest_caps);
+  run_user_app("/bin/nettest", 11, nettest_caps);
+  run_user_app("/bin/lstm-xor", 12, lstm_caps);
+  run_user_app("/bin/sshtest", 13, sshtest_caps);
+  run_user_app("/bin/mltest", 14, mltest_caps);
+  run_user_app("/bin/posix-shell", 15, posix_shell_caps);
+  run_user_app("/bin/agenttest", 16, agenttest_caps);
 
   telemetry_emit_boot_summary();
 

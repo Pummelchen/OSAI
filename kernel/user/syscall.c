@@ -787,7 +787,11 @@ uint64_t syscall_dispatch(uint64_t syscall, uint64_t arg0, uint64_t arg1,
                                  XAIOS_VMM_WRITABLE) != XAIOS_OK) {
       return reject_syscall(syscall, arg0, arg1, "net-send-denied");
     }
-    /* Accept all data as sent (stub) */
+    /* TODO(XAIOS-50): Wire to network_stack_send() once generic socket TX
+     * path is implemented in network_stack.c.  Currently the SSH server uses
+     * its own userspace xaios_net_send() -> this syscall, so data appears
+     * "sent" but is never actually transmitted on the wire.  The validation
+     * above (buffer check, capability check) is already production-safe. */
     *(uint64_t *)(uintptr_t)request.out_bytes = request.buffer_size;
     klog("syscall: net_send sockfd=%lu len=%lu\n", request.sockfd, request.buffer_size);
     return XAIOS_OK;

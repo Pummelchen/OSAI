@@ -227,7 +227,7 @@ static int handle_open(int sockfd, const uint8_t *data, uint32_t len) {
   
   mem_copy(handle->path, local_path, path_len + 1);
   
-  /* For now, accept all opens (production: check file existence, permissions) */
+  /* TODO(XAIOS-51): Add per-path permission checks before opening files */
   return send_handle(sockfd, request_id, handle->handle_id);
 }
 
@@ -277,13 +277,34 @@ static int handle_read(int sockfd, const uint8_t *data, uint32_t len) {
     return send_status(sockfd, request_id, SSH_FX_BAD_MESSAGE, "Invalid handle ID");
   }
   
-  /* Read file data (production: use xaios_mfs_read) */
+  /* Read file data via mutable_fs */
   uint8_t file_data[SFTP_MAX_PACKET_SIZE];
-  uint32_t actual_len = 0;
+  uint32_t clamped_len = read_len < SFTP_MAX_PACKET_SIZE ? read_len : SFTP_MAX_PACKET_SIZE;
   
-  /* Placeholder: in production, read from actual filesystem */
-  /* For now, return EOF */
-  return send_status(sockfd, request_id, SSH_FX_EOF, "End of file");
+  int64_t fd = mutable_fs_open(handle->path,
+      XAIOS_MFS_OPEN_READ);
+  if (fd < 0) {
+    return send_status(sockfd, request_id, SSH_FX_NO_SUCH_FILE, "Cannot open file");
+  }
+  
+  /* Seek to offset by reading and discarding */
+  uint8_t discard[256];
+  uint64_t remaining_offset = offset;
+  while (remaining_offset > 0) {
+    uint64_t skip = remaining_offset < 256 ? remaining_offset : 256;
+    int64_t got = mutable_fs_read_fd((uint32_t)fd, discard, skip);
+    if (got <= 0) break;
+    remaining_offset -= (uint64_t)got;
+  }
+  
+  int64_t bytes_read = mutable_fs_read_fd((uint32_t)fd, file_data, clamped_len);
+  mutable_fs_close((uint32_t)fd);
+  
+  if (bytes_read <= 0) {
+    return send_status(sockfd, request_id, SSH_FX_EOF, "End of file");
+  }
+  
+  return send_data(sockfd, request_id, file_data, (uint32_t)bytes_read);
 }
 
 static int handle_write(int sockfd, const uint8_t *data, uint32_t len) {
@@ -307,8 +328,23 @@ static int handle_write(int sockfd, const uint8_t *data, uint32_t len) {
     return send_status(sockfd, request_id, SSH_FX_BAD_MESSAGE, "Invalid handle ID");
   }
   
-  /* Write file data (production: use xaios_mfs_write) */
-  /* Placeholder: acknowledge write */
+  /* Write file data via mutable_fs */
+  const uint8_t *write_data = data + 20 + handle_len;
+  uint32_t clamped_len = write_len < (SFTP_MAX_PACKET_SIZE - 32) ? write_len : (SFTP_MAX_PACKET_SIZE - 32);
+  
+  int64_t fd = mutable_fs_open(handle->path,
+      XAIOS_MFS_OPEN_WRITE | XAIOS_MFS_OPEN_CREATE);
+  if (fd < 0) {
+    return send_status(sockfd, request_id, SSH_FX_FAILURE, "Cannot open file for writing");
+  }
+  
+  int64_t written = mutable_fs_write_fd((uint32_t)fd, write_data, clamped_len);
+  mutable_fs_close((uint32_t)fd);
+  
+  if (written < 0) {
+    return send_status(sockfd, request_id, SSH_FX_FAILURE, "Write failed");
+  }
+  
   return send_status(sockfd, request_id, SSH_FX_OK, "Success");
 }
 
@@ -361,8 +397,48 @@ static int handle_readdir(int sockfd, const uint8_t *data, uint32_t len) {
     return send_status(sockfd, request_id, SSH_FX_BAD_MESSAGE, "Invalid handle ID");
   }
   
-  /* For now, return EOF (production: list directory contents) */
-  return send_status(sockfd, request_id, SSH_FX_EOF, "End of directory");
+  /* List directory contents via mutable_fs_list */
+  char list_buf[4096];
+  uint64_t list_size = 0;
+  xaios_status_t fs_status = mutable_fs_list(handle->path, list_buf,
+      sizeof(list_buf), &list_size);
+  
+  if (fs_status != XAIOS_OK || list_size == 0) {
+    return send_status(sockfd, request_id, SSH_FX_EOF, "End of directory");
+  }
+  
+  /* Build SSH_FXP_NAME response */
+  uint8_t resp_buf[4096 + 128];
+  uint32_t rpos = 0;
+  resp_buf[rpos++] = SSH_FXP_NAME;
+  write_u32(resp_buf + rpos, request_id); rpos += 4;
+  
+  /* Count entries (newline-separated) */
+  uint32_t entry_count = 0;
+  for (uint64_t i = 0; i < list_size; ++i) {
+    if (list_buf[i] == '\n' || i == list_size - 1) entry_count++;
+  }
+  write_u32(resp_buf + rpos, entry_count); rpos += 4;
+  
+  /* Encode each entry as (name, longname, attrs) */
+  uint64_t name_start = 0;
+  for (uint64_t i = 0; i < list_size; ++i) {
+    if (list_buf[i] == '\n' || i == list_size - 1) {
+      uint32_t name_len = (uint32_t)(i - name_start);
+      if (list_buf[i] == '\n' && name_len == 0) { name_start = i + 1; continue; }
+      /* filename */
+      write_u32(resp_buf + rpos, name_len); rpos += 4;
+      mem_copy(resp_buf + rpos, list_buf + name_start, name_len); rpos += name_len;
+      /* longname (same as filename for simplicity) */
+      write_u32(resp_buf + rpos, name_len); rpos += 4;
+      mem_copy(resp_buf + rpos, list_buf + name_start, name_len); rpos += name_len;
+      /* attrs: flags=0 (no attributes) */
+      write_u32(resp_buf + rpos, 0); rpos += 4;
+      name_start = i + 1;
+    }
+  }
+  
+  return ssh_packet_write(sockfd, resp_buf, rpos);
 }
 
 static int handle_mkdir(int sockfd, const uint8_t *data, uint32_t len) {
@@ -384,8 +460,11 @@ static int handle_mkdir(int sockfd, const uint8_t *data, uint32_t len) {
     return send_status(sockfd, request_id, SSH_FX_PERMISSION_DENIED, "Invalid path");
   }
   
-  /* Create directory (production: use xaios_mfs_mkdir) */
-  /* Placeholder: acknowledge */
+  /* Create directory via mutable_fs_mkdir */
+  xaios_status_t fs_status = mutable_fs_mkdir(local_path);
+  if (fs_status != XAIOS_OK) {
+    return send_status(sockfd, request_id, SSH_FX_FAILURE, "mkdir failed");
+  }
   return send_status(sockfd, request_id, SSH_FX_OK, "Success");
 }
 
@@ -404,8 +483,11 @@ static int handle_remove(int sockfd, const uint8_t *data, uint32_t len) {
     return send_status(sockfd, request_id, SSH_FX_PERMISSION_DENIED, "Invalid path");
   }
   
-  /* Remove file (production: use xaios_mfs_delete) */
-  /* Placeholder: acknowledge */
+  /* Remove file via mutable_fs_delete */
+  xaios_status_t fs_status = mutable_fs_delete(local_path);
+  if (fs_status != XAIOS_OK) {
+    return send_status(sockfd, request_id, SSH_FX_FAILURE, "remove failed");
+  }
   return send_status(sockfd, request_id, SSH_FX_OK, "Success");
 }
 
@@ -436,8 +518,11 @@ static int handle_rename(int sockfd, const uint8_t *data, uint32_t len) {
     return send_status(sockfd, request_id, SSH_FX_PERMISSION_DENIED, "Invalid path");
   }
   
-  /* Rename file (production: use xaios_mfs_rename) */
-  /* Placeholder: acknowledge */
+  /* Rename file via mutable_fs_rename */
+  xaios_status_t fs_status = mutable_fs_rename(old_local, new_local);
+  if (fs_status != XAIOS_OK) {
+    return send_status(sockfd, request_id, SSH_FX_FAILURE, "rename failed");
+  }
   return send_status(sockfd, request_id, SSH_FX_OK, "Success");
 }
 
@@ -456,17 +541,23 @@ static int handle_stat(int sockfd, const uint8_t *data, uint32_t len) {
     return send_status(sockfd, request_id, SSH_FX_NO_SUCH_FILE, "File not found");
   }
   
-  /* Get file stat (production: use xaios_mfs_stat) */
-  /* Placeholder: return dummy attrs */
+  /* Get file stat via mutable_fs_stat */
+  xaios_mfs_stat_t file_stat;
+  xaios_status_t fs_status = mutable_fs_stat(local_path, &file_stat);
+  
   uint8_t buf[64];
   uint32_t pos = 0;
+  
+  if (fs_status != XAIOS_OK) {
+    return send_status(sockfd, request_id, SSH_FX_NO_SUCH_FILE, "File not found");
+  }
   
   buf[pos++] = SSH_FXP_ATTRS;
   write_u32(buf + pos, request_id); pos += 4;
   
-  /* Attributes: size (8 bytes), uid (4), gid (4), permissions (4), atime (4), mtime (4) */
-  write_u32(buf + pos, 0x00000001); pos += 4; /* flags: SSH_FILEXFER_ATTR_SIZE */
-  write_u64(buf + pos, 0); pos += 8;           /* size */
+  /* Attributes: flags=SSH_FILEXFER_ATTR_SIZE, size=file_stat.size */
+  write_u32(buf + pos, 0x00000001); pos += 4;
+  write_u64(buf + pos, file_stat.size); pos += 8;
   
   return ssh_packet_write(sockfd, buf, pos);
 }

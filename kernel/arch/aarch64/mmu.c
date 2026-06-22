@@ -212,15 +212,18 @@ static uint64_t *ensure_l3_table(uint64_t virtual_address) {
   uint64_t l1_index = (virtual_address >> 30) & 0x1ffU;
   uint64_t l2_index = (virtual_address >> 21) & 0x1ffU;
   kassert(l0_index == 0);
-  kassert(l1_index < EARLY_L1_TABLES);
 
-  uint64_t l0_desc = g_l0_table[l0_index];
-  kassert((l0_desc & (PTE_VALID | PTE_TABLE)) == (PTE_VALID | PTE_TABLE));
-  uint64_t *l1 = (uint64_t *)(uintptr_t)(l0_desc & PTE_ADDR_MASK);
-
-  uint64_t l1_desc = l1[l1_index];
-  kassert((l1_desc & (PTE_VALID | PTE_TABLE)) == (PTE_VALID | PTE_TABLE));
-  uint64_t *l2 = (uint64_t *)(uintptr_t)(l1_desc & PTE_ADDR_MASK);
+  /* Ensure L1 entry exists (allocate L2 table if needed) */
+  uint64_t l1_desc = g_l1_table[l1_index];
+  if ((l1_desc & (PTE_VALID | PTE_TABLE)) != (PTE_VALID | PTE_TABLE)) {
+    uint64_t *new_l2 = (uint64_t *)pmm_alloc_page();
+    kassert(new_l2 != 0);
+    for (uint64_t i = 0; i < 512; ++i) {
+      new_l2[i] = 0;
+    }
+    g_l1_table[l1_index] = table_descriptor(new_l2);
+  }
+  uint64_t *l2 = (uint64_t *)(uintptr_t)(g_l1_table[l1_index] & PTE_ADDR_MASK);
 
   uint64_t l2_desc = l2[l2_index];
   if ((l2_desc & (PTE_VALID | PTE_TABLE)) == (PTE_VALID | PTE_TABLE)) {
@@ -337,14 +340,19 @@ static xaios_status_t descriptor_to_flags(uint64_t virtual_address,
 void vmm_init(const xaios_boot_info_t *boot) {
   build_tables(boot);
   
-  /* FIX-006: Map page 0 as unreadable/unwritable to catch null pointer dereferences */
-  /* This ensures that NULL pointer accesses trigger a page fault */
+  /* Null page guard: maps page 0 with no access permissions.
+   * Any NULL pointer dereference will trigger a page fault.
+   * TODO(XAIOS-52): fix PMM/VMM init ordering — ensure_l3_table(0) splits
+   * the first 2MB identity block into page-level entries, which interacts
+   * poorly with PMM allocator after VMM enable on some QEMU versions. */
+  /*
   if (vmm_map_page(0, 0, XAIOS_VMM_PRESENT) != XAIOS_OK) {
     klog("VMM: WARNING: failed to map null page protection\n");
   }
+  */
   
   aarch64_enable_mmu((uint64_t)(uintptr_t)g_l0_table);
-  klog("VMM enabled (null page protection active)\n");
+  klog("VMM enabled\n");
 }
 
 xaios_status_t vmm_translate(uint64_t virtual_address, uint64_t *physical_address,

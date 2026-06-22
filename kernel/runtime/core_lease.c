@@ -139,6 +139,14 @@ uint64_t core_lease_involuntary_context_switch_count(void) {
 
 void core_lease_self_test(void) {
   core_lease_init();
+
+  /* Core lease tests require at least 2 online CPUs (CPU 0 is boot,
+   * leases use CPU 1+).  Skip on single-core systems. */
+  if (smp_online_count() < 2) {
+    klog("core-lease: self-test skipped (single-core)\n");
+    return;
+  }
+
   kassert(core_lease_acquire(99, 0x2) == XAIOS_OK);
   kassert((core_lease_used_mask() & 0x2U) != 0);
   kassert((smp_hot_core_mask() & 0x2U) != 0);

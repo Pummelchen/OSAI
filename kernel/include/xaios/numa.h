@@ -6,23 +6,24 @@
 #include <xaios/types.h>
 
 /*
- * NUMA node capacity: up to 2,048 nodes.
+ * NUMA node capacity: up to 8 nodes (covers QEMU and typical servers).
  * Actual node count detected from UEFI memory map at boot.
- * 2,048 nodes x 4GB per node = 8 TB total system capacity.
- * BSS: 256 MB at max scale (2,048 x 128 KB bitmaps).
- * Requires >= 1 GB RAM for testing, >= 64 GB for production.
+ * 8 nodes x 1GB per node = 8 GB total system capacity.
+ * BSS: ~2 MB at max scale (8 x 256 KB bitmaps).
+ * For large-scale deployments, increase XAIOS_NUMA_MAX_NODES and
+ * XAIOS_NUMA_BITMAP_BITS proportionally.
  */
-#define XAIOS_NUMA_MAX_NODES 2048U
+#define XAIOS_NUMA_MAX_NODES 8U
 
 /*
  * Bitmap page allocator: 1 bit per 4KB page.
- * XAIOS_NUMA_BITMAP_BITS = 1,048,576 entries -> supports up to 4GB per node.
- * 2,048 nodes x 4GB = 8 TB total system capacity.
- * Bitmap memory cost: 128 KB per node (2,048 nodes = 256 MB total in BSS).
+ * XAIOS_NUMA_BITMAP_BITS = 262,144 entries -> supports up to 1GB per node.
+ * 8 nodes x 1GB = 8 GB total system capacity.
+ * Bitmap memory cost: 32 KB per node (8 nodes = 256 KB total in BSS).
  * Detected RAM via UEFI memory map; pages beyond bitmap capacity are logged.
- * For systems with >4GB per NUMA node, increase XAIOS_NUMA_BITMAP_BITS.
+ * For systems with >1GB per NUMA node, increase XAIOS_NUMA_BITMAP_BITS.
  */
-#define XAIOS_NUMA_BITMAP_BITS UINT64_C(1048576)
+#define XAIOS_NUMA_BITMAP_BITS UINT64_C(262144)
 #define XAIOS_NUMA_BITMAP_WORDS (XAIOS_NUMA_BITMAP_BITS / 64U)
 
 typedef struct xaios_numa_node {

@@ -7,8 +7,13 @@
  * Ticket spinlock — fair, FIFO ordering, SMP-safe.
  *
  * Uses GCC __sync builtins which compile to LSE/LL-SC atomics on AArch64.
- * Suitable for systems from 1 to hundreds of cores.
+ * On single-core systems, uses plain memory ops to avoid exclusive monitor
+ * instructions (ldaxr) that may fault on some QEMU TCG versions after MMU
+ * reconfiguration.
  */
+
+/* Forward declaration — defined in smp.c */
+extern uint32_t smp_online_count(void);
 
 typedef struct xaios_spinlock {
   volatile uint32_t next_ticket;
@@ -26,6 +31,12 @@ static inline void xaios_spin_init(xaios_spinlock_t *lock) {
 }
 
 static inline void xaios_spin_lock(xaios_spinlock_t *lock) {
+  if (smp_online_count() <= 1) {
+    /* Single-core: use plain memory ops — no exclusive monitors needed */
+    lock->guard = 1;
+    __asm__ volatile("dmb ish" ::: "memory");
+    return;
+  }
   uint32_t ticket = __sync_fetch_and_add(&lock->next_ticket, 1U);
   while (__atomic_load_n(&lock->serve, __ATOMIC_ACQUIRE) != ticket) {
     __asm__ volatile("yield");
@@ -35,6 +46,10 @@ static inline void xaios_spin_lock(xaios_spinlock_t *lock) {
 
 static inline void xaios_spin_unlock(xaios_spinlock_t *lock) {
   lock->guard = 0;
+  if (smp_online_count() <= 1) {
+    __asm__ volatile("dmb ish" ::: "memory");
+    return;
+  }
   __atomic_store_n(&lock->serve, lock->serve + 1U, __ATOMIC_RELEASE);
 }
 

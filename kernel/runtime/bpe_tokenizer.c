@@ -1,7 +1,7 @@
 #include <xaios/ai_kernels.h>
+#include <xaios/bpe_tokenizer.h>
 #include <xaios/status.h>
 #include <xaios/types.h>
-#include <string.h>
 
 /*
  * BPE (Byte-Pair Encoding) Tokenizer Implementation
@@ -12,27 +12,14 @@
  * - Memory-efficient token storage
  */
 
-/* BPE merge rule */
-typedef struct xaios_bpe_rule {
-  uint32_t token_a;      /* First token ID */
-  uint32_t token_b;      /* Second token ID */
-  uint32_t merged_token; /* Result token ID */
-  int32_t priority;      /* Lower = higher priority */
-} xaios_bpe_rule_t;
+/* Freestanding C runtime functions provided by kernel/lib/string.c */
+extern void *memcpy(void *dst, const void *src, uint64_t n);
+extern uint64_t strlen(const char *s);
+extern int strncmp(const char *a, const char *b, uint64_t n);
 
-/* BPE tokenizer state */
-typedef struct xaios_bpe_tokenizer {
-  const char **vocab;           /* Vocabulary array (token strings) */
-  uint32_t vocab_size;          /* Number of tokens in vocabulary */
-  const xaios_bpe_rule_t *rules; /* Merge rules (sorted by priority) */
-  uint32_t rule_count;          /* Number of merge rules */
-  uint8_t *working_buffer;      /* Working buffer for tokenization */
-  uint64_t working_size;        /* Size of working buffer */
-} xaios_bpe_tokenizer_t;
-
-static xaios_bpe_rule_t g_bpe_rules[65536];
+static xaios_bpe_rule_t g_bpe_rules[8192];
 static uint32_t g_bpe_rule_count;
-static const char *g_bpe_vocab[262144];
+static const char *g_bpe_vocab[32768];
 static uint32_t g_bpe_vocab_size;
 
 /*
@@ -42,6 +29,20 @@ static int bpe_rule_compare(const void *a, const void *b) {
   const xaios_bpe_rule_t *ra = (const xaios_bpe_rule_t *)a;
   const xaios_bpe_rule_t *rb = (const xaios_bpe_rule_t *)b;
   return ra->priority - rb->priority;
+}
+
+/* Insertion sort for BPE rules (freestanding replacement for qsort) */
+static void bpe_sort_rules(xaios_bpe_rule_t *rules, uint32_t count) {
+  xaios_bpe_rule_t temp;
+  for (uint32_t i = 1; i < count; ++i) {
+    memcpy(&temp, &rules[i], sizeof(temp));
+    int j = (int)i - 1;
+    while (j >= 0 && bpe_rule_compare(&rules[j], &temp) > 0) {
+      memcpy(&rules[j + 1], &rules[j], sizeof(rules[j]));
+      --j;
+    }
+    memcpy(&rules[j + 1], &temp, sizeof(temp));
+  }
 }
 
 /*
@@ -56,7 +57,7 @@ static int bpe_rule_compare(const void *a, const void *b) {
 xaios_status_t ai_bpe_tokenizer_init(const uint8_t *data, uint64_t size,
                                      xaios_bpe_tokenizer_t *tokenizer) {
   if (!data || size < sizeof(uint32_t) || !tokenizer) {
-    return XAIOS_ERR_INVALID_ARGUMENT;
+    return XAIOS_ERR_INVALID;
   }
 
   const uint8_t *ptr = data;
@@ -64,50 +65,48 @@ xaios_status_t ai_bpe_tokenizer_init(const uint8_t *data, uint64_t size,
 
   /* Read vocabulary count */
   if (ptr + sizeof(uint32_t) > end) {
-    return XAIOS_ERR_INVALID_ARGUMENT;
+    return XAIOS_ERR_INVALID;
   }
   g_bpe_vocab_size = *(const uint32_t *)ptr;
   ptr += sizeof(uint32_t);
 
-  if (g_bpe_vocab_size == 0 || g_bpe_vocab_size > 262144) {
-    return XAIOS_ERR_INVALID_ARGUMENT;
+  if (g_bpe_vocab_size == 0 || g_bpe_vocab_size > 32768) {
+    return XAIOS_ERR_INVALID;
   }
 
   /* Read vocabulary strings */
   for (uint32_t i = 0; i < g_bpe_vocab_size; ++i) {
     g_bpe_vocab[i] = (const char *)ptr;
-    /* Find null terminator */
-    const uint8_t *str_start = ptr;
+    /* Advance past string to null terminator */
     while (ptr < end && *ptr != '\0') {
       ++ptr;
     }
     if (ptr >= end) {
-      return XAIOS_ERR_INVALID_ARGUMENT;
+      return XAIOS_ERR_INVALID;
     }
     ++ptr; /* Skip null terminator */
   }
 
   /* Read rule count */
   if (ptr + sizeof(uint32_t) > end) {
-    return XAIOS_ERR_INVALID_ARGUMENT;
+    return XAIOS_ERR_INVALID;
   }
   g_bpe_rule_count = *(const uint32_t *)ptr;
   ptr += sizeof(uint32_t);
 
-  if (g_bpe_rule_count > 65536) {
-    return XAIOS_ERR_INVALID_ARGUMENT;
+  if (g_bpe_rule_count > 8192) {
+    return XAIOS_ERR_INVALID;
   }
 
   /* Read rules */
   if (ptr + g_bpe_rule_count * sizeof(xaios_bpe_rule_t) > end) {
-    return XAIOS_ERR_INVALID_ARGUMENT;
+    return XAIOS_ERR_INVALID;
   }
   memcpy(g_bpe_rules, ptr, g_bpe_rule_count * sizeof(xaios_bpe_rule_t));
   ptr += g_bpe_rule_count * sizeof(xaios_bpe_rule_t);
 
-  /* Sort rules by priority (merge sort for stability) */
-  qsort(g_bpe_rules, g_bpe_rule_count, sizeof(xaios_bpe_rule_t),
-        bpe_rule_compare);
+  /* Sort rules by priority (insertion sort for freestanding environment) */
+  bpe_sort_rules(g_bpe_rules, g_bpe_rule_count);
 
   tokenizer->vocab = g_bpe_vocab;
   tokenizer->vocab_size = g_bpe_vocab_size;
@@ -163,7 +162,7 @@ xaios_status_t ai_bpe_tokenize(xaios_bpe_tokenizer_t *tokenizer,
                                uint32_t *token_count,
                                uint32_t max_tokens) {
   if (!tokenizer || !input || !output_tokens || !token_count) {
-    return XAIOS_ERR_INVALID_ARGUMENT;
+    return XAIOS_ERR_INVALID;
   }
 
   if (input_len == 0 || max_tokens == 0) {
@@ -234,7 +233,7 @@ xaios_status_t ai_bpe_detokenize(xaios_bpe_tokenizer_t *tokenizer,
                                  char *output, uint32_t *output_len,
                                  uint32_t max_output_len) {
   if (!tokenizer || !tokens || !output || !output_len) {
-    return XAIOS_ERR_INVALID_ARGUMENT;
+    return XAIOS_ERR_INVALID;
   }
 
   uint32_t pos = 0;

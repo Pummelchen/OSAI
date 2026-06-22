@@ -173,6 +173,7 @@ KERNEL_OBJECTS="
   $KERNEL_BUILD_DIR/speculative_decoding.o
   $KERNEL_BUILD_DIR/flash_attention.o
   $KERNEL_BUILD_DIR/model_compilation.o
+  $KERNEL_BUILD_DIR/math_intrinsics.o
   $KERNEL_BUILD_DIR/user.o
   $KERNEL_BUILD_DIR/model_arena.o
   $KERNEL_BUILD_DIR/ai_cell.o
@@ -197,6 +198,8 @@ KERNEL_OBJECTS="
   $KERNEL_BUILD_DIR/ipv4.o
   $KERNEL_BUILD_DIR/icmp.o
   $KERNEL_BUILD_DIR/elf_loader.o
+  $KERNEL_BUILD_DIR/string.o
+  $KERNEL_BUILD_DIR/bpe_tokenizer.o
 "
 
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/arch/aarch64/entry.S" -o "$KERNEL_BUILD_DIR/entry.o"
@@ -240,6 +243,7 @@ KERNEL_OBJECTS="
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/speculative_decoding.c" -o "$KERNEL_BUILD_DIR/speculative_decoding.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/flash_attention.c" -o "$KERNEL_BUILD_DIR/flash_attention.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/model_compilation.c" -o "$KERNEL_BUILD_DIR/model_compilation.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/math_intrinsics.c" -o "$KERNEL_BUILD_DIR/math_intrinsics.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/sandbox.c" -o "$KERNEL_BUILD_DIR/sandbox.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/persistence.c" -o "$KERNEL_BUILD_DIR/persistence.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/update.c" -o "$KERNEL_BUILD_DIR/update.o"
@@ -260,6 +264,8 @@ KERNEL_OBJECTS="
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/net/ipv4.c" -o "$KERNEL_BUILD_DIR/ipv4.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/net/icmp.c" -o "$KERNEL_BUILD_DIR/icmp.o"
 "$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/mm/elf_loader.c" -o "$KERNEL_BUILD_DIR/elf_loader.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/lib/string.c" -o "$KERNEL_BUILD_DIR/string.o"
+"$CLANG" $KERNEL_CFLAGS -c "$ROOT_DIR/kernel/runtime/bpe_tokenizer.c" -o "$KERNEL_BUILD_DIR/bpe_tokenizer.o"
 
 "$LD_LLD" \
   -nostdlib \

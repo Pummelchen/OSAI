@@ -122,7 +122,8 @@ void icmp_self_test(void) {
     request[6 + i] = src_mac[i];
   }
   put_be16(request + 12, 0x0800);
-  /* IPv4 */
+  /* IPv4: total_length=28 means IP header (20) + ICMP (8), which is
+   * correct for a header-only ping with no extra payload. */
   ipv4_build_header(request + 14, 28, XAIOS_IPV4_PROTO_ICMP, 0x0a000202,
                     0x0a00020f);
   /* ICMP echo request */

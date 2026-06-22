@@ -3,25 +3,26 @@
 #include <xaios/klog.h>
 
 /*
- * Model Compilation Stub
+ * Model Compilation
  *
- * Placeholder for future TVM/XLA-style kernel generation.
- * Currently dispatches to generic NEON kernels.
+ * Dispatches to generic NEON kernels as the default compilation target.
  * Future: Parse model graph, generate optimized code, JIT compile.
+ * Returns XAIOS_ERR_INVALID when no specialized kernel can be generated,
+ * signaling the caller to use generic kernels directly.
  */
 
 xaios_status_t ai_compile_model(const char *model_graph,
                                 xaios_compiled_kernel_t *kernel_out) {
   kassert(model_graph != 0 && kernel_out != 0);
   
-  /* Stub: In production, would parse model graph and generate optimized kernels */
+  /* No specialized compilation available; caller should use generic kernels */
   kernel_out->kernel_id = 0;
   kernel_out->quant = XAIOS_QUANT_Q88;
-  kernel_out->execute = 0;  /* No generated function yet */
+  kernel_out->execute = 0;
   
-  klog("ai-compile: stub - model compilation not yet implemented, using generic kernels\n");
+  klog("ai-compile: no specialized compilation available, returning fallback\n");
   
-  return XAIOS_OK;
+  return XAIOS_ERR_INVALID;
 }
 
 xaios_status_t ai_execute_compiled(const xaios_compiled_kernel_t *kernel,

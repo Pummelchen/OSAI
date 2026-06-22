@@ -160,12 +160,18 @@ uint32_t topology_get_numa_domain(uint32_t cpu_id) {
     return UINT32_MAX;
   }
 
-  uint32_t core_domain = g_cpu_topology[cpu_id].sched_domain_id;
-  if (core_domain >= TOPOLOGY_MAX_DOMAINS) {
-    return UINT32_MAX;
+  uint32_t dom_id = g_cpu_topology[cpu_id].sched_domain_id;
+  /* Walk up the domain hierarchy until we find a level-2 (NUMA) domain */
+  for (uint32_t depth = 0; depth < 4 && dom_id < TOPOLOGY_MAX_DOMAINS; ++depth) {
+    if (g_sched_domains[dom_id].level == 2) {
+      return dom_id;
+    }
+    dom_id = g_sched_domains[dom_id].parent_domain;
+    if (dom_id == UINT32_MAX) {
+      break;
+    }
   }
-
-  return g_sched_domains[core_domain].parent_domain;
+  return UINT32_MAX;
 }
 
 const xaios_sched_domain_t *topology_get_domain(uint32_t domain_id) {

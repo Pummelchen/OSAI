@@ -1,6 +1,9 @@
 #ifndef SSHD_H
 #define SSHD_H
 
+#include <stdint.h>
+#include <xaios_user.h>
+
 #define SSHD_PORT 22U
 
 /* Connection limits */

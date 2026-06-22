@@ -3,9 +3,11 @@
 #include "ssh_protocol.h"
 #include "ssh_channel.h"
 #include "ssh_host_key.h"
-#include "remote_login.h"
 #include <xaios_user.h>
 #include <stdarg.h>
+
+/* Forward declarations for local utility functions */
+static void mem_copy(void *d, const void *s, uint64_t n);
 
 /* Connection encryption state (RFC 4253 compliant) */
 typedef struct {
@@ -130,8 +132,9 @@ static int ssh_packet_write_encrypted(int sockfd, const uint8_t *data, uint32_t 
   hmac_sha256(g_crypto.encrypt_mac_key, 32, mac_input, 8 + encrypt_len, mac);
   
   /* Send: [encrypted_data][mac] */
-  if (xaios_net_send(sockfd, encrypted, encrypt_len) != 0) return -1;
-  if (xaios_net_send(sockfd, mac, 32) != 0) return -1;
+  u64 sent = 0;
+  if (xaios_net_send(sockfd, encrypted, encrypt_len, &sent) != 0) return -1;
+  if (xaios_net_send(sockfd, mac, 32, &sent) != 0) return -1;
   
   g_crypto.encrypt_seq++;
   return 0;
@@ -145,7 +148,8 @@ static int ssh_packet_read_encrypted(int sockfd, ssh_packet_t *out_pkt) {
   
   /* Read first 16 bytes (encrypted packet_length + padding_length + partial payload) */
   uint8_t header[16];
-  if (xaios_net_recv(sockfd, header, 16) != 0) return -1;
+  u64 recv_bytes = 0;
+  if (xaios_net_recv(sockfd, header, 16, &recv_bytes) != 0) return -1;
   
   /* Decrypt header */
   uint8_t decrypted[16];
@@ -164,11 +168,11 @@ static int ssh_packet_read_encrypted(int sockfd, ssh_packet_t *out_pkt) {
   /* Read rest of packet + MAC */
   uint32_t remaining = packet_len + 4 - 16; /* +4 for packet_length field itself */
   uint8_t rest[SSH_MAX_PACKET_SIZE];
-  if (remaining > 0 && xaios_net_recv(sockfd, rest, remaining) != 0) return -1;
+  if (remaining > 0 && xaios_net_recv(sockfd, rest, remaining, &recv_bytes) != 0) return -1;
   
   /* Read MAC (32 bytes) */
   uint8_t received_mac[32];
-  if (xaios_net_recv(sockfd, received_mac, 32) != 0) return -1;
+  if (xaios_net_recv(sockfd, received_mac, 32, &recv_bytes) != 0) return -1;
   
   /* Decrypt rest */
   if (remaining > 0) {
@@ -213,7 +217,7 @@ static int ssh_packet_read_encrypted(int sockfd, ssh_packet_t *out_pkt) {
   
   /* Parse packet */
   out_pkt->len = packet_len + 4;
-  out_pkt->data = full_packet + 4; /* Skip packet_length field */
+  mem_copy(out_pkt->data, full_packet + 4, packet_len);
   
   return 0;
 }
@@ -259,7 +263,6 @@ static int queue_push(sshd_queue_t *q, u64 conn) {
   uint32_t next_tail = (tail + 1) % SSHD_MAX_PENDING_CONNECTIONS;
   
   /* Check if queue is full */
-  uint32_t head = __atomic_load_n(&q->head, __ATOMIC_ACQUIRE);
   uint32_t count = __atomic_load_n(&q->count, __ATOMIC_ACQUIRE);
   if (count >= SSHD_MAX_PENDING_CONNECTIONS) {
     return -1;
@@ -273,7 +276,7 @@ static int queue_push(sshd_queue_t *q, u64 conn) {
   return 0;
 }
 
-static int queue_pop(sshd_queue_t *q, u64 *conn) {
+static int __attribute__((unused)) queue_pop(sshd_queue_t *q, u64 *conn) {
   /* Atomic dequeue */
   uint32_t head = __atomic_load_n(&q->head, __ATOMIC_ACQUIRE);
   uint32_t count = __atomic_load_n(&q->count, __ATOMIC_ACQUIRE);
@@ -450,7 +453,7 @@ static uint64_t timer_now(void) {
 static int load_user_database(void) {
   /* Load users from /etc/xaios_users */
   /* Format: username:password_hash per line */
-  /* For now, add default admin user */
+  /* TODO(XAIOS-42): Load user database from persistent storage */
   if (g_user_count == 0) {
     /* Default admin: username="admin", password="admin" (SHA-256 hash) */
     mem_copy(g_users[0].username, "admin", 6);
@@ -477,18 +480,21 @@ static int authenticate_password(const char *username, const char *password) {
     if (!g_users[i].active) continue;
     if (!string_equal(g_users[i].username, username)) continue;
     
-    /* Hash password and compare */
+    /* Hash password and compare in constant time to prevent timing attacks */
     uint8_t hash[32];
     sha256_hash((const uint8_t *)password, str_len(password), hash);
     
-    if (mem_copy(0, 0, 0), 1) { /* Placeholder for comparison */
-      for (uint32_t j = 0; j < 32; ++j) {
-        if (hash[j] != g_users[i].password_hash[j]) {
-          return -1;
-        }
-      }
+    uint8_t diff = 0;
+    for (uint32_t j = 0; j < 32; ++j) {
+      diff |= hash[j] ^ g_users[i].password_hash[j];
     }
     
+    if (diff != 0) {
+      mem_zero(hash, 32);
+      return -1;
+    }
+    
+    mem_zero(hash, 32);
     return 0; /* Authentication successful */
   }
   
@@ -589,8 +595,9 @@ static int check_connection_timeout(ssh_connection_state_t state,
 static uint32_t build_kexinit(uint8_t *buf) {
   uint32_t pos = 0;
   buf[pos++] = 20; /* SSH_MSG_KEXINIT */
-  /* 16 bytes cookie (zeros for now) */
-  for (uint32_t i = 0; i < 16; ++i) buf[pos++] = 0;
+  /* 16 bytes cookie (RFC 4253 Section 7.1: MUST be random) */
+  crypto_random_bytes(buf + pos, 16);
+  pos += 16;
   /* kex_algorithms: "curve25519-sha256" */
   const char *kex = "curve25519-sha256";
   uint32_t kex_len = str_len(kex);
@@ -758,8 +765,7 @@ static int handle_connection(int sockfd, uint32_t client_ip, uint16_t client_por
   ssh_write_u32_be(host_key_blob + host_key_blob_pos, 11 + 4 + 32); host_key_blob_pos += 4;
   ssh_write_u32_be(host_key_blob + host_key_blob_pos, 11); host_key_blob_pos += 4;
   mem_copy(host_key_blob + host_key_blob_pos, "ssh-ed25519", 11); host_key_blob_pos += 11;
-  uint8_t host_pub[32];
-  ssh_host_key_get_public(host_pub);
+  /* Reuse host_pub from line 718 */
   mem_copy(host_key_blob + host_key_blob_pos, host_pub, 32); host_key_blob_pos += 32;
   sha256_update(&hash_ctx, host_key_blob, host_key_blob_pos);
   
@@ -987,15 +993,13 @@ static int handle_connection(int sockfd, uint32_t client_ip, uint16_t client_por
 /* Old queue replaced with atomic sshd_queue_t at top of file */
 
 /* Helper: handle one packet from a connection (returns 0=continue, -1=closed) */
-static int handle_connection_packet(u64 sockfd, uint64_t last_activity) {
-  /* This is a simplified version - in production, refactor handle_connection() */
-  /* to be state-machine based and call it incrementally */
-  /* For now, we call the full handle_connection() which blocks */
-  /* TODO: Convert handle_connection() to non-blocking state machine */
-  
-  /* For multiplexing to work properly, we need non-blocking I/O */
-  /* which requires OS support. For now, use the queue-based approach. */
-  return -1; /* Placeholder - see accept loop below */
+/* TODO(XAIOS-43): Convert handle_connection() to non-blocking state machine */
+/* and call this incrementally for multiplexed connection support. */
+static int __attribute__((unused)) handle_connection_packet(u64 sockfd, uint64_t last_activity) {
+  (void)sockfd;
+  (void)last_activity;
+  /* Non-blocking dispatch not yet implemented; synchronous path used instead */
+  return -1;
 }
 
 /* ---- Main SSHD Entry Point ---- */
@@ -1010,17 +1014,9 @@ int sshd_run(void) {
   /* Initialize statistics */
   mem_zero(&g_server_stats, sizeof(g_server_stats));
   
-  /* Start worker threads (Fix #2: Multi-threaded workers) */
-  /* NOTE: When XAI OS implements xaios_thread_create(), uncomment below: */
-  /*
-  for (uint32_t i = 0; i < SSHD_MAX_WORKER_THREADS; ++i) {
-    xaios_thread_create(sshd_worker_thread, &g_conn_queue);
-  }
-  ssh_log(SSH_LOG_INFO, "Started %u worker threads\n", SSHD_MAX_WORKER_THREADS);
-  */
-  
-  /* For now: accept-then-handle synchronously (safe for QEMU/freestanding) */
-  ssh_log(SSH_LOG_INFO, "Worker threads: will enable when xaios_thread_create() available\n");
+  /* Worker threads: deferred until xaios_thread_create() is available */
+  /* TODO(XAIOS-43): Enable multi-threaded workers via xaios_thread_create() */
+  ssh_log(SSH_LOG_INFO, "Worker threads: deferred until xaios_thread_create() available\n");
   ssh_log(SSH_LOG_INFO, "Atomic queue: enabled (race-condition free)\n");
 
   /* Listen on SSH port */
@@ -1058,9 +1054,9 @@ int sshd_run(void) {
     __atomic_add_fetch(&g_server_stats.total_connections, 1, __ATOMIC_RELEASE);
     __atomic_add_fetch(&g_server_stats.active_connections, 1, __ATOMIC_RELEASE);
     
-    /* Handle connection synchronously for now */
-    /* When worker threads enabled: workers will dequeue and handle */
-    handle_connection((int)conn_fd);
+    /* Handle connection synchronously (safe for QEMU/freestanding) */
+    /* TODO(XAIOS-43): When xaios_thread_create() is available, use worker pool */
+    handle_connection((int)conn_fd, 0, 0);
     xaios_net_close(conn_fd);
     __atomic_sub_fetch(&g_server_stats.active_connections, 1, __ATOMIC_RELEASE);
   }
@@ -1068,8 +1064,9 @@ int sshd_run(void) {
   return 0; /* unreachable */
 }
 
-/* Entry point - called from _start via xaios_main pattern */
-void sshd_main(void) {
+/* Entry point - called from _start via C runtime */
+int main(void) {
   sshd_run();
   xaios_exit(0);
+  return 0;
 }

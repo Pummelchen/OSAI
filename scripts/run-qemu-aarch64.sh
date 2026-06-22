@@ -136,7 +136,7 @@ if [ "$dry_run" -eq 0 ] && [ ! -f "$persistent_image" ]; then
 fi
 
 set -- "$qemu" \
-  -machine "$machine,accel=$accel,gic-version=3,smmu=on" \
+  -machine "$machine,accel=$accel,gic-version=3" \
   -cpu "$cpu" \
   -m "$memory" \
   -smp "$smp" \
