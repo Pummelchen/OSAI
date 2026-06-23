@@ -340,19 +340,16 @@ static xaios_status_t descriptor_to_flags(uint64_t virtual_address,
 void vmm_init(const xaios_boot_info_t *boot) {
   build_tables(boot);
   
-  /* Null page guard: maps page 0 with no access permissions.
-   * Any NULL pointer dereference will trigger a page fault.
-   * TODO(XAIOS-52): fix PMM/VMM init ordering — ensure_l3_table(0) splits
-   * the first 2MB identity block into page-level entries, which interacts
-   * poorly with PMM allocator after VMM enable on some QEMU versions. */
-  /*
+  aarch64_enable_mmu((uint64_t)(uintptr_t)g_l0_table);
+  klog("VMM enabled\n");
+  
+  /* Null page guard: map page 0 with minimal permissions so any NULL
+   * pointer dereference triggers a page fault. Done after MMU enable
+   * because ensure_l3_table() needs dynamic page allocation which
+   * requires the MMU to be active. */
   if (vmm_map_page(0, 0, XAIOS_VMM_PRESENT) != XAIOS_OK) {
     klog("VMM: WARNING: failed to map null page protection\n");
   }
-  */
-  
-  aarch64_enable_mmu((uint64_t)(uintptr_t)g_l0_table);
-  klog("VMM enabled\n");
 }
 
 xaios_status_t vmm_translate(uint64_t virtual_address, uint64_t *physical_address,
@@ -592,6 +589,12 @@ void vmm_switch_user_aspace(uint64_t l3_tables[], uint32_t l3_count) {
 }
 
 void vmm_destroy_user_aspace(uint64_t l3_tables[], uint32_t l3_count) {
+  /* Invalidate TLB before freeing pages to prevent stale entries
+   * from pointing to reallocated physical memory */
+  __asm__ volatile("dsb ishst\n\t"
+                   "tlbi vmalle1is\n\t"
+                   "dsb ish\n\t"
+                   "isb");
   for (uint32_t i = 0; i < l3_count; ++i) {
     if (l3_tables[i] != 0) {
       pmm_free_page((void *)(uintptr_t)l3_tables[i]);

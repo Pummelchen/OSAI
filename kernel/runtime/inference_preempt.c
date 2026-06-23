@@ -182,7 +182,10 @@ xaios_status_t inference_preempt_delete(xaios_preempt_manager_t *mgr,
     return XAIOS_ERR_INVALID;
   }
   
-  /* Clear checkpoint */
+  /* Clear checkpoint — free the activation buffer first */
+  if (mgr->checkpoints[slot].activation_buffer != 0) {
+    kheap_free(mgr->checkpoints[slot].activation_buffer);
+  }
   mgr->checkpoints[slot].valid = 0;
   mgr->checkpoints[slot].activation_buffer = 0;
   mgr->checkpoints[slot].activation_bytes = 0;

@@ -610,27 +610,39 @@ static void drbg_seed(void) {
   g_drbg_state[2] = 0x79622d32;
   g_drbg_state[3] = 0x6b206574;
   
-  /* Seed key[4..11] from hardware entropy */
-  volatile uint64_t timer_val = 0;
-  __asm__ volatile("mrs %0, pmccntr_el0" : "=r"(timer_val));
+  /* Entropy source 1: Virtual Count Timer (CNTVCT_EL0) */
+  volatile uint64_t cntvct = 0;
+  __asm__ volatile("mrs %0, cntvct_el0" : "=r"(cntvct));
   
-  /* Try ARM RNDR instruction for hardware RNG (FEAT_RNG) */
+  /* Entropy source 2: Performance Monitor Cycle Counter (PMCCNTR_EL0) */
+  volatile uint64_t pmccntr = 0;
+  __asm__ volatile("mrs %0, pmccntr_el0" : "=r"(pmccntr));
+  
+  /* Entropy source 3: ARM RNDR instruction (FEAT_RNG, optional).
+   * Returns random value and sets PSTATE.NZCV. If RN=0, value is invalid.
+   * Fallback: mix stack pointer address for ASLR entropy. */
   uint64_t hw_rand = 0;
-  /* RNDR may not be available; use inline asm with fallback */
+  uint64_t rndr_ok = 0;
   __asm__ volatile(
-    "mrs %0, pmccntr_el0\n"
-    : "=r"(hw_rand)
+    "mrs %0, s3_3_c2_c4_0\n"  /* RNDR */
+    "cset %1, ne\n"             /* check if RN flag set */
+    : "=r"(hw_rand), "=r"(rndr_ok)
   );
+  if (!rndr_ok) {
+    /* RNDR not available; use stack pointer as additional entropy (ASLR) */
+    __asm__ volatile("mov %0, sp" : "=r"(hw_rand));
+    hw_rand ^= pmccntr;
+  }
   
-  /* Mix timer and cycle counter entropy into key */
-  g_drbg_state[4]  = (uint32_t)(timer_val);
-  g_drbg_state[5]  = (uint32_t)(timer_val >> 32);
-  g_drbg_state[6]  = (uint32_t)(hw_rand);
-  g_drbg_state[7]  = (uint32_t)(hw_rand >> 32);
-  g_drbg_state[8]  = (uint32_t)(timer_val ^ 0xdeadbeef);
-  g_drbg_state[9]  = (uint32_t)((timer_val >> 16) ^ 0xcafebabe);
-  g_drbg_state[10] = (uint32_t)(hw_rand ^ 0x12345678);
-  g_drbg_state[11] = (uint32_t)((hw_rand >> 16) ^ 0x9abcdef0);
+  /* Mix three distinct entropy sources into key */
+  g_drbg_state[4]  = (uint32_t)(cntvct);
+  g_drbg_state[5]  = (uint32_t)(cntvct >> 32);
+  g_drbg_state[6]  = (uint32_t)(pmccntr);
+  g_drbg_state[7]  = (uint32_t)(pmccntr >> 32);
+  g_drbg_state[8]  = (uint32_t)(hw_rand);
+  g_drbg_state[9]  = (uint32_t)(hw_rand >> 32);
+  g_drbg_state[10] = (uint32_t)(cntvct ^ pmccntr ^ hw_rand);
+  g_drbg_state[11] = (uint32_t)((cntvct >> 16) ^ (pmccntr >> 16) ^ (hw_rand >> 16));
   
   /* Counter and nonce */
   g_drbg_state[12] = 0;  /* block counter */
@@ -715,8 +727,6 @@ static void scalar_mul(uint8_t *r, const uint8_t *a, const uint8_t *b) {
   /* Simplified multiplication mod L using double-and-add */
   /* For production: use optimized Montgomery ladder */
   mem_zero(r, 32);
-  uint8_t temp[64];
-  mem_zero(temp, 64);
   
   for (int32_t i = 255; i >= 0; i--) {
     /* Double */
@@ -767,7 +777,56 @@ static void scalar_mul(uint8_t *r, const uint8_t *a, const uint8_t *b) {
   }
 }
 
-/* Ed25519 key generation from seed (RFC 8032 Section 5.1.5) */
+/* Compare a >= L (Ed25519 curve order) */
+static int scalar_gte_l(const uint8_t *a) {
+  for (int i = 31; i >= 0; i--) {
+    if (a[i] > ed25519_L[i]) return 1;
+    if (a[i] < ed25519_L[i]) return 0;
+  }
+  return 1; /* equal */
+}
+
+/* Subtract L from a: r = a - L */
+static void scalar_sub_l(uint8_t *r, const uint8_t *a) {
+  uint16_t borrow = 0;
+  for (uint32_t i = 0; i < 32; i++) {
+    int32_t diff = a[i] - ed25519_L[i] - borrow;
+    if (diff < 0) { r[i] = (uint8_t)(diff + 256); borrow = 1; }
+    else { r[i] = (uint8_t)diff; borrow = 0; }
+  }
+}
+
+/* Reduce a 32-byte scalar mod L (repeated subtraction) */
+static void scalar_reduce(uint8_t *a) {
+  while (scalar_gte_l(a)) {
+    scalar_sub_l(a, a);
+  }
+}
+
+/* Reduce a 64-byte SHA-512 hash mod L (RFC 8032 compliant) */
+static void scalar_reduce_64(uint8_t *r, const uint8_t *hash64) {
+  /* 2^256 mod L (little-endian) */
+  static const uint8_t C[32] = {
+    0x13, 0x2c, 0x0a, 0xa3, 0xe5, 0x9c, 0xed, 0xa7,
+    0x29, 0x63, 0x08, 0x5d, 0x21, 0x06, 0x21, 0xeb,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xef
+  };
+  
+  uint8_t low[32], high[32], tmp[32];
+  mem_copy(low, hash64, 32);
+  mem_copy(high, hash64 + 32, 32);
+  
+  /* Reduce both halves mod L */
+  scalar_reduce(low);
+  scalar_reduce(high);
+  
+  /* high * (2^256 mod L) mod L */
+  scalar_mul(tmp, high, C);
+  
+  /* (low + tmp) mod L */
+  scalar_add(r, low, tmp);
+}
 void ed25519_keygen(uint8_t public_key[32], uint8_t private_key[32],
                     const uint8_t seed[32]) {
   if (seed) {
@@ -826,9 +885,11 @@ int ed25519_sign(uint8_t signature[64], const uint8_t *message, uint32_t msg_len
     sha512_final(&ctx, r_buf);
   }
   
-  /* Compute R = r * B */
+  /* Compute R = r * B (reduce 64-byte hash mod L first) */
+  uint8_t r_reduced[32];
+  scalar_reduce_64(r_reduced, r_buf);
   uint8_t R[32];
-  curve25519_base(R, r_buf);
+  curve25519_base(R, r_reduced);
   
   /* Compute k = SHA-512(R || public_key || message) */
   uint8_t k_buf[64];
@@ -849,8 +910,7 @@ int ed25519_sign(uint8_t signature[64], const uint8_t *message, uint32_t msg_len
   
   /* Compute s = (r + k * scalar) mod L */
   uint8_t k_reduced[32];
-  mem_copy(k_reduced, k_buf, 32);
-  /* Reduce k mod L (take first 32 bytes, already < 2^256) */
+  scalar_reduce_64(k_reduced, k_buf); /* RFC 8032: reduce full 64-byte hash mod L */
   
   uint8_t k_times_scalar[32];
   scalar_mul(k_times_scalar, k_reduced, scalar);

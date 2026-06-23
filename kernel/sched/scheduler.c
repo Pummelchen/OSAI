@@ -639,6 +639,7 @@ void scheduler_yield(void) {
     rq->current_pid = next_pid;
     __sync_fetch_and_add(&g_context_switch_count, 1);
     __sync_fetch_and_add(&g_sched_stats[cpu].context_switch_count, 1);
+    user_switch_address_space(next_pid);
   }
   xaios_spin_unlock(&rq->lock);
 }

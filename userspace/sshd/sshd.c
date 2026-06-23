@@ -198,8 +198,14 @@ int ssh_packet_read_encrypted(int sockfd, ssh_packet_t *out_pkt) {
   if (remaining > 0) {
     uint8_t iv2[16];
     mem_copy(iv2, g_crypto.decrypt_iv, 16);
+    /* Increment CTR counter: header used block 0, rest starts at block 1 */
+    uint32_t ctr = 1;
+    for (int i = 15; i >= 12 && ctr > 0; i--) {
+      uint32_t sum = iv2[i] + (ctr & 0xFF);
+      iv2[i] = sum & 0xFF;
+      ctr = (ctr >> 8) + (sum >> 8);
+    }
     ((uint64_t*)iv2)[0] ^= g_crypto.decrypt_seq;
-    /* Skip first 16 bytes already decrypted */
     aes128_ctr(&g_crypto.decrypt_ctx, iv2, rest, rest + 16, remaining);
   }
   
@@ -478,12 +484,12 @@ static int load_user_database(void) {
     /* Default admin: username="admin", password="admin" (SHA-256 hash) */
     mem_copy(g_users[0].username, "admin", 6);
     
-    /* Hash of "admin" */
+    /* SHA-256("admin") = 8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918 */
     static const uint8_t admin_hash[32] = {
-      0x8c, 0x69, 0x76, 0xe5, 0x8c, 0xe4, 0xc9, 0x83,
-      0x05, 0x29, 0xc2, 0x1d, 0x2f, 0x24, 0x69, 0x43,
-      0x99, 0x69, 0x01, 0x19, 0x7d, 0x68, 0x4c, 0x3f,
-      0x8a, 0x3c, 0x5c, 0x3e, 0x9d, 0x3e, 0x7b, 0x6e
+      0x8c, 0x69, 0x76, 0xe5, 0xb5, 0x41, 0x04, 0x15,
+      0xbd, 0xe9, 0x08, 0xbd, 0x4d, 0xee, 0x15, 0xdf,
+      0xb1, 0x67, 0xa9, 0xc8, 0x73, 0xfc, 0x4b, 0xb8,
+      0xa8, 0x1f, 0x6f, 0x2a, 0xb4, 0x48, 0xa9, 0x18
     };
     mem_copy(g_users[0].password_hash, admin_hash, 32);
     g_users[0].active = 1;
@@ -875,7 +881,7 @@ static int handle_connection(int sockfd,
       ssh_write_u32_be(keepalive + 1, ka_len);
       mem_copy(keepalive + 5, ka_name, ka_len);
       keepalive[5 + ka_len] = 1; /* want_reply */
-      ssh_packet_write(sockfd, keepalive, 6 + ka_len);
+      ssh_packet_write_encrypted(sockfd, keepalive, 6 + ka_len);
       
       /* Check if idle too long */
       if (timer_now() - last_activity > SSHD_TIMEOUT_IDLE) {
@@ -963,7 +969,7 @@ static int handle_connection(int sockfd,
         ssh_write_u32_be(reject + 1, mlen);
         mem_copy(reject + 5, methods, mlen);
         reject[5 + mlen] = 0;
-        ssh_packet_write(sockfd, reject, 6 + mlen);
+        ssh_packet_write_encrypted(sockfd, reject, 6 + mlen);
         continue;
       }
       

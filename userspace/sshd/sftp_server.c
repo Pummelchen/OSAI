@@ -411,7 +411,7 @@ static int handle_readdir(int sockfd, const uint8_t *data, uint32_t len) {
   }
   
   /* Build SSH_FXP_NAME response */
-  uint8_t resp_buf[4096 + 128];
+  uint8_t resp_buf[4096 + 4096 + 256]; /* 2x list_buf + overhead for name encoding */
   uint32_t rpos = 0;
   resp_buf[rpos++] = SSH_FXP_NAME;
   write_u32(resp_buf + rpos, request_id); rpos += 4;
@@ -478,6 +478,10 @@ static int handle_remove(int sockfd, const uint8_t *data, uint32_t len) {
   uint32_t path_len;
   const char *path = read_string(data + 4, &path_len);
   
+  if (path_len >= XAIOS_MFS_PATH_MAX) {
+    return send_status(sockfd, request_id, SSH_FX_FAILURE, "Path too long");
+  }
+  
   char local_path[XAIOS_MFS_PATH_MAX];
   mem_copy(local_path, path, path_len);
   local_path[path_len] = '\0';
@@ -535,6 +539,10 @@ static int handle_stat(int sockfd, const uint8_t *data, uint32_t len) {
   uint32_t request_id = read_u32(data);
   uint32_t path_len;
   const char *path = read_string(data + 4, &path_len);
+  
+  if (path_len >= XAIOS_MFS_PATH_MAX) {
+    return send_status(sockfd, request_id, SSH_FX_FAILURE, "Path too long");
+  }
   
   char local_path[XAIOS_MFS_PATH_MAX];
   mem_copy(local_path, path, path_len);

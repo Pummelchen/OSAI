@@ -1051,6 +1051,17 @@ xaios_status_t network_stack_process_udp_frame(const uint8_t *frame,
   }
   ++flow->packets_rx;
   ++g_udp_rx_count;
+  
+  /* Deliver UDP payload to flow rx_buf */
+  if (flow->rx_buf != 0 && payload_len > 8) {
+    const network_ip4_header_t *ip4 =
+        (const network_ip4_header_t *)(frame + 14U);
+    uint64_t ip_hdr_bytes = (uint64_t)(ip4->version_ihl & 0x0FU) * 4U;
+    const uint8_t *udp_payload = frame + 14U + ip_hdr_bytes + 8U;
+    uint32_t data_len = (uint32_t)(payload_len - 8U);
+    sockbuf_write(flow->rx_buf, udp_payload, data_len);
+  }
+  
   packet_mark_tx(packet);
   ++flow->packets_tx;
   ++g_udp_tx_count;
@@ -1138,6 +1149,56 @@ static int tcp_resolve_mac(uint32_t dest_ip_net_order, uint8_t out_mac[6],
   return 0;
 }
 
+/* Build and send a TCP segment over IPv6 */
+static xaios_status_t tcp_build_and_send_segment_v6(
+    const uint8_t src_mac[6], const uint8_t dst_mac[6],
+    const xaios_ip_addr_t *src_ip, const xaios_ip_addr_t *dst_ip,
+    uint16_t src_port, uint16_t dst_port,
+    uint32_t seq, uint32_t ack_val,
+    uint8_t flags, uint16_t window,
+    const uint8_t *payload, uint32_t payload_len) {
+  uint8_t frame[NETWORK_BUFFER_SIZE];
+  uint64_t frame_len = 14U + 40U + 20U + payload_len;
+  if (frame_len > NETWORK_BUFFER_SIZE) {
+    return XAIOS_ERR_INVALID;
+  }
+  /* Ethernet header */
+  for (uint32_t i = 0; i < 6; ++i) { frame[i] = dst_mac[i]; }
+  for (uint32_t i = 0; i < 6; ++i) { frame[6U + i] = src_mac[i]; }
+  write_be16(frame + 12, 0x86DDU); /* IPv6 ethertype */
+  /* IPv6 header (40 bytes) */
+  uint8_t *ip6 = frame + 14U;
+  write_be32(ip6, 0x60000000U); /* version=6, TC=0, flow=0 */
+  write_be16(ip6 + 4, (uint16_t)(20U + payload_len)); /* payload length */
+  ip6[6] = 6U; /* next header = TCP */
+  ip6[7] = 64U; /* hop limit */
+  for (uint32_t i = 0; i < 16; ++i) { ip6[8U + i] = src_ip->addr[i]; }
+  for (uint32_t i = 0; i < 16; ++i) { ip6[24U + i] = dst_ip->addr[i]; }
+  /* TCP header (20 bytes) */
+  uint8_t *tcp = frame + 54U;
+  write_be16(tcp, src_port);
+  write_be16(tcp + 2, dst_port);
+  write_be32(tcp + 4, seq);
+  write_be32(tcp + 8, ack_val);
+  tcp[12] = 0x50U; /* data offset = 5 words */
+  tcp[13] = flags;
+  write_be16(tcp + 14, window);
+  write_be16(tcp + 16, 0); /* checksum placeholder */
+  write_be16(tcp + 18, 0); /* urgent */
+  /* Copy payload */
+  if (payload != 0 && payload_len > 0) {
+    for (uint32_t i = 0; i < payload_len; ++i) {
+      frame[74U + i] = payload[i];
+    }
+  }
+  /* Compute TCP checksum over IPv6 pseudo-header + TCP + payload */
+  uint16_t tcp_total = (uint16_t)(20U + payload_len);
+  uint16_t cksum = ipv6_pseudo_checksum(src_ip, dst_ip, 6, tcp_total,
+                                          tcp, (uint32_t)(20U + payload_len));
+  write_be16(tcp + 16, cksum);
+  return virtio_net_tx(frame, frame_len);
+}
+
 static void tcp_drain_pending(void) {
   for (uint32_t i = 0; i < NETWORK_TCP_CONNECTIONS; ++i) {
     network_tcp_flow_t *flow = &g_tcp_flows[i];
@@ -1147,75 +1208,133 @@ static void tcp_drain_pending(void) {
     }
     /* Resolve MAC if needed */
     if (!flow->remote_mac_valid) {
-      uint32_t dest_net = flow->remote_address;
-      /* Convert host-order address back to network byte order for lookup */
-      uint32_t dest_ip_be = ((dest_net & 0xFFU) << 24U) |
-                             (((dest_net >> 8U) & 0xFFU) << 16U) |
-                             (((dest_net >> 16U) & 0xFFU) << 8U) |
-                             ((dest_net >> 24U) & 0xFFU);
-      if (!tcp_resolve_mac(dest_ip_be, flow->remote_mac, g_local_mac)) {
-        continue; /* MAC not yet resolved, retry next tick */
+      if (flow->local_addr.family == XAIOS_IP_FAMILY_V6) {
+        /* IPv6: use NDP cache for MAC resolution */
+        if (ndp_cache_lookup(&flow->remote_addr, flow->remote_mac) != XAIOS_OK) {
+          continue; /* MAC not yet resolved via NDP */
+        }
+        flow->remote_mac_valid = 1;
+      } else {
+        /* IPv4: use ARP */
+        uint32_t dest_net = flow->remote_address;
+        uint32_t dest_ip_be = ((dest_net & 0xFFU) << 24U) |
+                               (((dest_net >> 8U) & 0xFFU) << 16U) |
+                               (((dest_net >> 16U) & 0xFFU) << 8U) |
+                               ((dest_net >> 24U) & 0xFFU);
+        if (!tcp_resolve_mac(dest_ip_be, flow->remote_mac, g_local_mac)) {
+          continue;
+        }
+        flow->remote_mac_valid = 1;
       }
-      flow->remote_mac_valid = 1;
     }
-    /* Convert addresses to network byte order for IP header */
-    uint32_t src_ip_be = XAIOS_IPV4_GUEST_IP;
-    uint32_t dst_ip_be = ((flow->remote_address & 0xFFU) << 24U) |
-                          (((flow->remote_address >> 8U) & 0xFFU) << 16U) |
-                          (((flow->remote_address >> 16U) & 0xFFU) << 8U) |
-                          ((flow->remote_address >> 24U) & 0xFFU);
-    /* Send pending SYN-ACK */
-    if (flow->pending_synack != 0) {
-      tcp_build_and_send_segment(g_local_mac, flow->remote_mac,
-                                  src_ip_be, dst_ip_be,
-                                  flow->local_port, flow->remote_port,
-                                  flow->local_seq, flow->expected_seq,
-                                  NETWORK_TCP_FLAG_SYN | NETWORK_TCP_FLAG_ACK,
-                                  flow->window_size, 0, 0);
-      flow->pending_synack = 0;
-    }
-    /* Send pending data from tx_buf */
-    if (flow->tx_buf != 0 && sockbuf_used(flow->tx_buf) > 0 &&
-        (flow->state == XAIOS_NETWORK_FLOW_ESTABLISHED ||
-         flow->state == XAIOS_NETWORK_FLOW_CLOSE_WAIT)) {
-      uint8_t tx_data[NETWORK_TCP_MSS];
-      uint32_t bytes_to_send = sockbuf_read(flow->tx_buf, tx_data, NETWORK_TCP_MSS);
-      if (bytes_to_send > 0) {
+    
+    if (flow->local_addr.family == XAIOS_IP_FAMILY_V6) {
+      /* IPv6 flow: use v6 segment builder */
+      if (flow->pending_synack != 0) {
+        tcp_build_and_send_segment_v6(g_local_mac, flow->remote_mac,
+            &flow->local_addr, &flow->remote_addr,
+            flow->local_port, flow->remote_port,
+            flow->local_seq, flow->expected_seq,
+            NETWORK_TCP_FLAG_SYN | NETWORK_TCP_FLAG_ACK,
+            flow->window_size, 0, 0);
+        flow->pending_synack = 0;
+      }
+      if (flow->tx_buf != 0 && sockbuf_used(flow->tx_buf) > 0 &&
+          (flow->state == XAIOS_NETWORK_FLOW_ESTABLISHED ||
+           flow->state == XAIOS_NETWORK_FLOW_CLOSE_WAIT)) {
+        uint8_t tx_data[NETWORK_TCP_MSS];
+        uint32_t bytes_to_send = sockbuf_read(flow->tx_buf, tx_data, NETWORK_TCP_MSS);
+        if (bytes_to_send > 0) {
+          tcp_build_and_send_segment_v6(g_local_mac, flow->remote_mac,
+              &flow->local_addr, &flow->remote_addr,
+              flow->local_port, flow->remote_port,
+              flow->next_send_seq, flow->expected_seq,
+              NETWORK_TCP_FLAG_ACK | NETWORK_TCP_FLAG_PSH,
+              flow->window_size, tx_data, bytes_to_send);
+          flow->next_send_seq += bytes_to_send;
+        }
+      }
+      if (flow->pending_ack != 0 &&
+          (flow->tx_buf == 0 || sockbuf_used(flow->tx_buf) == 0)) {
+        tcp_build_and_send_segment_v6(g_local_mac, flow->remote_mac,
+            &flow->local_addr, &flow->remote_addr,
+            flow->local_port, flow->remote_port,
+            flow->next_send_seq, flow->expected_seq,
+            NETWORK_TCP_FLAG_ACK, flow->window_size, 0, 0);
+        flow->pending_ack = 0;
+      }
+      if (flow->pending_fin != 0 &&
+          (flow->tx_buf == 0 || sockbuf_used(flow->tx_buf) == 0)) {
+        tcp_build_and_send_segment_v6(g_local_mac, flow->remote_mac,
+            &flow->local_addr, &flow->remote_addr,
+            flow->local_port, flow->remote_port,
+            flow->next_send_seq, flow->expected_seq,
+            NETWORK_TCP_FLAG_FIN | NETWORK_TCP_FLAG_ACK,
+            flow->window_size, 0, 0);
+        flow->pending_fin = 0;
+        flow->next_send_seq++;
+        if (flow->state == XAIOS_NETWORK_FLOW_ESTABLISHED) {
+          flow->state = XAIOS_NETWORK_FLOW_FIN_WAIT;
+        } else if (flow->state == XAIOS_NETWORK_FLOW_CLOSE_WAIT) {
+          flow->state = XAIOS_NETWORK_FLOW_LAST_ACK;
+        }
+      }
+    } else {
+      /* IPv4 flow: use v4 segment builder */
+      uint32_t src_ip_be = XAIOS_IPV4_GUEST_IP;
+      uint32_t dst_ip_be = ((flow->remote_address & 0xFFU) << 24U) |
+                            (((flow->remote_address >> 8U) & 0xFFU) << 16U) |
+                            (((flow->remote_address >> 16U) & 0xFFU) << 8U) |
+                            ((flow->remote_address >> 24U) & 0xFFU);
+      if (flow->pending_synack != 0) {
+        tcp_build_and_send_segment(g_local_mac, flow->remote_mac,
+                                    src_ip_be, dst_ip_be,
+                                    flow->local_port, flow->remote_port,
+                                    flow->local_seq, flow->expected_seq,
+                                    NETWORK_TCP_FLAG_SYN | NETWORK_TCP_FLAG_ACK,
+                                    flow->window_size, 0, 0);
+        flow->pending_synack = 0;
+      }
+      if (flow->tx_buf != 0 && sockbuf_used(flow->tx_buf) > 0 &&
+          (flow->state == XAIOS_NETWORK_FLOW_ESTABLISHED ||
+           flow->state == XAIOS_NETWORK_FLOW_CLOSE_WAIT)) {
+        uint8_t tx_data[NETWORK_TCP_MSS];
+        uint32_t bytes_to_send = sockbuf_read(flow->tx_buf, tx_data, NETWORK_TCP_MSS);
+        if (bytes_to_send > 0) {
+          tcp_build_and_send_segment(g_local_mac, flow->remote_mac,
+                                      src_ip_be, dst_ip_be,
+                                      flow->local_port, flow->remote_port,
+                                      flow->next_send_seq, flow->expected_seq,
+                                      NETWORK_TCP_FLAG_ACK | NETWORK_TCP_FLAG_PSH,
+                                      flow->window_size, tx_data, bytes_to_send);
+          flow->next_send_seq += bytes_to_send;
+        }
+      }
+      if (flow->pending_ack != 0 &&
+          (flow->tx_buf == 0 || sockbuf_used(flow->tx_buf) == 0)) {
         tcp_build_and_send_segment(g_local_mac, flow->remote_mac,
                                     src_ip_be, dst_ip_be,
                                     flow->local_port, flow->remote_port,
                                     flow->next_send_seq, flow->expected_seq,
-                                    NETWORK_TCP_FLAG_ACK | NETWORK_TCP_FLAG_PSH,
-                                    flow->window_size, tx_data, bytes_to_send);
-        flow->next_send_seq += bytes_to_send;
+                                    NETWORK_TCP_FLAG_ACK,
+                                    flow->window_size, 0, 0);
+        flow->pending_ack = 0;
       }
-    }
-    /* Send pending ACK (for received data) */
-    if (flow->pending_ack != 0 &&
-        (flow->tx_buf == 0 || sockbuf_used(flow->tx_buf) == 0)) {
-      tcp_build_and_send_segment(g_local_mac, flow->remote_mac,
-                                  src_ip_be, dst_ip_be,
-                                  flow->local_port, flow->remote_port,
-                                  flow->next_send_seq, flow->expected_seq,
-                                  NETWORK_TCP_FLAG_ACK,
-                                  flow->window_size, 0, 0);
-      flow->pending_ack = 0;
-    }
-    /* Send pending FIN */
-    if (flow->pending_fin != 0 &&
-        (flow->tx_buf == 0 || sockbuf_used(flow->tx_buf) == 0)) {
-      tcp_build_and_send_segment(g_local_mac, flow->remote_mac,
-                                  src_ip_be, dst_ip_be,
-                                  flow->local_port, flow->remote_port,
-                                  flow->next_send_seq, flow->expected_seq,
-                                  NETWORK_TCP_FLAG_FIN | NETWORK_TCP_FLAG_ACK,
-                                  flow->window_size, 0, 0);
-      flow->pending_fin = 0;
-      flow->next_send_seq++;
-      if (flow->state == XAIOS_NETWORK_FLOW_ESTABLISHED) {
-        flow->state = XAIOS_NETWORK_FLOW_FIN_WAIT;
-      } else if (flow->state == XAIOS_NETWORK_FLOW_CLOSE_WAIT) {
-        flow->state = XAIOS_NETWORK_FLOW_LAST_ACK;
+      if (flow->pending_fin != 0 &&
+          (flow->tx_buf == 0 || sockbuf_used(flow->tx_buf) == 0)) {
+        tcp_build_and_send_segment(g_local_mac, flow->remote_mac,
+                                    src_ip_be, dst_ip_be,
+                                    flow->local_port, flow->remote_port,
+                                    flow->next_send_seq, flow->expected_seq,
+                                    NETWORK_TCP_FLAG_FIN | NETWORK_TCP_FLAG_ACK,
+                                    flow->window_size, 0, 0);
+        flow->pending_fin = 0;
+        flow->next_send_seq++;
+        if (flow->state == XAIOS_NETWORK_FLOW_ESTABLISHED) {
+          flow->state = XAIOS_NETWORK_FLOW_FIN_WAIT;
+        } else if (flow->state == XAIOS_NETWORK_FLOW_CLOSE_WAIT) {
+          flow->state = XAIOS_NETWORK_FLOW_LAST_ACK;
+        }
       }
     }
   }
@@ -1698,6 +1817,15 @@ xaios_status_t network_stack_process_udp_frame_v6(const uint8_t *frame,
   ++flow->packets_rx;
   ++g_udp_rx_count;
   ++g_ipv6_rx_count;
+  
+  /* Deliver UDP payload to flow rx_buf */
+  if (flow->rx_buf != 0 && payload_len > 8) {
+    /* IPv6 header is 40 bytes at offset 14 */
+    const uint8_t *udp_payload = frame + 14U + 40U + 8U;
+    uint32_t data_len = (uint32_t)(payload_len - 8U);
+    sockbuf_write(flow->rx_buf, udp_payload, data_len);
+  }
+  
   packet_mark_tx(packet);
   ++flow->packets_tx;
   ++g_udp_tx_count;
@@ -1760,15 +1888,27 @@ xaios_status_t network_stack_process_tcp_frame_v6(const uint8_t *frame,
 
   if ((flags & NETWORK_TCP_FLAG_RST) != 0U) {
     if (flow != 0) {
+      xaios_network_flow_state_t prev_state = flow->state;
       flow->state = XAIOS_NETWORK_FLOW_CLOSED;
       ++g_tcp_reset_count;
       ++g_tcp_closed_count;
+      if (prev_state == XAIOS_NETWORK_FLOW_SYN_RECV && g_half_open_count > 0) {
+        g_half_open_count--;
+      }
+      if (flow->rx_buf != 0) { sockbuf_free(flow->rx_buf); flow->rx_buf = 0; }
+      if (flow->tx_buf != 0) { sockbuf_free(flow->tx_buf); flow->tx_buf = 0; }
     }
     packet_mark_dropped(packet);
     return XAIOS_ERR_INVALID;
   }
 
   if (flow == 0 && (flags & NETWORK_TCP_FLAG_SYN) != 0U) {
+    /* Check if there's a listener for this port */
+    if (!network_stack_has_listener(dst_port)) {
+      ++g_tcp_reset_count;
+      packet_mark_dropped(packet);
+      return XAIOS_ERR_NOT_FOUND;
+    }
     flow = alloc_tcp_flow();
     if (flow == 0) {
       ++g_tcp_reset_count;
@@ -1787,12 +1927,22 @@ xaios_status_t network_stack_process_tcp_frame_v6(const uint8_t *frame,
     flow->remote_addr = src_addr;
     flow->local_addr = dst_addr;
     flow->remote_seq = seq;
-    flow->local_seq = 0;
+    flow->expected_seq = seq + 1U;
+    flow->local_seq = (uint32_t)(timer_now_ns() ^ (uint64_t)flow->flow_id);
+    flow->next_send_seq = flow->local_seq + 1U;
+    flow->window_size = (uint16_t)SOCKET_BUFFER_SIZE;
+    flow->pending_synack = 1;
+    flow->pending_fin = 0;
+    flow->pending_ack = 0;
+    flow->close_requested = 0;
+    flow->remote_mac_valid = 0;
+    flow->rx_buf = sockbuf_alloc();
+    flow->tx_buf = sockbuf_alloc();
     flow->last_seen_ns = start;
     flow->state = XAIOS_NETWORK_FLOW_SYN_RECV;
     flow->retransmits = 0;
     flow->packets_rx = 1;
-    flow->packets_tx = 1;
+    flow->packets_tx = 0;
     ++g_tcp_handshake_count;
     ++g_ipv6_rx_count;
     packet_mark_tx(packet);
@@ -1806,11 +1956,17 @@ xaios_status_t network_stack_process_tcp_frame_v6(const uint8_t *frame,
       (flags & NETWORK_TCP_FLAG_ACK) != 0U) {
     flow->state = XAIOS_NETWORK_FLOW_ESTABLISHED;
     flow->local_seq = ack_v;
+    flow->next_send_seq = ack_v;
     flow->last_seen_ns = start;
     ++flow->packets_rx;
-    ++flow->packets_tx;
     ++g_tcp_handshake_count;
     ++g_tcp_established_count;
+    if (g_half_open_count > 0) {
+      g_half_open_count--;
+    }
+    /* Enqueue in accept queue for syscall layer */
+    uint32_t peer_ip_placeholder = 0; /* v6 uses address struct, not uint32 */
+    accept_queue_enqueue(flow->flow_id, peer_ip_placeholder, src_port, dst_port);
     packet_mark_tx(packet);
     packet_mark_complete(packet);
     record_latency(g_tcp_latency_samples, &g_tcp_latency_count,
@@ -1818,11 +1974,47 @@ xaios_status_t network_stack_process_tcp_frame_v6(const uint8_t *frame,
     return XAIOS_OK;
   }
 
-  if (flow != 0 && flow->state == XAIOS_NETWORK_FLOW_ESTABLISHED) {
+  if (flow != 0 && (flow->state == XAIOS_NETWORK_FLOW_ESTABLISHED ||
+                     flow->state == XAIOS_NETWORK_FLOW_CLOSE_WAIT)) {
     flow->last_seen_ns = start;
     ++flow->packets_rx;
-    ++flow->packets_tx;
-    ++g_tcp_handshake_count;
+
+    /* Handle incoming FIN */
+    if ((flags & NETWORK_TCP_FLAG_FIN) != 0U) {
+      flow->expected_seq = seq + 1U;
+      flow->pending_ack = 1;
+      if (flow->state == XAIOS_NETWORK_FLOW_ESTABLISHED) {
+        flow->state = XAIOS_NETWORK_FLOW_CLOSE_WAIT;
+      }
+    }
+
+    /* Extract TCP payload from IPv6 frame */
+    /* IPv6 header is 40 bytes at offset 14, TCP header starts after that */
+    const uint8_t *ip6 = frame + 14U;
+    const uint8_t *tcp_hdr = ip6 + 40U;
+    uint64_t tcp_hdr_bytes = (uint64_t)(tcp_hdr[12] >> 4U) * 4U;
+    uint16_t ip6_payload_len = read_u16_be(ip6 + 4U);
+    uint32_t payload_len_v6 = (uint32_t)ip6_payload_len - (uint32_t)tcp_hdr_bytes;
+
+    if (payload_len_v6 > 0 && flow->rx_buf != 0 &&
+        seq == flow->expected_seq) {
+      const uint8_t *payload = tcp_hdr + tcp_hdr_bytes;
+      uint32_t written = sockbuf_write(flow->rx_buf, payload, payload_len_v6);
+      flow->expected_seq += written;
+      flow->pending_ack = 1;
+      flow->window_size = (uint16_t)sockbuf_available(flow->rx_buf);
+    }
+
+    /* Handle ACK for our sent data */
+    if ((flags & NETWORK_TCP_FLAG_ACK) != 0U && ack_v > flow->local_seq) {
+      flow->local_seq = ack_v;
+    }
+
+    if (flow->close_requested &&
+        (flow->tx_buf == 0 || sockbuf_used(flow->tx_buf) == 0)) {
+      flow->pending_fin = 1;
+    }
+
     packet_mark_tx(packet);
     packet_mark_complete(packet);
     record_latency(g_tcp_latency_samples, &g_tcp_latency_count,

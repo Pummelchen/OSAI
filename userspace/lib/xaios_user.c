@@ -341,14 +341,19 @@ int xaios_write_file(const char *path, const char *content) {
     return -1;
   }
   u64 content_len = xaios_strlen(content);
-  int written = 0;
-  if (content_len != 0) {
-    written = xaios_fs_write(fd, content, content_len);
+  u64 total_written = 0;
+  while (total_written < content_len) {
+    int n = xaios_fs_write(fd, content + total_written, content_len - total_written);
+    if (n <= 0) {
+      xaios_fs_close(fd);
+      return -1;
+    }
+    total_written += (u64)n;
   }
-  if (xaios_fs_close(fd) != 0 || written < 0) {
+  if (xaios_fs_close(fd) != 0) {
     return -1;
   }
-  return written;
+  return (int)total_written;
 }
 
 int xaios_read_file(const char *path, char *buffer, u64 buffer_size) {
@@ -356,13 +361,13 @@ int xaios_read_file(const char *path, char *buffer, u64 buffer_size) {
   if (fd < 0) {
     return -1;
   }
-  int bytes = xaios_fs_read(fd, buffer, buffer_size);
+  /* Leave room for null terminator */
+  u64 read_size = (buffer_size > 0) ? buffer_size - 1 : 0;
+  int bytes = xaios_fs_read(fd, buffer, read_size);
   if (xaios_fs_close(fd) != 0 || bytes < 0) {
     return -1;
   }
-  if ((u64)bytes < buffer_size) {
-    buffer[bytes] = '\0';
-  }
+  buffer[bytes] = '\0';
   return bytes;
 }
 
