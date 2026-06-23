@@ -13,6 +13,7 @@ void ssh_channel_init(void) {
     g_channels[i].local_id = 0;
     g_channels[i].remote_id = 0;
     g_channels[i].window_size = 0;
+    g_channels[i].remote_window = 0;
     g_channels[i].bytes_consumed = 0;
   }
   g_next_local_id = 1;
@@ -61,11 +62,41 @@ static int send_channel_data(int sockfd, uint32_t remote_id,
                               const uint8_t *data, uint32_t len) {
   uint8_t reply[SSH_MAX_PACKET_SIZE];
   if (9 + len > SSH_MAX_PACKET_SIZE) return -1;
+  ssh_channel_t *ch = find_channel_by_remote(remote_id);
+  if (ch) {
+    if (len > ch->remote_window) {
+      len = ch->remote_window;
+    }
+    ch->remote_window -= len;
+  }
+  if (len == 0) return 0;
   reply[0] = SSH_MSG_CHANNEL_DATA;
   ssh_write_u32_be(reply + 1, remote_id);
   ssh_write_u32_be(reply + 5, len);
   ssh_mem_copy(reply + 9, data, len);
   return ssh_packet_write_encrypted(sockfd, reply, 9 + len);
+}
+
+/* Send CHANNEL_EXTENDED_DATA (type 95) for stderr */
+__attribute__((unused)) static int send_channel_extended_data(int sockfd, uint32_t remote_id,
+                                       uint32_t data_type,
+                                       const uint8_t *data, uint32_t len) {
+  uint8_t reply[SSH_MAX_PACKET_SIZE];
+  if (13 + len > SSH_MAX_PACKET_SIZE) return -1;
+  ssh_channel_t *ch = find_channel_by_remote(remote_id);
+  if (ch) {
+    if (len > ch->remote_window) {
+      len = ch->remote_window;
+    }
+    ch->remote_window -= len;
+  }
+  if (len == 0) return 0;
+  reply[0] = SSH_MSG_CHANNEL_EXTENDED_DATA;
+  ssh_write_u32_be(reply + 1, remote_id);
+  ssh_write_u32_be(reply + 5, data_type);
+  ssh_write_u32_be(reply + 9, len);
+  ssh_mem_copy(reply + 13, data, len);
+  return ssh_packet_write_encrypted(sockfd, reply, 13 + len);
 }
 
 /* Send CHANNEL_EOF */
@@ -221,6 +252,8 @@ int ssh_channel_handle_packet(int sockfd, const ssh_packet_t *pkt) {
     uint32_t off = 5 + type_len;
     ch->remote_id = ssh_read_u32_be(pkt->data + off);
     ch->window_size = ssh_read_u32_be(pkt->data + off + 4);
+    ch->remote_window = 65536;
+    ch->bytes_consumed = 0;
     /* Send CHANNEL_OPEN_CONFIRMATION */
     uint8_t reply[32];
     reply[0] = SSH_MSG_CHANNEL_OPEN_CONFIRM;
@@ -306,7 +339,14 @@ int ssh_channel_handle_packet(int sockfd, const ssh_packet_t *pkt) {
   }
 
   if (msg_type == SSH_MSG_CHANNEL_WINDOW_ADJUST) {
-    /* Client is telling us to increase our sending window — accept and ignore */
+    if (pkt->len >= 9) {
+      uint32_t remote_id = ssh_read_u32_be(pkt->data + 1);
+      uint32_t bytes_to_add = ssh_read_u32_be(pkt->data + 5);
+      ssh_channel_t *ch = find_channel_by_remote(remote_id);
+      if (ch) {
+        ch->remote_window += bytes_to_add;
+      }
+    }
     return 0;
   }
 

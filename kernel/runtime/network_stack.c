@@ -36,7 +36,24 @@
 #define NETWORK_TCP_FLAG_PSH 0x08U
 #define NETWORK_TCP_FLAG_ACK 0x10U
 
+/* TCP options kind bytes */
+#define TCP_OPT_END       0U
+#define TCP_OPT_NOP       1U
+#define TCP_OPT_MSS       2U
+#define TCP_OPT_WSCALE    3U
+
 #define NETWORK_TCP_MSS 1400U
+#define NETWORK_TCP_WSCALE_OK 1U   /* we accept window scaling */
+
+/* Congestion control constants */
+#define TCP_INIT_CWND     1U
+#define TCP_INIT_SSTHRESH 16U
+#define TCP_MAX_DUP_ACK   3U
+
+/* Keepalive defaults (in seconds, converted to ns elsewhere) */
+#define TCP_KEEPALIVE_IDLE_NS     UINT64_C(7200000000000)  /* 2 hours */
+#define TCP_KEEPALIVE_INTERVAL_NS UINT64_C(10000000000)    /* 10 seconds */
+#define TCP_KEEPALIVE_PROBES     3U
 
 typedef struct network_queue_binding {
   uint32_t queue_id;
@@ -122,6 +139,27 @@ typedef struct network_tcp_flow {
   uint8_t  close_requested;    /* local side called close */
   uint8_t  remote_mac[6];      /* cached peer MAC */
   uint8_t  remote_mac_valid;
+  /* A3: TCP retransmission */
+  uint64_t last_tx_ns;         /* timestamp of last data send */
+  uint64_t rto_ns;             /* current retransmission timeout */
+  uint32_t rto_retries;        /* consecutive RTO timeouts */
+  uint8_t  in_retransmit;      /* currently in retransmission */
+  /* A4: TCP MSS negotiation */
+  uint16_t peer_mss;           /* received from peer */
+  uint8_t  mss_parsed;         /* we parsed peer MSS */
+  /* A5: TCP window scaling */
+  uint8_t  ws_parsed;          /* peer sent window scale */
+  uint8_t  peer_ws;            /* peer's window scale factor */
+  uint8_t  our_ws;             /* our window scale factor */
+  /* A6: TCP congestion control */
+  uint32_t cwnd;               /* congestion window (bytes) */
+  uint32_t ssthresh;           /* slow start threshold (bytes) */
+  uint32_t dup_ack_count;      /* duplicate ACK counter */
+  uint32_t highest_acked;      /* highest seq acked by peer */
+  uint32_t in_flight;          /* bytes sent but not yet acked */
+  /* A7: TCP keepalive */
+  uint64_t keepalive_last_tx_ns;
+  uint32_t keepalive_probes_sent;
 } network_tcp_flow_t;
 
 typedef struct network_ip4_header {
@@ -255,6 +293,40 @@ static uint16_t read_u16_be(const uint8_t *bytes) {
 static uint32_t read_u32_be(const uint8_t *bytes) {
   return ((uint32_t)bytes[0] << 24U) | ((uint32_t)bytes[1] << 16U) |
          ((uint32_t)bytes[2] << 8U) | (uint32_t)bytes[3];
+}
+
+static void write_be16(uint8_t *dst, uint16_t value) {
+  dst[0] = (uint8_t)(value >> 8U);
+  dst[1] = (uint8_t)(value);
+}
+
+static void write_be32(uint8_t *dst, uint32_t value) {
+  dst[0] = (uint8_t)(value >> 24U);
+  dst[1] = (uint8_t)(value >> 16U);
+  dst[2] = (uint8_t)(value >> 8U);
+  dst[3] = (uint8_t)value;
+}
+
+/* Parse TCP options, extract MSS and window scale if present */
+static void parse_tcp_options(const uint8_t *tcp_hdr, uint32_t hdr_bytes,
+                               uint16_t *out_mss, uint8_t *out_ws) {
+  *out_mss = 0;
+  *out_ws = 0;
+  uint32_t offset = 20; /* skip fixed header */
+  while (offset + 1U <= hdr_bytes) {
+    uint8_t kind = tcp_hdr[offset];
+    if (kind == TCP_OPT_END) break;
+    if (kind == TCP_OPT_NOP) { offset += 1; continue; }
+    if (offset + 2U > hdr_bytes) break;
+    uint8_t len = tcp_hdr[offset + 1U];
+    if (len < 2U || offset + (uint32_t)len > hdr_bytes) break;
+    if (kind == TCP_OPT_MSS && len == 4U && offset + 4U <= hdr_bytes) {
+      *out_mss = read_u16_be(tcp_hdr + offset + 2U);
+    } else if (kind == TCP_OPT_WSCALE && len == 3U) {
+      *out_ws = tcp_hdr[offset + 2U];
+    }
+    offset += (uint32_t)len;
+  }
 }
 
 static uint16_t checksum_u16(const uint8_t *data, uint32_t length) {
@@ -609,10 +681,7 @@ static int parse_tcp(const uint8_t *frame, uint64_t frame_len, uint16_t *src_por
   
   const uint64_t tcp_payload_len =
       ip_len - ip_header_bytes - (uint64_t)tcp_header_bytes;
-  const uint16_t tcp_len = (uint16_t)ip_len;
-
-  (void)tcp_payload_len;
-  (void)tcp_len;
+  const uint16_t tcp_len = (uint16_t)(tcp_header_bytes + tcp_payload_len);
 
   if (tcp_header_bytes > ip_len) {
     return 0;
@@ -621,6 +690,19 @@ static int parse_tcp(const uint8_t *frame, uint64_t frame_len, uint16_t *src_por
   if ((ip->checksum != 0U) &&
       (checksum_u16((const uint8_t *)ip, (uint16_t)ip_header_bytes) != 0U)) {
     return 0;
+  }
+
+  /* A1: Validate TCP checksum */
+  uint32_t src_ip_be = ip->source;
+  uint32_t dst_ip_be = ip->destination;
+  uint16_t wire_cksum = read_u16_be((const uint8_t *)&tcp->checksum);
+  if (wire_cksum != 0) {
+    uint16_t computed = ipv4_pseudo_checksum(src_ip_be, dst_ip_be,
+                         NETWORK_IP_PROTO_TCP, tcp_len,
+                         (const uint8_t *)tcp, tcp_len);
+    if (computed != 0) {
+      return 0; /* checksum mismatch */
+    }
   }
 
   *src_port = read_u16_be((const uint8_t *)&tcp->source_port);
@@ -671,6 +753,23 @@ static int parse_udp_v6(const uint8_t *frame, uint64_t frame_len,
   *src_port = read_u16_be(udp);
   *dst_port = read_u16_be(udp + 2U);
   *payload_len = udp_len;
+
+  /* A8: Validate IPv6 UDP checksum (mandatory per RFC 2460 Section 8.1) */
+  uint16_t wire_udp_cksum = read_u16_be(udp + 6U);
+  if (wire_udp_cksum != 0) {
+    xaios_ip_addr_t usrc, udst;
+    xaios_ip_addr_from_raw_ipv6(&usrc, ip6 + 8U);
+    xaios_ip_addr_from_raw_ipv6(&udst, ip6 + 24U);
+    uint16_t computed_cksum = ipv6_pseudo_checksum(&usrc, &udst,
+                                  NETWORK_IP_PROTO_UDP, udp_len,
+                                  udp, udp_len);
+    if (computed_cksum != 0) {
+      return 0; /* bad checksum */
+    }
+  } else {
+    return 0; /* RFC 2460: IPv6 UDP must have non-zero checksum */
+  }
+
   xaios_ip_addr_from_raw_ipv6(src_addr, ip6 + 8U);
   xaios_ip_addr_from_raw_ipv6(dst_addr, ip6 + 24U);
   return 1;
@@ -709,6 +808,22 @@ static int parse_tcp_v6(const uint8_t *frame, uint64_t frame_len,
   *seq = read_u32_be(tcp + 4U);
   *ack_val = read_u32_be(tcp + 8U);
   *flags = tcp[13U];
+
+  /* A1: Validate TCP checksum for IPv6 */
+  uint32_t tcp_total = tcp_hdr_bytes + ((uint32_t)plen - tcp_hdr_bytes);
+  uint16_t wire_cksum = read_u16_be(tcp + 16U);
+  if (wire_cksum != 0) {
+    xaios_ip_addr_t src, dst;
+    xaios_ip_addr_from_raw_ipv6(&src, ip6 + 8U);
+    xaios_ip_addr_from_raw_ipv6(&dst, ip6 + 24U);
+    uint16_t computed = ipv6_pseudo_checksum(&src, &dst,
+                         NETWORK_IP_PROTO_TCP, tcp_total,
+                         tcp, tcp_total);
+    if (computed != 0) {
+      return 0; /* checksum mismatch */
+    }
+  }
+
   xaios_ip_addr_from_raw_ipv6(src_addr, ip6 + 8U);
   xaios_ip_addr_from_raw_ipv6(dst_addr, ip6 + 24U);
   return 1;
@@ -836,6 +951,27 @@ static network_tcp_flow_t *alloc_tcp_flow(void) {
       g_tcp_flows[i].pending_ack = 0;
       g_tcp_flows[i].close_requested = 0;
       g_tcp_flows[i].remote_mac_valid = 0;
+      /* A3: retransmission */
+      g_tcp_flows[i].last_tx_ns = 0;
+      g_tcp_flows[i].rto_ns = NETWORK_TCP_RETRANSMIT_NS;
+      g_tcp_flows[i].rto_retries = 0;
+      g_tcp_flows[i].in_retransmit = 0;
+      /* A4: MSS */
+      g_tcp_flows[i].peer_mss = 0;
+      g_tcp_flows[i].mss_parsed = 0;
+      /* A5: window scaling */
+      g_tcp_flows[i].ws_parsed = 0;
+      g_tcp_flows[i].peer_ws = 0;
+      g_tcp_flows[i].our_ws = 0;
+      /* A6: congestion control */
+      g_tcp_flows[i].cwnd = TCP_INIT_CWND * NETWORK_TCP_MSS;
+      g_tcp_flows[i].ssthresh = TCP_INIT_SSTHRESH * NETWORK_TCP_MSS;
+      g_tcp_flows[i].dup_ack_count = 0;
+      g_tcp_flows[i].highest_acked = 0;
+      g_tcp_flows[i].in_flight = 0;
+      /* A7: keepalive */
+      g_tcp_flows[i].keepalive_last_tx_ns = 0;
+      g_tcp_flows[i].keepalive_probes_sent = 0;
       g_half_open_count++;
       return &g_tcp_flows[i];
     }
@@ -1074,18 +1210,6 @@ xaios_status_t network_stack_process_udp_frame(const uint8_t *frame,
  * TCP Segment Builder and Data Plane Functions
  * ================================================================ */
 
-static void write_be16(uint8_t *dst, uint16_t value) {
-  dst[0] = (uint8_t)(value >> 8U);
-  dst[1] = (uint8_t)value;
-}
-
-static void write_be32(uint8_t *dst, uint32_t value) {
-  dst[0] = (uint8_t)(value >> 24U);
-  dst[1] = (uint8_t)(value >> 16U);
-  dst[2] = (uint8_t)(value >> 8U);
-  dst[3] = (uint8_t)value;
-}
-
 static xaios_status_t tcp_build_and_send_segment(
     const uint8_t src_mac[6], const uint8_t dst_mac[6],
     uint32_t src_ip, uint32_t dst_ip,
@@ -1093,8 +1217,34 @@ static xaios_status_t tcp_build_and_send_segment(
     uint32_t seq, uint32_t ack_val,
     uint8_t flags, uint16_t window,
     const uint8_t *payload, uint32_t payload_len) {
+  /* Include TCP options only in SYN segments (MSS + window scale) */
+  uint32_t tcp_opt_len = 0;
+  uint8_t tcp_opts[12];
+  if ((flags & NETWORK_TCP_FLAG_SYN) != 0 && (flags & NETWORK_TCP_FLAG_ACK) == 0) {
+    tcp_opts[0] = TCP_OPT_MSS; tcp_opts[1] = 4;
+    write_be16(tcp_opts + 2, NETWORK_TCP_MSS);
+    tcp_opts[4] = TCP_OPT_NOP;
+    tcp_opts[5] = TCP_OPT_WSCALE; tcp_opts[6] = 3; tcp_opts[7] = 0; /* ws=0 */
+    tcp_opts[8] = TCP_OPT_NOP;
+    tcp_opts[9] = TCP_OPT_NOP;
+    tcp_opts[10] = TCP_OPT_END;
+    tcp_opt_len = 12;
+  } else if ((flags & NETWORK_TCP_FLAG_SYN) != 0) {
+    /* SYN-ACK: include MSS and echo window scale */
+    tcp_opts[0] = TCP_OPT_MSS; tcp_opts[1] = 4;
+    write_be16(tcp_opts + 2, NETWORK_TCP_MSS);
+    tcp_opts[4] = TCP_OPT_NOP;
+    tcp_opts[5] = TCP_OPT_WSCALE; tcp_opts[6] = 3; tcp_opts[7] = 0;
+    tcp_opts[8] = TCP_OPT_END;
+    tcp_opt_len = 12;
+  }
+  /* Align options to 4-byte boundary */
+  uint32_t opt_padded = (tcp_opt_len + 3U) & ~3U;
+  uint8_t tcp_hdr_bytes = (uint8_t)(20U + opt_padded);
+  uint8_t data_offset_val = (uint8_t)(tcp_hdr_bytes >> 2U);
+
   uint8_t frame[NETWORK_BUFFER_SIZE];
-  uint64_t frame_len = 14U + 20U + 20U + payload_len;
+  uint64_t frame_len = 14U + 20U + tcp_hdr_bytes + payload_len;
   if (frame_len > NETWORK_BUFFER_SIZE) {
     return XAIOS_ERR_INVALID;
   }
@@ -1103,29 +1253,38 @@ static xaios_status_t tcp_build_and_send_segment(
   for (uint32_t i = 0; i < 6; ++i) { frame[6U + i] = src_mac[i]; }
   write_be16(frame + 12, 0x0800U);
   /* IPv4 header */
-  uint16_t ip_total = (uint16_t)(20U + 20U + payload_len);
+  uint16_t ip_total = (uint16_t)(20U + tcp_hdr_bytes + payload_len);
   ipv4_build_header(frame + 14, ip_total, 6, src_ip, dst_ip);
-  /* TCP header (20 bytes, no options) */
+  /* TCP header */
   uint8_t *tcp = frame + 34U;
   write_be16(tcp, src_port);
   write_be16(tcp + 2, dst_port);
   write_be32(tcp + 4, seq);
   write_be32(tcp + 8, ack_val);
-  tcp[12] = 0x50U; /* data offset = 5 words = 20 bytes */
+  tcp[12] = data_offset_val;
   tcp[13] = flags;
   write_be16(tcp + 14, window);
   write_be16(tcp + 16, 0); /* checksum placeholder */
   write_be16(tcp + 18, 0); /* urgent pointer */
+  /* Copy options */
+  for (uint32_t i = 0; i < tcp_opt_len; ++i) {
+    tcp[20U + i] = tcp_opts[i];
+  }
+  /* Zero padding between options and payload */
+  for (uint32_t i = tcp_opt_len; i < opt_padded; ++i) {
+    tcp[20U + i] = 0;
+  }
   /* Copy payload */
   if (payload != 0 && payload_len > 0) {
+    uint64_t data_off = 34U + tcp_hdr_bytes;
     for (uint32_t i = 0; i < payload_len; ++i) {
-      frame[54U + i] = payload[i];
+      frame[data_off + i] = payload[i];
     }
   }
-  /* Compute TCP checksum over pseudo-header + TCP header + payload */
-  uint16_t tcp_len = (uint16_t)(20U + payload_len);
-  uint16_t cksum = ipv4_pseudo_checksum(src_ip, dst_ip, 6, tcp_len,
-                                          tcp, (uint32_t)(20U + payload_len));
+  /* Compute TCP checksum */
+  uint16_t tcp_seg_len = (uint16_t)(tcp_hdr_bytes + payload_len);
+  uint16_t cksum = ipv4_pseudo_checksum(src_ip, dst_ip, 6, tcp_seg_len,
+                                           tcp, (uint32_t)tcp_seg_len);
   write_be16(tcp + 16, cksum);
   return virtio_net_tx(frame, frame_len);
 }
@@ -1157,8 +1316,23 @@ static xaios_status_t tcp_build_and_send_segment_v6(
     uint32_t seq, uint32_t ack_val,
     uint8_t flags, uint16_t window,
     const uint8_t *payload, uint32_t payload_len) {
+  /* Include TCP options only in SYN segments (MSS + window scale) */
+  uint32_t tcp_opt_len = 0;
+  uint8_t tcp_opts[12];
+  if ((flags & NETWORK_TCP_FLAG_SYN) != 0) {
+    tcp_opts[0] = TCP_OPT_MSS; tcp_opts[1] = 4;
+    write_be16(tcp_opts + 2, NETWORK_TCP_MSS);
+    tcp_opts[4] = TCP_OPT_NOP;
+    tcp_opts[5] = TCP_OPT_WSCALE; tcp_opts[6] = 3; tcp_opts[7] = 0;
+    tcp_opts[8] = TCP_OPT_END;
+    tcp_opt_len = 12;
+  }
+  uint32_t opt_padded = (tcp_opt_len + 3U) & ~3U;
+  uint8_t tcp_hdr_bytes = (uint8_t)(20U + opt_padded);
+  uint8_t data_offset_val = (uint8_t)(tcp_hdr_bytes >> 2U);
+
   uint8_t frame[NETWORK_BUFFER_SIZE];
-  uint64_t frame_len = 14U + 40U + 20U + payload_len;
+  uint64_t frame_len = 14U + 40U + tcp_hdr_bytes + payload_len;
   if (frame_len > NETWORK_BUFFER_SIZE) {
     return XAIOS_ERR_INVALID;
   }
@@ -1169,32 +1343,40 @@ static xaios_status_t tcp_build_and_send_segment_v6(
   /* IPv6 header (40 bytes) */
   uint8_t *ip6 = frame + 14U;
   write_be32(ip6, 0x60000000U); /* version=6, TC=0, flow=0 */
-  write_be16(ip6 + 4, (uint16_t)(20U + payload_len)); /* payload length */
+  write_be16(ip6 + 4, (uint16_t)(tcp_hdr_bytes + payload_len)); /* payload length */
   ip6[6] = 6U; /* next header = TCP */
   ip6[7] = 64U; /* hop limit */
   for (uint32_t i = 0; i < 16; ++i) { ip6[8U + i] = src_ip->addr[i]; }
   for (uint32_t i = 0; i < 16; ++i) { ip6[24U + i] = dst_ip->addr[i]; }
-  /* TCP header (20 bytes) */
+  /* TCP header */
   uint8_t *tcp = frame + 54U;
   write_be16(tcp, src_port);
   write_be16(tcp + 2, dst_port);
   write_be32(tcp + 4, seq);
   write_be32(tcp + 8, ack_val);
-  tcp[12] = 0x50U; /* data offset = 5 words */
+  tcp[12] = data_offset_val;
   tcp[13] = flags;
   write_be16(tcp + 14, window);
   write_be16(tcp + 16, 0); /* checksum placeholder */
   write_be16(tcp + 18, 0); /* urgent */
+  /* Copy options */
+  for (uint32_t i = 0; i < tcp_opt_len; ++i) {
+    tcp[20U + i] = tcp_opts[i];
+  }
+  for (uint32_t i = tcp_opt_len; i < opt_padded; ++i) {
+    tcp[20U + i] = 0;
+  }
   /* Copy payload */
   if (payload != 0 && payload_len > 0) {
+    uint64_t data_off = 54U + tcp_hdr_bytes;
     for (uint32_t i = 0; i < payload_len; ++i) {
-      frame[74U + i] = payload[i];
+      frame[data_off + i] = payload[i];
     }
   }
   /* Compute TCP checksum over IPv6 pseudo-header + TCP + payload */
-  uint16_t tcp_total = (uint16_t)(20U + payload_len);
+  uint16_t tcp_total = (uint16_t)(tcp_hdr_bytes + payload_len);
   uint16_t cksum = ipv6_pseudo_checksum(src_ip, dst_ip, 6, tcp_total,
-                                          tcp, (uint32_t)(20U + payload_len));
+                                           tcp, (uint32_t)tcp_total);
   write_be16(tcp + 16, cksum);
   return virtio_net_tx(frame, frame_len);
 }
@@ -1646,6 +1828,23 @@ xaios_status_t network_stack_process_tcp_frame(const uint8_t *frame,
     flow->retransmits = 0;
     flow->packets_rx = 1;
     flow->packets_tx = 0;
+
+    /* A4/A5: Parse MSS and window scale from peer SYN */
+    {
+      const network_ip4_header_t *iph4 =
+          (const network_ip4_header_t *)(frame + 14U);
+      uint32_t ip_hdr_b = (uint32_t)(iph4->version_ihl & 0x0fU) * 4U;
+      const uint8_t *thdr = frame + 14U + ip_hdr_b;
+      uint32_t thdr_b = (uint32_t)(thdr[12] >> 4U) * 4U;
+      uint16_t p_mss = 0; uint8_t p_ws = 0;
+      parse_tcp_options(thdr, thdr_b, &p_mss, &p_ws);
+      flow->peer_mss = (p_mss > 0 && p_mss < NETWORK_TCP_MSS) ? p_mss : NETWORK_TCP_MSS;
+      flow->mss_parsed = 1;
+      flow->peer_ws = p_ws;
+      flow->ws_parsed = (p_ws > 0) ? 1 : 0;
+      flow->our_ws = 0;
+    }
+
     ++g_tcp_handshake_count;
     packet_mark_tx(packet);
     packet_mark_complete(packet);
@@ -1685,13 +1884,25 @@ xaios_status_t network_stack_process_tcp_frame(const uint8_t *frame,
     flow->last_seen_ns = start;
     ++flow->packets_rx;
 
-    /* Handle incoming FIN */
+        /* Handle incoming FIN */
     if ((flags & NETWORK_TCP_FLAG_FIN) != 0U) {
       flow->expected_seq = seq + 1U; /* FIN consumes one seq */
       flow->pending_ack = 1;
       if (flow->state == XAIOS_NETWORK_FLOW_ESTABLISHED) {
         flow->state = XAIOS_NETWORK_FLOW_CLOSE_WAIT;
+      } else if (flow->state == XAIOS_NETWORK_FLOW_FIN_WAIT_2) {
+        /* A2: FIN in FIN_WAIT_2 → TIME_WAIT */
+        flow->state = XAIOS_NETWORK_FLOW_TIME_WAIT;
+        flow->last_seen_ns = start;
       }
+    }
+
+    /* A2: ACK of our FIN → FIN_WAIT_2 */
+    if ((flags & NETWORK_TCP_FLAG_ACK) != 0U &&
+        flow->state == XAIOS_NETWORK_FLOW_FIN_WAIT &&
+        ack > flow->local_seq) {
+      flow->state = XAIOS_NETWORK_FLOW_FIN_WAIT_2;
+      flow->last_seen_ns = start;
     }
 
     /* Extract TCP payload */
@@ -1715,8 +1926,44 @@ xaios_status_t network_stack_process_tcp_frame(const uint8_t *frame,
 
     /* Handle ACK for our sent data */
     if ((flags & NETWORK_TCP_FLAG_ACK) != 0U && ack > flow->local_seq) {
+      uint32_t newly_acked = ack - flow->local_seq;
       flow->local_seq = ack;
+
+      /* A6: Congestion control */
+      if (newly_acked > 0 && flow->in_flight >= newly_acked) {
+        flow->in_flight -= newly_acked;
+      } else {
+        flow->in_flight = 0;
+      }
+      /* Reset dup_ack count on new ACK */
+      flow->dup_ack_count = 0;
+
+      /* Slow start or congestion avoidance */
+      if (flow->cwnd < flow->ssthresh) {
+        /* Slow start: cwnd += MSS per ACK */
+        uint32_t mss = (flow->peer_mss > 0) ? flow->peer_mss : NETWORK_TCP_MSS;
+        if (mss > 0) flow->cwnd += mss;
+      } else {
+        /* Congestion avoidance: cwnd += MSS^2 / cwnd per ACK */
+        uint32_t mss = (flow->peer_mss > 0) ? flow->peer_mss : NETWORK_TCP_MSS;
+        flow->cwnd += (mss * mss) / (flow->cwnd > 0 ? flow->cwnd : 1);
+      }
+    } else if ((flags & NETWORK_TCP_FLAG_ACK) != 0U && ack == flow->local_seq) {
+      /* Duplicate ACK */
+      flow->dup_ack_count++;
+      if (flow->dup_ack_count >= TCP_MAX_DUP_ACK &&
+          flow->in_flight > 0 && !flow->in_retransmit) {
+        /* Fast retransmit */
+        flow->ssthresh = (flow->cwnd > 1) ? (flow->cwnd >> 1) : 1;
+        flow->cwnd = flow->ssthresh + (TCP_MAX_DUP_ACK * NETWORK_TCP_MSS);
+        flow->in_retransmit = 1;
+        flow->in_flight = 0;
+      }
     }
+
+    /* Reset keepalive on any data from peer */
+    flow->keepalive_last_tx_ns = 0;
+    flow->keepalive_probes_sent = 0;
 
     /* If close was requested and all data sent, mark FIN pending */
     if (flow->close_requested &&
@@ -1975,7 +2222,9 @@ xaios_status_t network_stack_process_tcp_frame_v6(const uint8_t *frame,
   }
 
   if (flow != 0 && (flow->state == XAIOS_NETWORK_FLOW_ESTABLISHED ||
-                     flow->state == XAIOS_NETWORK_FLOW_CLOSE_WAIT)) {
+                     flow->state == XAIOS_NETWORK_FLOW_CLOSE_WAIT ||
+                     flow->state == XAIOS_NETWORK_FLOW_FIN_WAIT_2 ||
+                     flow->state == XAIOS_NETWORK_FLOW_TIME_WAIT)) {
     flow->last_seen_ns = start;
     ++flow->packets_rx;
 
@@ -2068,21 +2317,87 @@ uint64_t network_stack_retransmit_tcp_flows(uint64_t now_ns) {
 uint64_t network_stack_expire_tcp_flows(uint64_t now_ns) {
   uint64_t expired = 0;
   for (uint32_t i = 0; i < NETWORK_TCP_CONNECTIONS; ++i) {
-    if (g_tcp_flows[i].state == XAIOS_NETWORK_FLOW_SYN_RECV &&
-        now_ns > g_tcp_flows[i].last_seen_ns &&
-        now_ns - g_tcp_flows[i].last_seen_ns >= NETWORK_TCP_SYN_TIMEOUT_NS) {
-      g_tcp_flows[i].state = XAIOS_NETWORK_FLOW_CLOSED;
+    network_tcp_flow_t *flow = &g_tcp_flows[i];
+
+    /* A2: TIME_WAIT → CLOSED after 60 seconds (2MSL) */
+    if (flow->state == XAIOS_NETWORK_FLOW_TIME_WAIT &&
+        now_ns > flow->last_seen_ns &&
+        now_ns - flow->last_seen_ns >= UINT64_C(60000000000)) {
+      flow->state = XAIOS_NETWORK_FLOW_CLOSED;
+      ++g_tcp_closed_count;
+      ++expired;
+      klog("network: tcp flow id=%u TIME_WAIT expired\n", flow->flow_id);
+    }
+
+    /* A2: FIN_WAIT → CLOSED if no response in 60s */
+    if (flow->state == XAIOS_NETWORK_FLOW_FIN_WAIT &&
+        now_ns > flow->last_seen_ns &&
+        now_ns - flow->last_seen_ns >= UINT64_C(60000000000)) {
+      flow->state = XAIOS_NETWORK_FLOW_CLOSED;
+      ++g_tcp_closed_count;
+      ++expired;
+      klog("network: tcp flow id=%u FIN_WAIT timeout\n", flow->flow_id);
+    }
+
+    /* SYN_RECV timeout */
+    if (flow->state == XAIOS_NETWORK_FLOW_SYN_RECV &&
+        now_ns > flow->last_seen_ns &&
+        now_ns - flow->last_seen_ns >= NETWORK_TCP_SYN_TIMEOUT_NS) {
+      flow->state = XAIOS_NETWORK_FLOW_CLOSED;
       ++g_tcp_timeout_count;
       ++g_tcp_closed_count;
       ++g_packet_drop_count;
       ++expired;
-      /* FIX-001: Decrement half-open counter on timeout */
       if (g_half_open_count > 0) {
         g_half_open_count--;
       }
       klog("network: tcp flow id=%u timeout queue=%u cell=%u\n",
-           g_tcp_flows[i].flow_id, g_tcp_flows[i].queue_id,
-           g_tcp_flows[i].cell_id);
+           flow->flow_id, flow->queue_id, flow->cell_id);
+      continue;
+    }
+
+    /* A3: Data retransmission for ESTABLISHED/CLOSE_WAIT flows */
+    if ((flow->state == XAIOS_NETWORK_FLOW_ESTABLISHED ||
+         flow->state == XAIOS_NETWORK_FLOW_CLOSE_WAIT) &&
+        flow->last_tx_ns > 0 &&
+        flow->in_flight > 0 &&
+        now_ns > flow->last_tx_ns &&
+        now_ns - flow->last_tx_ns >= flow->rto_ns) {
+      flow->retransmits++;
+      flow->rto_retries++;
+      /* Exponential backoff: double RTO, cap at 60s */
+      flow->rto_ns = (flow->rto_ns * 2);
+      if (flow->rto_ns > UINT64_C(60000000000)) {
+        flow->rto_ns = UINT64_C(60000000000);
+      }
+      /* Reset in_flight for retransmission */
+      flow->in_retransmit = 1;
+      flow->in_flight = 0;
+      /* Reduce ssthresh on timeout (Reno) */
+      flow->ssthresh = (flow->cwnd > 1) ? (flow->cwnd >> 1) : 1;
+      flow->cwnd = NETWORK_TCP_MSS; /* reset to 1 MSS */
+      ++g_tcp_retransmit_count;
+      ++expired;
+      klog("network: tcp flow id=%u retransmit=%u rto=%lu\n",
+           flow->flow_id, flow->retransmits, flow->rto_ns);
+    }
+
+    /* A7: TCP keepalive for established connections */
+    if (flow->state == XAIOS_NETWORK_FLOW_ESTABLISHED &&
+        flow->keepalive_last_tx_ns > 0 &&
+        now_ns > flow->keepalive_last_tx_ns &&
+        now_ns - flow->keepalive_last_tx_ns >= TCP_KEEPALIVE_INTERVAL_NS) {
+      if (flow->keepalive_probes_sent < TCP_KEEPALIVE_PROBES) {
+        flow->keepalive_probes_sent++;
+        flow->keepalive_last_tx_ns = now_ns;
+        flow->pending_ack = 1; /* trigger duplicate ACK as keepalive probe */
+      } else {
+        /* No response to keepalive probes — close connection */
+        flow->state = XAIOS_NETWORK_FLOW_CLOSED;
+        ++g_tcp_closed_count;
+        ++expired;
+        klog("network: tcp flow id=%u keepalive timeout\n", flow->flow_id);
+      }
     }
   }
   return expired;

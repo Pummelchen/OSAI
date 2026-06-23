@@ -1,11 +1,9 @@
 #include "ssh_protocol.h"
 #include "ssh_utils.h"
+#include "sftp_server.h"
 #include <xaios_user.h>
 
-/* MFS path max */
-#define XAIOS_MFS_PATH_MAX 256
-
-/* ---- SFTP Protocol Constants ---- */
+/* SFTP Protocol Constants */
 #define SFTP_VERSION 3
 #define SFTP_MAX_PACKET_SIZE 32768
 #define SFTP_MAX_HANDLES 64
@@ -58,16 +56,6 @@
 #define SSH_FXF_TRUNC   0x00000010
 #define SSH_FXF_EXCL    0x00000020
 
-/* SFTP File Handle */
-typedef struct {
-  uint32_t handle_id;
-  char path[XAIOS_MFS_PATH_MAX];
-  uint64_t offset;
-  int open_flags;
-  int is_open;
-  int is_dir;
-} sftp_file_handle_t;
-
 /* Global State */
 static sftp_file_handle_t g_sftp_handles[SFTP_MAX_HANDLES];
 static uint32_t g_next_handle_id = 1;
@@ -95,6 +83,7 @@ static sftp_file_handle_t *alloc_handle(void) {
       g_sftp_handles[i].is_open = 1;
       g_sftp_handles[i].handle_id = g_next_handle_id++;
       g_sftp_handles[i].offset = 0;
+      g_sftp_handles[i].fd = -1;
       g_sftp_handles[i].is_dir = 0;
       return &g_sftp_handles[i];
     }
@@ -225,6 +214,13 @@ static int handle_open(int sockfd, const uint8_t *data, uint32_t len) {
 
   ssh_mem_copy(handle->path, local_path, path_len + 1);
   handle->open_flags = fs_flags;
+
+  /* Actually open the file now */
+  handle->fd = xaios_fs_open(handle->path, fs_flags);
+  if (handle->fd < 0 && (fs_flags & XAIOS_MFS_OPEN_CREATE) != 0) {
+    handle->fd = xaios_fs_open(handle->path, XAIOS_MFS_OPEN_READ);
+  }
+
   return send_handle(sockfd, request_id, handle->handle_id);
 }
 
@@ -247,6 +243,10 @@ static int handle_close(int sockfd, const uint8_t *data, uint32_t len) {
   }
   
   /* Close handle */
+  if (handle->fd >= 0) {
+    xaios_fs_close(handle->fd);
+    handle->fd = -1;
+  }
   handle->is_open = 0;
   ssh_mem_zero(handle, sizeof(sftp_file_handle_t));
   
@@ -277,24 +277,25 @@ static int handle_read(int sockfd, const uint8_t *data, uint32_t len) {
   /* Read file data via userspace FS API */
   uint8_t *file_data = g_sftp_read_buf;
   uint32_t clamped_len = read_len < SFTP_MAX_PACKET_SIZE ? read_len : SFTP_MAX_PACKET_SIZE;
-  
-  int fd = xaios_fs_open(handle->path, XAIOS_MFS_OPEN_READ);
+
+  int fd = handle->fd;
   if (fd < 0) {
-    return send_status(sockfd, request_id, SSH_FX_NO_SUCH_FILE, "Cannot open file");
+    return send_status(sockfd, request_id, SSH_FX_FAILURE, "Handle not open");
   }
-  
+
   /* Seek to offset by reading and discarding */
-  uint8_t discard[256];
-  uint64_t remaining_offset = offset;
-  while (remaining_offset > 0) {
-    uint64_t skip = remaining_offset < 256 ? remaining_offset : 256;
-    int got = xaios_fs_read(fd, discard, skip);
-    if (got <= 0) break;
-    remaining_offset -= (uint64_t)got;
+  if (offset > 0) {
+    uint8_t discard[256];
+    uint64_t remaining_offset = offset;
+    while (remaining_offset > 0) {
+      uint64_t skip = remaining_offset < 256 ? remaining_offset : 256;
+      int got = xaios_fs_read(fd, discard, skip);
+      if (got <= 0) break;
+      remaining_offset -= (uint64_t)got;
+    }
   }
-  
+
   int bytes_read = xaios_fs_read(fd, file_data, clamped_len);
-  xaios_fs_close(fd);
   
   if (bytes_read <= 0) {
     return send_status(sockfd, request_id, SSH_FX_EOF, "End of file");
@@ -325,14 +326,12 @@ static int handle_write(int sockfd, const uint8_t *data, uint32_t len) {
   }
   
 /* Write file data via userspace FS API */
-  const uint8_t *write_data = data + 20 + handle_len;
+const uint8_t *write_data = data + 20 + handle_len;
   uint32_t clamped_len = write_len < (SFTP_MAX_PACKET_SIZE - 32) ? write_len : (SFTP_MAX_PACKET_SIZE - 32);
 
-  int fs_flags = handle->open_flags;
-  if (fs_flags == 0) fs_flags = XAIOS_MFS_OPEN_WRITE | XAIOS_MFS_OPEN_CREATE;
-  int fd = xaios_fs_open(handle->path, fs_flags);
+  int fd = handle->fd;
   if (fd < 0) {
-    return send_status(sockfd, request_id, SSH_FX_FAILURE, "Cannot open file for writing");
+    return send_status(sockfd, request_id, SSH_FX_FAILURE, "Handle not open");
   }
 
   /* Seek to offset if non-zero */
@@ -346,9 +345,8 @@ static int handle_write(int sockfd, const uint8_t *data, uint32_t len) {
       rem -= (uint64_t)got;
     }
   }
-  
+
   int written = xaios_fs_write(fd, write_data, clamped_len);
-  xaios_fs_close(fd);
   
   if (written < 0) {
     return send_status(sockfd, request_id, SSH_FX_FAILURE, "Write failed");

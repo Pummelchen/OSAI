@@ -15,6 +15,28 @@
 #define XAIOS_IPV4_GATEWAY   0x0a000202U /* 10.0.2.2 */
 #define XAIOS_IPV4_NETMASK   0xffffff00U /* 255.255.255.0 */
 
+/* B1: IP fragmentation/reassembly */
+#define XAIOS_IPV4_FRAG_TIMEOUT_NS UINT64_C(30000000000)
+#define XAIOS_IPV4_MAX_FRAG 16
+
+/* IP flag bits */
+#define XAIOS_IPV4_FLAG_MF    0x2000U  /* more fragments */
+#define XAIOS_IPV4_FLAG_DF    0x4000U  /* don't fragment */
+#define XAIOS_IPV4_OFFSET_MASK 0x1FFFU /* fragment offset (in 8-byte units) */
+
+/* Fragment buffer for reassembly tracking */
+typedef struct ipv4_frag_bucket {
+  uint32_t active;
+  uint32_t src_ip;
+  uint16_t id;
+  uint64_t first_arrival_ns;
+  uint32_t total_len;
+  uint8_t  frags[XAIOS_IPV4_MAX_FRAG][1520];
+  uint16_t frag_offsets[XAIOS_IPV4_MAX_FRAG];
+  uint16_t frag_lens[XAIOS_IPV4_MAX_FRAG];
+  uint32_t frag_count;
+} ipv4_frag_bucket_t;
+
 void ipv4_build_header(uint8_t *hdr, uint16_t total_length, uint8_t protocol,
                        uint32_t src_ip, uint32_t dst_ip);
 uint16_t ipv4_checksum(const uint8_t *data, uint32_t length);
@@ -22,6 +44,17 @@ uint16_t ipv4_pseudo_checksum(uint32_t src_ip, uint32_t dst_ip,
                                uint8_t protocol, uint16_t payload_length,
                                const uint8_t *payload, uint32_t payload_len);
 int ipv4_validate_incoming(const uint8_t *frame, uint64_t frame_len);
+
+/* B1: fragmentation/reassembly */
+xaios_status_t ipv4_fragment(const uint8_t *frame, uint64_t frame_len,
+                              uint8_t *out_buf, uint64_t *out_len,
+                              uint64_t out_capacity);
+int ipv4_is_fragment(const uint8_t *frame, uint64_t frame_len);
+xaios_status_t ipv4_reassemble(uint8_t *frame, uint64_t *frame_len);
+void ipv4_frag_self_test(void);
 void ipv4_self_test(void);
+
+/* Fragment reassembly init */
+void ipv4_frag_init(void);
 
 #endif

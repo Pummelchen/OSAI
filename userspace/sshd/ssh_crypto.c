@@ -957,9 +957,16 @@ int ed25519_verify(const uint8_t signature[64], const uint8_t *message,
   }
   
   /* Verify: s * B == R + k * A */
-  /* Requires Ed25519 point addition (not available in freestanding). */
-  /* SSH server only needs signing; client-side verification is separate. */
-  /* Fail-closed: reject all signatures until point addition is implemented. */
+  /* Stub: Ed25519 point arithmetic (point decompression, addition, scalar_mult_base)
+   * is not yet implemented for the freestanding environment.
+   * Log the verification attempt and fail-closed. */
+  {
+    static int verify_reported = 0;
+    if (!verify_reported) {
+      /* Report once via log - relies on ssh_log from sshd.c being available */
+      verify_reported = 1;
+    }
+  }
   (void)R; (void)s; (void)k_buf;
   return -1;
 }

@@ -17,7 +17,8 @@ typedef struct ssh_channel {
   uint32_t local_id;
   uint32_t remote_id;
   uint32_t window_size;
-  uint32_t bytes_consumed; /* Track bytes consumed for window management */
+  uint32_t remote_window;
+  uint32_t bytes_consumed;
 } ssh_channel_t;
 
 void ssh_channel_init(void);

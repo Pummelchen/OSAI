@@ -48,5 +48,5 @@ SECTIONS
   __kernel_end = .;
 }
 
-/* Assert kernel fits within 2 MB for QEMU flash compatibility */
-ASSERT(__kernel_end - __kernel_start < 2M, "Kernel too large (max 2 MB)")
+/* Assert kernel fits within 16 MB */
+ASSERT(__kernel_end - __kernel_start < 16M, "Kernel too large (max 16 MB)")

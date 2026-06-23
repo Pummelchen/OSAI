@@ -1,26 +1,69 @@
 #include "ssh_host_key.h"
 #include "ssh_crypto.h"
+#include "ssh_utils.h"
+#include <xaios_user.h>
+
+#define HOST_KEY_PATH "/etc/xaios_host_key"
 
 static uint8_t g_host_private_key[32];
 static uint8_t g_host_public_key[32];
 static uint32_t g_key_initialized = 0;
 
+/* Convert hex char to nibble */
+static int hex_to_nibble(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
+  if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+  return -1;
+}
+
+/* Convert binary to hex string */
+static void bin_to_hex(const uint8_t *bin, uint32_t bin_len, char *hex) {
+  static const char hex_chars[] = "0123456789abcdef";
+  for (uint32_t i = 0; i < bin_len; ++i) {
+    hex[i * 2] = hex_chars[(bin[i] >> 4) & 0xF];
+    hex[i * 2 + 1] = hex_chars[bin[i] & 0xF];
+  }
+  hex[bin_len * 2] = '\0';
+}
+
+/* Convert hex string to binary */
+static int hex_to_bin(const char *hex, uint8_t *bin, uint32_t bin_len) {
+  uint32_t hex_len = 0;
+  while (hex[hex_len]) ++hex_len;
+  if (hex_len != bin_len * 2) return -1;
+  for (uint32_t i = 0; i < bin_len; ++i) {
+    int hi = hex_to_nibble(hex[i * 2]);
+    int lo = hex_to_nibble(hex[i * 2 + 1]);
+    if (hi < 0 || lo < 0) return -1;
+    bin[i] = (uint8_t)((hi << 4) | lo);
+  }
+  return 0;
+}
+
 static void ensure_key(void) {
   if (!g_key_initialized) {
-#ifdef XAIOS_TEST_MODE
-    /* Baked-in test keypair (ONLY for automated testing) */
-    static const uint8_t test_key[32] = {
-      0x77,0x07,0x6d,0x0a,0x73,0x18,0xa5,0x7d,
-      0x3c,0x16,0xc1,0x72,0x51,0xb2,0x66,0x45,
-      0xdf,0x4c,0x2f,0x87,0xeb,0xc0,0x99,0x2a,
-      0xb1,0x77,0xfb,0xa5,0x1d,0xb9,0x2c,0x2a
-    };
-    for (uint32_t i = 0; i < 32; ++i) g_host_private_key[i] = test_key[i];
-#else
-    /* Generate ephemeral key from CSPRNG on first use */
+    /* Try to load persistent key from /etc/xaios_host_key */
+    char key_buf[128];
+    int ret = xaios_read_file(HOST_KEY_PATH, key_buf, sizeof(key_buf));
+
+    if (ret == 0 && hex_to_bin(key_buf, g_host_private_key, 32) == 0) {
+      /* Successfully loaded private key, compute public key */
+      curve25519_base(g_host_public_key, g_host_private_key);
+      g_key_initialized = 1;
+      return;
+    }
+
+    /* Generate new key pair */
     crypto_random_bytes(g_host_private_key, 32);
-#endif
     curve25519_base(g_host_public_key, g_host_private_key);
+
+    /* Save private key to persistent storage */
+    char hex_buf[65];
+    bin_to_hex(g_host_private_key, 32, hex_buf);
+    int save_ret = xaios_write_file(HOST_KEY_PATH, hex_buf);
+    (void)save_ret;
+
     g_key_initialized = 1;
   }
 }

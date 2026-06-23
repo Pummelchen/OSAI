@@ -4,7 +4,8 @@
 #include <xaios/status.h>
 #include <xaios/types.h>
 
-#define ROUTING_TABLE_SIZE 8U
+/* B5: Table size expanded 8→32 */
+#define ROUTING_TABLE_SIZE 32U
 
 typedef struct routing_entry {
   uint32_t dest_network; /* network address (host byte order) */
@@ -21,6 +22,10 @@ xaios_status_t routing_add(uint32_t dest_network, uint32_t netmask,
  * For direct routes, returns dest_ip itself.
  * For indirect routes, returns the gateway IP. */
 uint32_t routing_lookup(uint32_t dest_ip);
+
+/* B5: Route deletion and clear */
+xaios_status_t routing_remove(uint32_t dest_ip_net_order);
+void routing_clear(void);
 
 void routing_self_test(void);
 

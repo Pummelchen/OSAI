@@ -3,7 +3,18 @@
 
 #include <xaios/types.h>
 
-/* SFTP protocol handler */
+#define XAIOS_MFS_PATH_MAX 256U
+
+typedef struct {
+  uint32_t handle_id;
+  char path[XAIOS_MFS_PATH_MAX];
+  uint64_t offset;
+  int open_flags;
+  int fd;
+  int is_open;
+  int is_dir;
+} sftp_file_handle_t;
+
 int sftp_handle_message(int sockfd, const uint8_t *data, uint32_t len);
 int sftp_session_start(int sockfd, uint32_t channel_id);
 
