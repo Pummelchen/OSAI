@@ -1,15 +1,7 @@
 #include "ssh_crypto.h"
+#include "ssh_utils.h"
 
 /* ---- Utility ---- */
-static void mem_zero(void *p, uint64_t n) {
-  uint8_t *b = (uint8_t *)p;
-  for (uint64_t i = 0; i < n; ++i) b[i] = 0;
-}
-static void mem_copy(void *d, const void *s, uint64_t n) {
-  uint8_t *out = (uint8_t *)d;
-  const uint8_t *in = (const uint8_t *)s;
-  for (uint64_t i = 0; i < n; ++i) out[i] = in[i];
-}
 static uint32_t rotr32(uint32_t x, uint32_t n) {
   return (x >> n) | (x << (32U - n));
 }
@@ -78,10 +70,10 @@ void sha256_update(sha256_ctx_t *ctx, const uint8_t *data, uint64_t len) {
   if (buf_len > 0) {
     uint64_t fill = 64 - buf_len;
     if (len < fill) {
-      mem_copy(ctx->buffer + buf_len, data, len);
+      ssh_mem_copy(ctx->buffer + buf_len, data, len);
       return;
     }
-    mem_copy(ctx->buffer + buf_len, data, fill);
+    ssh_mem_copy(ctx->buffer + buf_len, data, fill);
     sha256_compress(ctx, ctx->buffer);
     i = fill;
   }
@@ -89,7 +81,7 @@ void sha256_update(sha256_ctx_t *ctx, const uint8_t *data, uint64_t len) {
     sha256_compress(ctx, data + i);
   }
   if (i < len) {
-    mem_copy(ctx->buffer, data + i, len - i);
+    ssh_mem_copy(ctx->buffer, data + i, len - i);
   }
 }
 
@@ -210,20 +202,20 @@ static void sha512_update(sha512_ctx_t *ctx, const uint8_t *data, uint64_t len) 
   
   uint64_t p1 = 128 - idx;
   if (len >= p1) {
-    mem_copy(ctx->buffer + idx, data, p1);
+    ssh_mem_copy(ctx->buffer + idx, data, p1);
     sha512_compress(ctx, ctx->buffer);
     for (uint64_t pos = p1; pos + 127 < len; pos += 128) {
       sha512_compress(ctx, data + pos);
     }
     idx = 0;
   } else {
-    mem_copy(ctx->buffer + idx, data, len);
+    ssh_mem_copy(ctx->buffer + idx, data, len);
     return;
   }
   
   uint64_t remaining = len - ((len - p1) % 128 + p1);
   if (remaining > 0) {
-    mem_copy(ctx->buffer + idx, data + (len - remaining), remaining);
+    ssh_mem_copy(ctx->buffer + idx, data + (len - remaining), remaining);
   }
 }
 
@@ -256,8 +248,8 @@ void hmac_sha256(const uint8_t *key, uint64_t key_len, const uint8_t *data,
     sha256_hash(key, key_len, tk);
     key = tk; key_len = 32;
   }
-  mem_zero(k_pad, 64);
-  mem_copy(k_pad, key, key_len);
+  ssh_mem_zero(k_pad, 64);
+  ssh_mem_copy(k_pad, key, key_len);
   for (uint32_t i = 0; i < 64; ++i) k_pad[i] ^= 0x36;
   sha256_ctx_t ctx;
   sha256_init(&ctx);
@@ -265,8 +257,8 @@ void hmac_sha256(const uint8_t *key, uint64_t key_len, const uint8_t *data,
   sha256_update(&ctx, data, data_len);
   uint8_t inner[32];
   sha256_final(&ctx, inner);
-  mem_zero(k_pad, 64);
-  mem_copy(k_pad, key, key_len);
+  ssh_mem_zero(k_pad, 64);
+  ssh_mem_copy(k_pad, key, key_len);
   for (uint32_t i = 0; i < 64; ++i) k_pad[i] ^= 0x5c;
   sha256_init(&ctx);
   sha256_update(&ctx, k_pad, 64);
@@ -322,7 +314,7 @@ static uint8_t xtime(uint8_t x) {
 void aes128_encrypt_block(const aes128_ctx_t *ctx, const uint8_t in[16],
                           uint8_t out[16]) {
   uint8_t s[16];
-  mem_copy(s, in, 16);
+  ssh_mem_copy(s, in, 16);
   /* AddRoundKey 0 */
   for (uint32_t i = 0; i < 4; ++i) {
     uint32_t k = ctx->round_keys[i];
@@ -354,13 +346,13 @@ void aes128_encrypt_block(const aes128_ctx_t *ctx, const uint8_t in[16],
       s[i*4+2] ^= (uint8_t)(k >> 8); s[i*4+3] ^= (uint8_t)k;
     }
   }
-  mem_copy(out, s, 16);
+  ssh_mem_copy(out, s, 16);
 }
 
 void aes128_ctr(const aes128_ctx_t *ctx, const uint8_t iv[16],
                 const uint8_t *input, uint8_t *output, uint64_t len) {
   uint8_t counter[16], keystream[16];
-  mem_copy(counter, iv, 16);
+  ssh_mem_copy(counter, iv, 16);
   uint64_t pos = 0;
   while (pos < len) {
     aes128_encrypt_block(ctx, counter, keystream);
@@ -521,7 +513,7 @@ static void fe_cswap(fe_t *a, fe_t *b, uint64_t swap) {
 void curve25519_scalar_mult(uint8_t out[32], const uint8_t scalar[32],
                             const uint8_t point[32]) {
   uint8_t e[32];
-  mem_copy(e, scalar, 32);
+  ssh_mem_copy(e, scalar, 32);
   e[0] &= 248; e[31] &= 127; e[31] |= 64; /* clamp */
 
   fe_t x1, x2, z2, x3, z3, tmp0, tmp1;
@@ -568,7 +560,7 @@ void curve25519_scalar_mult(uint8_t out[32], const uint8_t scalar[32],
 
 void curve25519_base(uint8_t out[32], const uint8_t scalar[32]) {
   uint8_t basepoint[32];
-  mem_zero(basepoint, 32);
+  ssh_mem_zero(basepoint, 32);
   basepoint[0] = 9;
   curve25519_scalar_mult(out, scalar, basepoint);
 }
@@ -726,7 +718,7 @@ static void scalar_add(uint8_t *r, const uint8_t *a, const uint8_t *b) {
 static void scalar_mul(uint8_t *r, const uint8_t *a, const uint8_t *b) {
   /* Simplified multiplication mod L using double-and-add */
   /* For production: use optimized Montgomery ladder */
-  mem_zero(r, 32);
+  ssh_mem_zero(r, 32);
   
   for (int32_t i = 255; i >= 0; i--) {
     /* Double */
@@ -814,8 +806,8 @@ static void scalar_reduce_64(uint8_t *r, const uint8_t *hash64) {
   };
   
   uint8_t low[32], high[32], tmp[32];
-  mem_copy(low, hash64, 32);
-  mem_copy(high, hash64 + 32, 32);
+  ssh_mem_copy(low, hash64, 32);
+  ssh_mem_copy(high, hash64 + 32, 32);
   
   /* Reduce both halves mod L */
   scalar_reduce(low);
@@ -830,7 +822,7 @@ static void scalar_reduce_64(uint8_t *r, const uint8_t *hash64) {
 void ed25519_keygen(uint8_t public_key[32], uint8_t private_key[32],
                     const uint8_t seed[32]) {
   if (seed) {
-    mem_copy(private_key, seed, 32);
+    ssh_mem_copy(private_key, seed, 32);
   } else {
     crypto_random_bytes(private_key, 32);
   }
@@ -872,9 +864,9 @@ int ed25519_sign(uint8_t signature[64], const uint8_t *message, uint32_t msg_len
   /* Compute r = SHA-512(prefix || message) */
   uint8_t r_buf[64];
   uint8_t r_hash_input[128];
-  mem_copy(r_hash_input, prefix, 32);
+  ssh_mem_copy(r_hash_input, prefix, 32);
   if (msg_len <= 96) {
-    mem_copy(r_hash_input + 32, message, msg_len);
+    ssh_mem_copy(r_hash_input + 32, message, msg_len);
     sha512_hash(r_hash_input, 32 + msg_len, r_buf);
   } else {
     /* For long messages, use streaming hash */
@@ -894,10 +886,10 @@ int ed25519_sign(uint8_t signature[64], const uint8_t *message, uint32_t msg_len
   /* Compute k = SHA-512(R || public_key || message) */
   uint8_t k_buf[64];
   uint8_t k_hash_input[128];
-  mem_copy(k_hash_input, R, 32);
-  mem_copy(k_hash_input + 32, public_key, 32);
+  ssh_mem_copy(k_hash_input, R, 32);
+  ssh_mem_copy(k_hash_input + 32, public_key, 32);
   if (msg_len <= 64) {
-    mem_copy(k_hash_input + 64, message, msg_len);
+    ssh_mem_copy(k_hash_input + 64, message, msg_len);
     sha512_hash(k_hash_input, 64 + msg_len, k_buf);
   } else {
     sha512_ctx_t ctx;
@@ -919,13 +911,13 @@ int ed25519_sign(uint8_t signature[64], const uint8_t *message, uint32_t msg_len
   scalar_add(s, r_buf, k_times_scalar);
   
   /* Signature = (R, s) */
-  mem_copy(signature, R, 32);
-  mem_copy(signature + 32, s, 32);
+  ssh_mem_copy(signature, R, 32);
+  ssh_mem_copy(signature + 32, s, 32);
   
   /* Zero sensitive data */
-  mem_zero(hash, 64);
-  mem_zero(r_buf, 64);
-  mem_zero(k_buf, 64);
+  ssh_mem_zero(hash, 64);
+  ssh_mem_zero(r_buf, 64);
+  ssh_mem_zero(k_buf, 64);
   
   return 0;
 }
@@ -950,10 +942,10 @@ int ed25519_verify(const uint8_t signature[64], const uint8_t *message,
   /* Compute k = SHA-512(R || public_key || message) */
   uint8_t k_buf[64];
   uint8_t k_hash_input[128];
-  mem_copy(k_hash_input, R, 32);
-  mem_copy(k_hash_input + 32, public_key, 32);
+  ssh_mem_copy(k_hash_input, R, 32);
+  ssh_mem_copy(k_hash_input + 32, public_key, 32);
   if (msg_len <= 64) {
-    mem_copy(k_hash_input + 64, message, msg_len);
+    ssh_mem_copy(k_hash_input + 64, message, msg_len);
     sha512_hash(k_hash_input, 64 + msg_len, k_buf);
   } else {
     sha512_ctx_t ctx;

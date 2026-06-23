@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import hashlib
 import pathlib
 import struct
 import sys
@@ -16,8 +17,6 @@ FLAG_READ_ONLY = 1
 ENTRY_FLAG_EXECUTABLE = 1
 ENTRY_FLAG_MANIFEST = 2
 ENTRY_TYPE_FILE = 1
-FNV1A64_OFFSET = 0xCBF29CE484222325
-FNV1A64_PRIME = 0x100000001B3
 CPU_AI_MAGIC = 0x4941494D
 CPU_AI_VERSION = 1
 CPU_AI_HEADER_BYTES = 80
@@ -31,12 +30,8 @@ def align(value: int, alignment: int) -> int:
     return (value + alignment - 1) & ~(alignment - 1)
 
 
-def fnv1a64(content: bytes) -> int:
-    value = FNV1A64_OFFSET
-    for byte in content:
-        value ^= byte
-        value = (value * FNV1A64_PRIME) & 0xFFFFFFFFFFFFFFFF
-    return value
+def sha256_hash(content: bytes) -> int:
+    return int.from_bytes(hashlib.sha256(content).digest()[:8], "little")
 
 
 def create_cpu_ai_model() -> bytes:
@@ -44,7 +39,7 @@ def create_cpu_ai_model() -> bytes:
     tokenizer = bytes(range(256))
     weights_offset = CPU_AI_HEADER_BYTES
     tokenizer_offset = weights_offset + len(weights)
-    payload_hash = fnv1a64(weights + tokenizer)
+    payload_hash = sha256_hash(weights + tokenizer)
     manifest = struct.pack(
         "<IHHHHIIIQQQQQQBB6s",
         CPU_AI_MAGIC,
@@ -118,7 +113,7 @@ def main() -> int:
     payloads = []
     for path, content, flags in files:
         offset = align(offset, SECTOR_SIZE)
-        entries.append(write_entry(path, offset, len(content), flags, fnv1a64(content)))
+        entries.append(write_entry(path, offset, len(content), flags, sha256_hash(content)))
         payloads.append((offset, content))
         offset += len(content)
 

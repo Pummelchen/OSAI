@@ -11,6 +11,7 @@
 #define GICD_IIDR        0x0008U
 #define GICD_IGROUPR0    0x0080U
 #define GICD_ISENABLER0  0x0100U
+#define GICD_ICENABLER0  0x0180U
 #define GICD_IPRIORITYR0 0x0400U
 
 /* GIC Redistributor registers (per-CPU frame 0) */
@@ -19,6 +20,7 @@
 #define GICR_TYPER        0x0008U
 #define GICR_WAKER        0x0014U
 #define GICR_ISENABLER0   0x0100U
+#define GICR_ICENABLER0   0x0180U
 #define GICR_IPRIORITYR0  0x0400U
 
 /* GIC CPU Interface system registers */
@@ -139,13 +141,17 @@ void gic_disable_full(void) {
   }
   /* Mask IRQs at CPU level */
   __asm__ volatile("msr daifset, #2");
+  /* Reset priority mask to allow all */
+  __asm__ volatile("msr " ICC_PMR_EL1 ", %0" : : "r"((uint64_t)0U));
   /* Disable CPU interface */
   __asm__ volatile("msr " ICC_IGRPEN1_EL1 ", %0" : : "r"((uint64_t)0U));
   __asm__ volatile("isb");
   /* Disable timer interrupt in distributor */
-  mmio_write32(QEMU_VIRT_GICD_BASE + 0x180U, 0U, (1U << TIMER_PPI_INTID));
+  mmio_write32(QEMU_VIRT_GICD_BASE, GICD_ICENABLER0, (1U << TIMER_PPI_INTID));
+  /* Disable redistributor PPI */
+  mmio_write32(QEMU_VIRT_GICR_BASE, GICR_ICENABLER0, (1U << TIMER_PPI_INTID));
   g_gic_full_init = 0;
-  klog("gic: full mode disabled\n");
+  klog("gic: full mode disabled (PPI disabled, PMR reset)\n");
 }
 
 const xaios_gic_info_t *gic_info(void) {

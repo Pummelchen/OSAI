@@ -1,4 +1,5 @@
 #include "ssh_protocol.h"
+#include "ssh_utils.h"
 #include <xaios_user.h>
 
 /* MFS path max */
@@ -62,6 +63,7 @@ typedef struct {
   uint32_t handle_id;
   char path[XAIOS_MFS_PATH_MAX];
   uint64_t offset;
+  int open_flags;
   int is_open;
   int is_dir;
 } sftp_file_handle_t;
@@ -69,21 +71,6 @@ typedef struct {
 /* Global State */
 static sftp_file_handle_t g_sftp_handles[SFTP_MAX_HANDLES];
 static uint32_t g_next_handle_id = 1;
-
-/* ---- Utility Functions ---- */
-static void mem_copy(void *d, const void *s, uint64_t n) {
-  uint8_t *o = (uint8_t *)d; const uint8_t *i = (const uint8_t *)s;
-  for (uint64_t j = 0; j < n; ++j) o[j] = i[j];
-}
-
-static void mem_zero(void *p, uint64_t n) {
-  uint8_t *b = (uint8_t *)p;
-  for (uint64_t i = 0; i < n; ++i) b[i] = 0;
-}
-
-static uint32_t str_len(const char *s) {
-  uint32_t n = 0; while (s[n]) ++n; return n;
-}
 
 /* Validate path - prevent directory traversal */
 static int validate_path(const char *path) {
@@ -127,13 +114,11 @@ static sftp_file_handle_t *find_handle(uint32_t handle_id) {
 
 /* ---- Packet Parsing ---- */
 static uint32_t read_u32(const uint8_t *p) {
-  return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
-         ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+  return ssh_read_u32_be(p);
 }
 
 static void write_u32(uint8_t *p, uint32_t v) {
-  p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16);
-  p[2] = (uint8_t)(v >> 8);  p[3] = (uint8_t)v;
+  ssh_write_u32_be(p, v);
 }
 
 static void write_u64(uint8_t *p, uint64_t v) {
@@ -157,10 +142,10 @@ static int send_status(int sockfd, uint32_t request_id, uint32_t status_code,
   write_u32(buf + pos, status_code); pos += 4;
   
   /* Error message */
-  uint32_t msg_len = message ? str_len(message) : 0;
+  uint32_t msg_len = message ? ssh_str_len(message) : 0;
   write_u32(buf + pos, msg_len); pos += 4;
   if (msg_len > 0) {
-    mem_copy(buf + pos, message, msg_len);
+    ssh_mem_copy(buf + pos, message, msg_len);
     pos += msg_len;
   }
   
@@ -184,15 +169,20 @@ static int send_handle(int sockfd, uint32_t request_id, uint32_t handle_id) {
   return ssh_packet_write_encrypted(sockfd, buf, pos);
 }
 
+/* Static buffers to avoid 32KB stack allocations (Fix 5c) */
+static uint8_t g_sftp_send_buf[SFTP_MAX_PACKET_SIZE];
+static uint8_t g_sftp_read_buf[SFTP_MAX_PACKET_SIZE];
+
 static int send_data(int sockfd, uint32_t request_id, const uint8_t *data,
                      uint32_t data_len) {
-  uint8_t buf[SFTP_MAX_PACKET_SIZE];
+  if (data_len + 9 > SFTP_MAX_PACKET_SIZE) return -1;
+  uint8_t *buf = g_sftp_send_buf;
   uint32_t pos = 0;
   
   buf[pos++] = SSH_FXP_DATA;
   write_u32(buf + pos, request_id); pos += 4;
   write_u32(buf + pos, data_len); pos += 4;
-  mem_copy(buf + pos, data, data_len); pos += data_len;
+  ssh_mem_copy(buf + pos, data, data_len); pos += data_len;
   
   return ssh_packet_write_encrypted(sockfd, buf, pos);
 }
@@ -211,7 +201,7 @@ static int handle_open(int sockfd, const uint8_t *data, uint32_t len) {
   
   /* Validate path */
   char local_path[XAIOS_MFS_PATH_MAX];
-  mem_copy(local_path, path, path_len);
+  ssh_mem_copy(local_path, path, path_len);
   local_path[path_len] = '\0';
   
   if (validate_path(local_path) != 0) {
@@ -220,17 +210,21 @@ static int handle_open(int sockfd, const uint8_t *data, uint32_t len) {
   
   /* Parse flags */
   uint32_t flags = read_u32(data + 8 + path_len);
-  (void)flags; /* TODO(XAIOS-51): Use flags for permission checks */
+  int fs_flags = 0;
+  if ((flags & SSH_FXF_READ) != 0)  fs_flags |= XAIOS_MFS_OPEN_READ;
+  if ((flags & SSH_FXF_WRITE) != 0) fs_flags |= XAIOS_MFS_OPEN_WRITE;
+  if ((flags & SSH_FXF_CREAT) != 0) fs_flags |= XAIOS_MFS_OPEN_CREATE;
+  if ((flags & SSH_FXF_TRUNC) != 0) fs_flags |= XAIOS_MFS_OPEN_TRUNCATE;
+  if (fs_flags == 0) fs_flags = XAIOS_MFS_OPEN_READ;
   
-  /* Allocate handle */
+/* Allocate handle */
   sftp_file_handle_t *handle = alloc_handle();
   if (handle == 0) {
     return send_status(sockfd, request_id, SSH_FX_FAILURE, "No handles available");
   }
-  
-  mem_copy(handle->path, local_path, path_len + 1);
-  
-  /* TODO(XAIOS-51): Add per-path permission checks before opening files */
+
+  ssh_mem_copy(handle->path, local_path, path_len + 1);
+  handle->open_flags = fs_flags;
   return send_handle(sockfd, request_id, handle->handle_id);
 }
 
@@ -254,7 +248,7 @@ static int handle_close(int sockfd, const uint8_t *data, uint32_t len) {
   
   /* Close handle */
   handle->is_open = 0;
-  mem_zero(handle, sizeof(sftp_file_handle_t));
+  ssh_mem_zero(handle, sizeof(sftp_file_handle_t));
   
   return send_status(sockfd, request_id, SSH_FX_OK, "Success");
 }
@@ -281,7 +275,7 @@ static int handle_read(int sockfd, const uint8_t *data, uint32_t len) {
   }
   
   /* Read file data via userspace FS API */
-  uint8_t file_data[SFTP_MAX_PACKET_SIZE];
+  uint8_t *file_data = g_sftp_read_buf;
   uint32_t clamped_len = read_len < SFTP_MAX_PACKET_SIZE ? read_len : SFTP_MAX_PACKET_SIZE;
   
   int fd = xaios_fs_open(handle->path, XAIOS_MFS_OPEN_READ);
@@ -323,7 +317,6 @@ static int handle_write(int sockfd, const uint8_t *data, uint32_t len) {
   uint32_t handle_id = read_u32((const uint8_t *)handle_data);
   uint64_t offset = read_u32(data + 8 + handle_len) | 
                     ((uint64_t)read_u32(data + 12 + handle_len) << 32);
-  (void)offset; /* TODO(XAIOS-51): Use offset for seek-based writes */
   uint32_t write_len = read_u32(data + 16 + handle_len);
   
   sftp_file_handle_t *handle = find_handle(handle_id);
@@ -331,14 +324,27 @@ static int handle_write(int sockfd, const uint8_t *data, uint32_t len) {
     return send_status(sockfd, request_id, SSH_FX_BAD_MESSAGE, "Invalid handle ID");
   }
   
-  /* Write file data via userspace FS API */
+/* Write file data via userspace FS API */
   const uint8_t *write_data = data + 20 + handle_len;
   uint32_t clamped_len = write_len < (SFTP_MAX_PACKET_SIZE - 32) ? write_len : (SFTP_MAX_PACKET_SIZE - 32);
-  
-  int fd = xaios_fs_open(handle->path,
-      XAIOS_MFS_OPEN_WRITE | XAIOS_MFS_OPEN_CREATE);
+
+  int fs_flags = handle->open_flags;
+  if (fs_flags == 0) fs_flags = XAIOS_MFS_OPEN_WRITE | XAIOS_MFS_OPEN_CREATE;
+  int fd = xaios_fs_open(handle->path, fs_flags);
   if (fd < 0) {
     return send_status(sockfd, request_id, SSH_FX_FAILURE, "Cannot open file for writing");
+  }
+
+  /* Seek to offset if non-zero */
+  if (offset > 0) {
+    uint8_t discard[256];
+    uint64_t rem = offset;
+    while (rem > 0) {
+      uint64_t skip = rem < 256 ? rem : 256;
+      int got = xaios_fs_read(fd, discard, skip);
+      if (got <= 0) break;
+      rem -= (uint64_t)got;
+    }
   }
   
   int written = xaios_fs_write(fd, write_data, clamped_len);
@@ -363,7 +369,7 @@ static int handle_opendir(int sockfd, const uint8_t *data, uint32_t len) {
   }
   
   char local_path[XAIOS_MFS_PATH_MAX];
-  mem_copy(local_path, path, path_len);
+  ssh_mem_copy(local_path, path, path_len);
   local_path[path_len] = '\0';
   
   if (validate_path(local_path) != 0) {
@@ -376,7 +382,7 @@ static int handle_opendir(int sockfd, const uint8_t *data, uint32_t len) {
     return send_status(sockfd, request_id, SSH_FX_FAILURE, "No handles available");
   }
   
-  mem_copy(handle->path, local_path, path_len + 1);
+  ssh_mem_copy(handle->path, local_path, path_len + 1);
   handle->is_dir = 1;
   
   return send_handle(sockfd, request_id, handle->handle_id);
@@ -431,10 +437,10 @@ static int handle_readdir(int sockfd, const uint8_t *data, uint32_t len) {
       if (list_buf[i] == '\n' && name_len == 0) { name_start = i + 1; continue; }
       /* filename */
       write_u32(resp_buf + rpos, name_len); rpos += 4;
-      mem_copy(resp_buf + rpos, list_buf + name_start, name_len); rpos += name_len;
+      ssh_mem_copy(resp_buf + rpos, list_buf + name_start, name_len); rpos += name_len;
       /* longname (same as filename for simplicity) */
       write_u32(resp_buf + rpos, name_len); rpos += 4;
-      mem_copy(resp_buf + rpos, list_buf + name_start, name_len); rpos += name_len;
+      ssh_mem_copy(resp_buf + rpos, list_buf + name_start, name_len); rpos += name_len;
       /* attrs: flags=0 (no attributes) */
       write_u32(resp_buf + rpos, 0); rpos += 4;
       name_start = i + 1;
@@ -456,7 +462,7 @@ static int handle_mkdir(int sockfd, const uint8_t *data, uint32_t len) {
   }
   
   char local_path[XAIOS_MFS_PATH_MAX];
-  mem_copy(local_path, path, path_len);
+  ssh_mem_copy(local_path, path, path_len);
   local_path[path_len] = '\0';
   
   if (validate_path(local_path) != 0) {
@@ -483,7 +489,7 @@ static int handle_remove(int sockfd, const uint8_t *data, uint32_t len) {
   }
   
   char local_path[XAIOS_MFS_PATH_MAX];
-  mem_copy(local_path, path, path_len);
+  ssh_mem_copy(local_path, path, path_len);
   local_path[path_len] = '\0';
   
   if (validate_path(local_path) != 0) {
@@ -515,10 +521,10 @@ static int handle_rename(int sockfd, const uint8_t *data, uint32_t len) {
     return send_status(sockfd, request_id, SSH_FX_FAILURE, "Path too long");
   }
   
-  mem_copy(old_local, old_path, old_len);
+  ssh_mem_copy(old_local, old_path, old_len);
   old_local[old_len] = '\0';
   
-  mem_copy(new_local, new_path, new_len);
+  ssh_mem_copy(new_local, new_path, new_len);
   new_local[new_len] = '\0';
   
   if (validate_path(old_local) != 0 || validate_path(new_local) != 0) {
@@ -545,7 +551,7 @@ static int handle_stat(int sockfd, const uint8_t *data, uint32_t len) {
   }
   
   char local_path[XAIOS_MFS_PATH_MAX];
-  mem_copy(local_path, path, path_len);
+  ssh_mem_copy(local_path, path, path_len);
   local_path[path_len] = '\0';
   
   if (validate_path(local_path) != 0) {

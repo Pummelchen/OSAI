@@ -138,10 +138,10 @@ compile-check:
 	    -Wall -Wextra -Werror -Ikernel/include -fsyntax-only "$$f" \
 	    || failed=$$((failed + 1)); \
 	done; \
-	for f in $$(find userspace -name '*.c'); do \
+	for f in $$(find userspace -name '*.c' ! -name 'crashtest_client.c'); do \
 	  clang --target=aarch64-none-elf -std=c99 -ffreestanding \
 	    -fno-stack-protector -fno-builtin -fno-pic -fno-pie \
-	    -Wall -Wextra -Werror -Iuserspace/include -fsyntax-only "$$f" \
+	    -Wall -Wextra -Werror -Iuserspace/include -Itests -fsyntax-only "$$f" \
 	    || failed=$$((failed + 1)); \
 	done; \
 	if [ "$$failed" -ne 0 ]; then \

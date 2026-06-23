@@ -6,6 +6,16 @@ BUILD_DIR="$ROOT_DIR/build"
 EFI_BUILD_DIR="$BUILD_DIR/uefi"
 KERNEL_BUILD_DIR="$BUILD_DIR/kernel"
 INIT_BUILD_DIR="$BUILD_DIR/init"
+
+# Cleanup trap: remove partial build artifacts on failure
+cleanup() {
+  if [ $? -ne 0 ]; then
+    printf '%s\n' "Build failed, cleaning up partial artifacts..." >&2
+    rm -rf "$BUILD_DIR"
+    printf '%s\n' "Cleaned up $BUILD_DIR" >&2
+  fi
+}
+trap cleanup EXIT
 IMAGE_PATH="${XAIOS_AARCH64_IMAGE:-$BUILD_DIR/xaios-aarch64.img}"
 TEST_BLOCK_IMAGE="${XAIOS_TEST_BLOCK_IMAGE:-$BUILD_DIR/xaios-virtio-test.img}"
 PERSISTENT_IMAGE="${XAIOS_PERSISTENT_IMAGE:-$BUILD_DIR/xaios-persistent.img}"

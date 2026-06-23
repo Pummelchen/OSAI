@@ -336,6 +336,14 @@ xaios_status_t security_reject_credential_material_buffer(const char *text,
   return XAIOS_OK;
 }
 
+/*
+ * Update signature validation (dev-mode only).
+ * In QEMU dev builds, validates format (prefix, generation, SHA-256 hex,
+ * key hex) but does NOT perform Ed25519 cryptographic verification.
+ * Any well-formed 64-hex-char signature with a valid generation counter
+ * is accepted. Key "XAIOS-QEMU-DEV-PUBKEY" is hardcoded.
+ * For production: replace with real Ed25519 verification.
+ */
 xaios_status_t security_validate_update_signature(const char *signature) {
   uint64_t generation = 0;
   if (security_reject_credential_material(signature) != XAIOS_OK) {

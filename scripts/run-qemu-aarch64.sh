@@ -52,7 +52,11 @@ find_aavmf_firmware() {
     /usr/local/share/qemu/edk2-aarch64-code.fd \
     /usr/local/share/qemu/QEMU_EFI.fd \
     /usr/local/share/edk2/aarch64/QEMU_EFI.fd \
-    /usr/local/share/edk2/aarch64/QEMU_EFI-pflash.raw
+    /usr/local/share/edk2/aarch64/QEMU_EFI-pflash.raw \
+    /usr/share/AAVMF/AAVMF_CODE.fd \
+    /usr/share/AAVMF/AAVMF32_CODE.fd \
+    /usr/share/qemu-efi-aarch64/QEMU_EFI.fd \
+    /usr/share/edk2/aarch64/QEMU_EFI.fd
   do
     if [ -f "$candidate" ]; then
       printf '%s\n' "$candidate"

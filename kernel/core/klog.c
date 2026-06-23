@@ -78,14 +78,7 @@ static void klog_u64(uint64_t value, unsigned base) {
   }
 }
 
-void klog(const char *fmt, ...) {
-  if (!xaios_spin_trylock(&g_klog_lock)) {
-    return; /* Another CPU is logging, drop to avoid interleaved output */
-  }
-  
-  va_list args;
-  va_start(args, fmt);
-
+static void klog_vformat(const char *fmt, va_list args) {
   for (const char *p = fmt; *p != '\0'; ++p) {
     if (*p != '%') {
       klog_char(*p);
@@ -120,7 +113,16 @@ void klog(const char *fmt, ...) {
       klog_char(*p);
     }
   }
+}
 
+void klog(const char *fmt, ...) {
+  if (!xaios_spin_trylock(&g_klog_lock)) {
+    return;
+  }
+
+  va_list args;
+  va_start(args, fmt);
+  klog_vformat(fmt, args);
   klog_line_flush();
   va_end(args);
   xaios_spin_unlock(&g_klog_lock);
@@ -150,42 +152,7 @@ void klog_level(xaios_log_level_t level, const char *fmt, ...) {
 
   va_list args;
   va_start(args, fmt);
-
-  for (const char *p = fmt; *p != '\0'; ++p) {
-    if (*p != '%') {
-      klog_char(*p);
-      continue;
-    }
-
-    ++p;
-    if (*p == '\0') {
-      break;
-    }
-
-    if (*p == 's') {
-      const char *s = va_arg(args, const char *);
-      klog_puts(s == 0 ? "(null)" : s);
-    } else if (*p == 'u') {
-      klog_u64((uint64_t)va_arg(args, unsigned), 10);
-    } else if (*p == 'x') {
-      klog_u64((uint64_t)va_arg(args, unsigned), 16);
-    } else if (*p == 'p') {
-      klog_puts("0x");
-      klog_u64((uint64_t)(uintptr_t)va_arg(args, void *), 16);
-    } else if (*p == 'l' && p[1] == 'u') {
-      ++p;
-      klog_u64(va_arg(args, uint64_t), 10);
-    } else if (*p == 'l' && p[1] == 'x') {
-      ++p;
-      klog_u64(va_arg(args, uint64_t), 16);
-    } else if (*p == '%') {
-      klog_char('%');
-    } else {
-      klog_char('%');
-      klog_char(*p);
-    }
-  }
-
+  klog_vformat(fmt, args);
   klog_line_flush();
   va_end(args);
 

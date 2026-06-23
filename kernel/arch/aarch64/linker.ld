@@ -47,3 +47,6 @@ SECTIONS
   . = ALIGN(0x1000);
   __kernel_end = .;
 }
+
+/* Assert kernel fits within 2 MB for QEMU flash compatibility */
+ASSERT(__kernel_end - __kernel_start < 2M, "Kernel too large (max 2 MB)")
