@@ -27,7 +27,7 @@ static uint64_t g_context_switch_count;
 static uint64_t g_yield_count;
 static uint64_t g_steal_count;
 static uint32_t g_initialized;
-static uint32_t g_lock_depth;
+static uint32_t g_lock_depth_per_cpu[XAIOS_MAX_CPUS];
 
 /* Periodic load balancing counter */
 static uint32_t g_balance_counter;
@@ -390,7 +390,7 @@ void scheduler_init(void) {
   g_yield_count = 0;
   g_steal_count = 0;
   g_balance_counter = 0;
-  g_lock_depth = 0;
+  for (uint32_t i = 0; i < XAIOS_MAX_CPUS; ++i) { g_lock_depth_per_cpu[i] = 0; }
   g_initialized = 1;
 
   klog("scheduler: hierarchical SMP initialized max_tasks=%u per_cpu_rq=%u "
@@ -497,21 +497,24 @@ xaios_context_frame_t *scheduler_task_frame(uint32_t pid) {
   return &task->frame;
 }
 
-void scheduler_lock(void) { ++g_lock_depth; }
+void scheduler_lock(void) {
+  uint32_t cpu = smp_cpu_id();
+  if (cpu < XAIOS_MAX_CPUS) { ++g_lock_depth_per_cpu[cpu]; }
+}
 
 void scheduler_unlock(void) {
-  if (g_lock_depth > 0) {
-    --g_lock_depth;
+  uint32_t cpu = smp_cpu_id();
+  if (cpu < XAIOS_MAX_CPUS && g_lock_depth_per_cpu[cpu] > 0) {
+    --g_lock_depth_per_cpu[cpu];
   }
 }
 
 void scheduler_tick(xaios_context_frame_t *irq_frame) {
-  if (g_initialized == 0 || g_lock_depth > 0) {
+  if (g_initialized == 0) {
     return;
   }
-
   uint32_t cpu = smp_cpu_id();
-  if (cpu >= XAIOS_MAX_CPUS) {
+  if (cpu >= XAIOS_MAX_CPUS || g_lock_depth_per_cpu[cpu] > 0) {
     return;
   }
 

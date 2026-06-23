@@ -112,16 +112,25 @@ static void init_encryption(const uint8_t *shared_secret, uint32_t secret_len,
 }
 
 /* Encrypt and send a packet with HMAC-SHA256 integrity (RFC 4253 Section 6) */
+/* Uses static buffers to avoid 105KB stack allocation (SSH_MAX_PACKET_SIZE = 35000).
+ * Single-threaded SSH makes this safe; when threading is added, buffer must be per-thread. */
+static uint8_t g_encrypt_packet[SSH_MAX_PACKET_SIZE];
+static uint8_t g_encrypt_output[SSH_MAX_PACKET_SIZE];
+static uint8_t g_mac_input[8 + SSH_MAX_PACKET_SIZE];
+
 int ssh_packet_write_encrypted(int sockfd, const uint8_t *data, uint32_t len) {
   if (!g_crypto.enabled) {
     return ssh_packet_write(sockfd, data, len);
   }
   
-  /* Build packet with padding */
-  uint8_t packet[SSH_MAX_PACKET_SIZE];
+  if (len > SSH_MAX_PACKET_SIZE - 64) {
+    return -1; /* Packet too large */
+  }
+  
+  uint8_t *packet = g_encrypt_packet;
   uint32_t padding_len = 8; /* Minimum padding */
   uint32_t payload_len = len;
-  uint32_t packet_len = 1 + payload_len + padding_len; /* packet_length + payload + padding */
+  uint32_t packet_len = 1 + payload_len + padding_len;
   
   ssh_write_u32_be(packet, packet_len);
   packet[4] = padding_len;
@@ -132,24 +141,23 @@ int ssh_packet_write_encrypted(int sockfd, const uint8_t *data, uint32_t len) {
   
   /* Encrypt packet_length + padding_length + payload + padding */
   uint32_t encrypt_len = 4 + 1 + payload_len + padding_len;
-  uint8_t encrypted[SSH_MAX_PACKET_SIZE];
+  uint8_t *encrypted = g_encrypt_output;
   
   /* CTR mode: increment IV for each block */
   uint8_t iv[16];
   mem_copy(iv, g_crypto.encrypt_iv, 16);
-  /* Add sequence number to IV for uniqueness */
   ((uint64_t*)iv)[0] ^= g_crypto.encrypt_seq;
   
   aes128_ctr(&g_crypto.encrypt_ctx, iv, packet, encrypted, encrypt_len);
   
   /* Compute HMAC-SHA256 over (sequence_number || encrypted_packet) */
-  uint8_t mac_input[8 + SSH_MAX_PACKET_SIZE];
-  ssh_write_u32_be(mac_input, (uint32_t)(g_crypto.encrypt_seq >> 32));
-  ssh_write_u32_be(mac_input + 4, (uint32_t)(g_crypto.encrypt_seq & 0xFFFFFFFF));
-  mem_copy(mac_input + 8, encrypted, encrypt_len);
+  uint8_t *mac_buf = g_mac_input;
+  ssh_write_u32_be(mac_buf, (uint32_t)(g_crypto.encrypt_seq >> 32));
+  ssh_write_u32_be(mac_buf + 4, (uint32_t)(g_crypto.encrypt_seq & 0xFFFFFFFF));
+  mem_copy(mac_buf + 8, encrypted, encrypt_len);
   
   uint8_t mac[32];
-  hmac_sha256(g_crypto.encrypt_mac_key, 32, mac_input, 8 + encrypt_len, mac);
+  hmac_sha256(g_crypto.encrypt_mac_key, 32, mac_buf, 8 + encrypt_len, mac);
   
   /* Send: [encrypted_data][mac] */
   u64 sent = 0;
@@ -161,6 +169,11 @@ int ssh_packet_write_encrypted(int sockfd, const uint8_t *data, uint32_t len) {
 }
 
 /* Receive and decrypt a packet with HMAC-SHA256 verification */
+/* Single static buffer for read path to avoid 3xSSH_MAX_PACKET_SIZE stack allocation */
+static uint8_t g_decrypt_rest[SSH_MAX_PACKET_SIZE];
+static uint8_t g_decrypt_mac_input[8 + SSH_MAX_PACKET_SIZE];
+static uint8_t g_decrypt_full_packet[SSH_MAX_PACKET_SIZE];
+
 int ssh_packet_read_encrypted(int sockfd, ssh_packet_t *out_pkt) {
   if (!g_crypto.enabled) {
     return ssh_packet_read(sockfd, out_pkt);
@@ -186,8 +199,8 @@ int ssh_packet_read_encrypted(int sockfd, ssh_packet_t *out_pkt) {
   if (packet_len > SSH_MAX_PACKET_SIZE || padding_len > packet_len) return -1;
   
   /* Read rest of packet + MAC */
-  uint32_t remaining = packet_len + 4 - 16; /* +4 for packet_length field itself */
-  uint8_t rest[SSH_MAX_PACKET_SIZE];
+  uint32_t remaining = packet_len + 4 - 16;
+  uint8_t *rest = g_decrypt_rest;
   if (remaining > 0 && xaios_net_recv(sockfd, rest, remaining, &recv_bytes) != 0) return -1;
   
   /* Read MAC (32 bytes) */
@@ -198,7 +211,6 @@ int ssh_packet_read_encrypted(int sockfd, ssh_packet_t *out_pkt) {
   if (remaining > 0) {
     uint8_t iv2[16];
     mem_copy(iv2, g_crypto.decrypt_iv, 16);
-    /* Increment CTR counter: header used block 0, rest starts at block 1 */
     uint32_t ctr = 1;
     for (int i = 15; i >= 12 && ctr > 0; i--) {
       uint32_t sum = iv2[i] + (ctr & 0xFF);
@@ -210,7 +222,7 @@ int ssh_packet_read_encrypted(int sockfd, ssh_packet_t *out_pkt) {
   }
   
   /* Verify HMAC-SHA256 BEFORE processing (CRITICAL SECURITY) */
-  uint8_t mac_input[8 + SSH_MAX_PACKET_SIZE];
+  uint8_t *mac_input = g_decrypt_mac_input;
   ssh_write_u32_be(mac_input, (uint32_t)(g_crypto.decrypt_seq >> 32));
   ssh_write_u32_be(mac_input + 4, (uint32_t)(g_crypto.decrypt_seq & 0xFFFFFFFF));
   mem_copy(mac_input + 8, decrypted, 16);
@@ -235,7 +247,7 @@ int ssh_packet_read_encrypted(int sockfd, ssh_packet_t *out_pkt) {
   }
   
   /* Reconstruct full decrypted packet */
-  uint8_t full_packet[SSH_MAX_PACKET_SIZE];
+  uint8_t *full_packet = g_decrypt_full_packet;
   mem_copy(full_packet, decrypted, 16);
   mem_copy(full_packet + 16, rest, remaining);
   
@@ -649,6 +661,9 @@ static uint32_t build_kexinit(uint8_t *buf) {
   return pos;
 }
 
+/* Static packet buffer for handle_connection() to avoid 35KB stack allocation */
+static ssh_packet_t g_ssh_pkt;
+
 /* ---- Handle One SSH Connection (Production Version) ---- */
 static int handle_connection(int sockfd,
                              const xaios_ip_addr_user_t *client_addr,
@@ -685,37 +700,37 @@ static int handle_connection(int sockfd,
   }
 
   /* Receive client KEXINIT */
-  ssh_packet_t pkt;
-  if (ssh_packet_read(sockfd, &pkt) != 0) {
+  ssh_packet_t *pkt = &g_ssh_pkt;
+  if (ssh_packet_read(sockfd, pkt) != 0) {
     ssh_log(SSH_LOG_ERROR, "Failed to receive client KEXINIT\n");
     return -1;
   }
-  if (pkt.len == 0 || pkt.data[0] != 20) {
+  if (pkt->len == 0 || pkt->data[0] != 20) {
     ssh_log(SSH_LOG_ERROR, "Invalid KEXINIT message\n");
     return -1;
   }
   /* Save client KEXINIT for exchange hash */
   uint8_t client_kexinit[512];
-  uint32_t client_kexinit_len = pkt.len;
+  uint32_t client_kexinit_len = pkt->len;
   if (client_kexinit_len > 512) client_kexinit_len = 512;
-  mem_copy(client_kexinit, pkt.data, client_kexinit_len);
+  mem_copy(client_kexinit, pkt->data, client_kexinit_len);
 
   /* Handle DH key exchange */
-  if (ssh_packet_read(sockfd, &pkt) != 0) {
+  if (ssh_packet_read(sockfd, pkt) != 0) {
     ssh_log(SSH_LOG_ERROR, "Failed to receive KEXDH_INIT\n");
     return -1;
   }
-  if (pkt.len == 0 || pkt.data[0] != 30) { /* SSH_MSG_KEXDH_INIT */
+  if (pkt->len == 0 || pkt->data[0] != 30) { /* SSH_MSG_KEXDH_INIT */
     ssh_log(SSH_LOG_ERROR, "Invalid KEXDH_INIT message\n");
     return -1;
   }
 
   /* Parse client ephemeral public key (string at offset 1) */
-  if (pkt.len < 5) return -1;
-  uint32_t client_pub_len = ssh_read_string_len(pkt.data + 1);
-  if (client_pub_len != 32 || pkt.len < 5 + 32) return -1;
+  if (pkt->len < 5) return -1;
+  uint32_t client_pub_len = ssh_read_string_len(pkt->data + 1);
+  if (client_pub_len != 32 || pkt->len < 5 + 32) return -1;
   uint8_t client_pub[32];
-  mem_copy(client_pub, pkt.data + 5, 32);
+  mem_copy(client_pub, pkt->data + 5, 32);
 
   /* Generate random ephemeral server key pair (SECURITY FIX) */
   uint8_t server_priv[32];
@@ -829,11 +844,11 @@ static int handle_connection(int sockfd,
   }
 
   /* Receive NEWKEYS */
-  if (ssh_packet_read(sockfd, &pkt) != 0) {
+  if (ssh_packet_read(sockfd, pkt) != 0) {
     ssh_log(SSH_LOG_ERROR, "Failed to receive NEWKEYS\n");
     return -1;
   }
-  if (pkt.len == 0 || pkt.data[0] != 21) {
+  if (pkt->len == 0 || pkt->data[0] != 21) {
     ssh_log(SSH_LOG_ERROR, "Invalid NEWKEYS message\n");
     return -1;
   }
@@ -873,14 +888,14 @@ static int handle_connection(int sockfd,
     }
     
     /* Read next packet (ENCRYPTED after NEWKEYS) */
-    if (ssh_packet_read_encrypted(sockfd, &pkt) != 0) {
+    if (ssh_packet_read_encrypted(sockfd, pkt) != 0) {
       ssh_log(SSH_LOG_INFO, "Connection lost (read error)\n");
       break;
     }
-    if (pkt.len == 0) continue;
+    if (pkt->len == 0) continue;
     
     last_activity = timer_now();
-    uint8_t msg = pkt.data[0];
+    uint8_t msg = pkt->data[0];
 
     if (msg == 5) { /* SSH_MSG_SERVICE_REQUEST */
       /* Accept service request */
@@ -895,35 +910,35 @@ static int handle_connection(int sockfd,
       
     } else if (msg == 50) { /* SSH_MSG_USERAUTH_REQUEST */
       /* Parse authentication request (SECURITY FIX) */
-      if (pkt.len < 10) {
+      if (pkt->len < 10) {
         ssh_log(SSH_LOG_WARN, "Auth request too short\n");
         continue;
       }
       
       /* Extract username */
-      uint32_t user_len = ssh_read_string_len(pkt.data + 1);
-      if (user_len > 64 || (10 + user_len) > pkt.len) {
+      uint32_t user_len = ssh_read_string_len(pkt->data + 1);
+      if (user_len > 64 || (10 + user_len) > pkt->len) {
         ssh_log(SSH_LOG_WARN, "Invalid username length\n");
         continue;
       }
       char username[65];
-      mem_copy(username, pkt.data + 5, user_len);
+      mem_copy(username, pkt->data + 5, user_len);
       username[user_len] = '\0';
       
       /* Extract password (after "password" method string) */
-      uint32_t method_len = ssh_read_string_len(pkt.data + 5 + user_len);
+      uint32_t method_len = ssh_read_string_len(pkt->data + 5 + user_len);
       uint32_t password_offset = 5 + user_len + 4 + method_len;
-      if ((password_offset + 4) > pkt.len) {
+      if ((password_offset + 4) > pkt->len) {
         ssh_log(SSH_LOG_WARN, "No password data\n");
         continue;
       }
-      uint32_t pass_len = ssh_read_string_len(pkt.data + password_offset);
-      if (pass_len > 128 || (password_offset + 4 + pass_len) > pkt.len) {
+      uint32_t pass_len = ssh_read_string_len(pkt->data + password_offset);
+      if (pass_len > 128 || (password_offset + 4 + pass_len) > pkt->len) {
         ssh_log(SSH_LOG_WARN, "Invalid password length\n");
         continue;
       }
       char password[129];
-      mem_copy(password, pkt.data + password_offset + 4, pass_len);
+      mem_copy(password, pkt->data + password_offset + 4, pass_len);
       password[pass_len] = '\0';
       
       /* Rate limiting */
@@ -980,7 +995,7 @@ static int handle_connection(int sockfd,
       }
       
     } else if (msg >= 90 && msg <= 98) { /* Channel messages */
-      if (ssh_channel_handle_packet(sockfd, &pkt) != 0) {
+      if (ssh_channel_handle_packet(sockfd, pkt) != 0) {
         ssh_log(SSH_LOG_ERROR, "Channel packet handling failed\n");
         break;
       }

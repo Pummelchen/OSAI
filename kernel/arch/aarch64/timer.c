@@ -98,7 +98,21 @@ uint64_t wall_time_now_ns(void) {
     return timer_now_ns();
   }
   uint64_t mono = timer_now_ns();
-  return g_wall_epoch * UINT64_C(1000000000) + (mono - g_wall_monotonic_base);
+  uint64_t elapsed_ns = mono - g_wall_monotonic_base;
+  /* Compute wall = epoch_seconds * 1e9 + elapsed_ns, split to avoid
+   * uint64_t overflow when epoch_seconds exceeds ~18.4 billion.
+   * For real Unix epochs (~1.7B), the multiplication alone is ~1.7e18,
+   * which fits in uint64_t (~1.8e19 max).  Add elapsed_ns separately
+   * after validating no overflow. */
+  if (elapsed_ns > UINT64_C(1000000000)) {
+    /* More than 1 second elapsed: update epoch and keep sub-second remainder */
+    uint64_t extra_sec = elapsed_ns / UINT64_C(1000000000);
+    uint64_t sub_ns = elapsed_ns % UINT64_C(1000000000);
+    g_wall_epoch += extra_sec;
+    g_wall_monotonic_base = mono - sub_ns;
+    return g_wall_epoch * UINT64_C(1000000000) + sub_ns;
+  }
+  return g_wall_epoch * UINT64_C(1000000000) + elapsed_ns;
 }
 
 void timer_self_test(void) {
