@@ -61,6 +61,9 @@ static int walk_pcie_caps(uint8_t bus, uint8_t dev, uint8_t func) {
   }
   /* Walk capability list (max 16 entries to avoid infinite loops) */
   for (uint32_t i = 0; i < 16; ++i) {
+    if (cap_ptr >= 252) {
+      break; /* Prevent OOB read beyond 256-byte config space */
+    }
     uint8_t cap_id = ecam_read8(bus, dev, func, cap_ptr);
     if (cap_id == 0 || cap_id == 0xFF) {
       break;

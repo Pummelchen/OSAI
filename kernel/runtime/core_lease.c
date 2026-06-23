@@ -100,6 +100,7 @@ xaios_status_t core_lease_acquire(uint32_t owner_id, uint32_t core_mask) {
 }
 
 xaios_status_t core_lease_release(uint32_t owner_id) {
+  int found = 0;
   for (uint32_t i = 0; i < MAX_CORE_LEASES; ++i) {
     if (g_leases[i].active != 0 && g_leases[i].owner_id == owner_id) {
       for (uint32_t cpu = 1; cpu < 32U; ++cpu) {
@@ -112,11 +113,11 @@ xaios_status_t core_lease_release(uint32_t owner_id) {
       g_leases[i].active = 0;
       g_leases[i].core_mask = 0;
       g_leases[i].irq_isolated_mask = 0;
-      return XAIOS_OK;
+      found = 1;
     }
   }
 
-  return XAIOS_ERR_INVALID;
+  return found ? XAIOS_OK : XAIOS_ERR_INVALID;
 }
 
 uint32_t core_lease_irq_isolated_mask(void) {

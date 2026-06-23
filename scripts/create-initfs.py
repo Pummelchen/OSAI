@@ -16,17 +16,6 @@ FLAG_READ_ONLY = 1
 ENTRY_FLAG_EXECUTABLE = 1
 ENTRY_FLAG_MANIFEST = 2
 ENTRY_TYPE_FILE = 1
-EXTRA_EXECUTABLE_PATHS = [
-    "/bin/xaios-shell",
-    "/bin/hello",
-    "/bin/sysinfo",
-    "/bin/systest",
-    "/bin/smptest",
-    "/bin/nettest",
-    "/bin/lstm-xor",
-    "/bin/sshtest",
-    "/bin/mltest",
-]
 FNV1A64_OFFSET = 0xCBF29CE484222325
 FNV1A64_PRIME = 0x100000001B3
 CPU_AI_MAGIC = 0x4941494D

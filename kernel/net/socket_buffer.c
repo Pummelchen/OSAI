@@ -1,6 +1,7 @@
 #include <xaios/assert.h>
 #include <xaios/klog.h>
 #include <xaios/socket_buffer.h>
+#include <xaios/spinlock.h>
 
 /* Pool of socket buffers with in-use tracking */
 typedef struct sockbuf_pool_entry {
@@ -9,6 +10,7 @@ typedef struct sockbuf_pool_entry {
 } sockbuf_pool_entry_t;
 
 static sockbuf_pool_entry_t g_pool[SOCKET_BUFFER_COUNT];
+static xaios_spinlock_t g_sockbuf_lock;
 
 void sockbuf_init(socket_buffer_t *buf) {
   if (buf == 0) {
@@ -62,6 +64,7 @@ uint32_t sockbuf_used(const socket_buffer_t *buf) {
 }
 
 void sockbuf_pool_init(void) {
+  xaios_spin_init(&g_sockbuf_lock);
   for (uint32_t i = 0; i < SOCKET_BUFFER_COUNT; ++i) {
     g_pool[i].in_use = 0;
     sockbuf_init(&g_pool[i].buf);
@@ -69,13 +72,16 @@ void sockbuf_pool_init(void) {
 }
 
 socket_buffer_t *sockbuf_alloc(void) {
+  xaios_spin_lock(&g_sockbuf_lock);
   for (uint32_t i = 0; i < SOCKET_BUFFER_COUNT; ++i) {
     if (g_pool[i].in_use == 0) {
       g_pool[i].in_use = 1;
       sockbuf_init(&g_pool[i].buf);
+      xaios_spin_unlock(&g_sockbuf_lock);
       return &g_pool[i].buf;
     }
   }
+  xaios_spin_unlock(&g_sockbuf_lock);
   klog("sockbuf: pool exhausted (all %u buffers in use)\n",
        SOCKET_BUFFER_COUNT);
   return 0;
@@ -85,13 +91,16 @@ void sockbuf_free(socket_buffer_t *buf) {
   if (buf == 0) {
     return;
   }
+  xaios_spin_lock(&g_sockbuf_lock);
   for (uint32_t i = 0; i < SOCKET_BUFFER_COUNT; ++i) {
     if (&g_pool[i].buf == buf) {
       g_pool[i].in_use = 0;
       sockbuf_init(&g_pool[i].buf);
+      xaios_spin_unlock(&g_sockbuf_lock);
       return;
     }
   }
+  xaios_spin_unlock(&g_sockbuf_lock);
 }
 
 void sockbuf_self_test(void) {

@@ -1,12 +1,14 @@
 #include <stdarg.h>
 #include <xaios/klog.h>
 #include <xaios/klog_ring.h>
+#include <xaios/spinlock.h>
 #include <xaios/timer.h>
 #include <xaios/types.h>
 
 #define PL011_UARTDR 0x00U
 
 static volatile uint32_t *g_uart_base;
+static xaios_spinlock_t g_klog_lock;
 
 /* Line buffer for ring capture */
 static char g_klog_line[XAIOS_KLOG_LINE_MAX];
@@ -41,6 +43,7 @@ static void klog_line_flush(void) {
 
 void klog_init(const xaios_boot_info_t *boot) {
   g_uart_base = (volatile uint32_t *)(uintptr_t)boot->uart_base;
+  xaios_spin_init(&g_klog_lock);
 }
 
 void klog_puts(const char *message) {
@@ -76,6 +79,10 @@ static void klog_u64(uint64_t value, unsigned base) {
 }
 
 void klog(const char *fmt, ...) {
+  if (!xaios_spin_trylock(&g_klog_lock)) {
+    return; /* Another CPU is logging, drop to avoid interleaved output */
+  }
+  
   va_list args;
   va_start(args, fmt);
 
@@ -116,6 +123,7 @@ void klog(const char *fmt, ...) {
 
   klog_line_flush();
   va_end(args);
+  xaios_spin_unlock(&g_klog_lock);
 }
 
 static const char *log_level_str(xaios_log_level_t level) {

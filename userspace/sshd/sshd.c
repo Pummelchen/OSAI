@@ -302,24 +302,6 @@ static int queue_push(sshd_queue_t *q, u64 conn) {
   return 0;
 }
 
-static int __attribute__((unused)) queue_pop(sshd_queue_t *q, u64 *conn) {
-  /* Atomic dequeue */
-  uint32_t head = __atomic_load_n(&q->head, __ATOMIC_ACQUIRE);
-  uint32_t count = __atomic_load_n(&q->count, __ATOMIC_ACQUIRE);
-  
-  if (count == 0) {
-    return -1; /* Queue empty */
-  }
-  
-  /* Pop from queue */
-  *conn = __atomic_load_n(&q->connections[head], __ATOMIC_ACQUIRE);
-  uint32_t next_head = (head + 1) % SSHD_MAX_PENDING_CONNECTIONS;
-  __atomic_store_n(&q->head, next_head, __ATOMIC_RELEASE);
-  __atomic_sub_fetch(&q->count, 1, __ATOMIC_RELEASE);
-  
-  return 0;
-}
-
 /* ---- Logging with variadic support (Fix #6) ---- */
 static int g_log_fd = -1;
 
@@ -1029,16 +1011,6 @@ static int handle_connection(int sockfd,
 
 /* ---- Multi-Connection Handler (Fix #2 & #4) ---- */
 /* Old queue replaced with atomic sshd_queue_t at top of file */
-
-/* Helper: handle one packet from a connection (returns 0=continue, -1=closed) */
-/* TODO(XAIOS-43): Convert handle_connection() to non-blocking state machine */
-/* and call this incrementally for multiplexed connection support. */
-static int __attribute__((unused)) handle_connection_packet(u64 sockfd, uint64_t last_activity) {
-  (void)sockfd;
-  (void)last_activity;
-  /* Non-blocking dispatch not yet implemented; synchronous path used instead */
-  return -1;
-}
 
 /* ---- Main SSHD Entry Point ---- */
 int sshd_run(void) {

@@ -262,10 +262,19 @@ static uint32_t try_steal_hierarchical(uint32_t this_cpu) {
   }
 
   /* Level 1: steal from same socket */
-  uint32_t socket_domain = topology_get_numa_domain(this_cpu); /* parent of core = NUMA = socket in QEMU */
+  uint32_t socket_domain = topology_get_socket_domain(this_cpu);
   stolen = try_steal_domain(this_cpu, socket_domain);
   if (stolen != 0) {
     return stolen;
+  }
+
+  /* Level 2: steal from same NUMA node */
+  uint32_t numa_domain = topology_get_numa_domain(this_cpu);
+  if (numa_domain != socket_domain) {
+    stolen = try_steal_domain(this_cpu, numa_domain);
+    if (stolen != 0) {
+      return stolen;
+    }
   }
 
   return 0; /* system-wide steal not worth it */
