@@ -43,7 +43,8 @@
 #define TCP_OPT_WSCALE    3U
 
 #define NETWORK_TCP_MSS 1400U
-#define NETWORK_TCP_WSCALE_OK 1U   /* we accept window scaling */
+#define NETWORK_TCP_WSCALE_OK 1U
+#define TCP_OOO_BUF_ENTRIES 4U      /* A9: out-of-order buffer slots */   /* we accept window scaling */
 
 /* Congestion control constants */
 #define TCP_INIT_CWND     1U
@@ -144,6 +145,13 @@ typedef struct network_tcp_flow {
   uint64_t rto_ns;             /* current retransmission timeout */
   uint32_t rto_retries;        /* consecutive RTO timeouts */
   uint8_t  in_retransmit;      /* currently in retransmission */
+  /* A9: out-of-order data buffering */
+  struct {
+    uint32_t seq;
+    uint16_t len;
+    uint8_t  in_use;
+    uint8_t  data[NETWORK_TCP_MSS];
+  } ooo_buf[TCP_OOO_BUF_ENTRIES];
   /* A4: TCP MSS negotiation */
   uint16_t peer_mss;           /* received from peer */
   uint8_t  mss_parsed;         /* we parsed peer MSS */
@@ -234,25 +242,14 @@ static uint64_t g_ndp_reply_count;
 static uint64_t g_ipv6_rx_count;
 static xaios_ip_addr_t g_link_local_v6;
 
-/* ---- Listener Registry ---- */
-#define NETWORK_MAX_LISTENERS 8U
-typedef struct network_listener {
-  uint16_t port;
-  uint64_t sockfd;
-  uint32_t active;
-} network_listener_t;
-static network_listener_t g_listeners[NETWORK_MAX_LISTENERS];
+/*
+ * Listener registry: migrated to per-listener backlog
+ * (network_listener_ex_t, see A10)
+ */
+
 
 /* ---- Accept Queue ---- */
-#define NETWORK_ACCEPT_QUEUE_SIZE 8U
-typedef struct accept_queue_entry {
-  uint32_t flow_id;
-  uint32_t peer_ip;    /* network byte order */
-  uint16_t peer_port;
-  uint16_t local_port;
-  uint32_t active;
-} accept_queue_entry_t;
-static accept_queue_entry_t g_accept_queue[NETWORK_ACCEPT_QUEUE_SIZE];
+/* A10: Replaced by per-listener backlog in network_listener_ex_t */
 
 /* ---- Socket-to-Flow Mapping ---- */
 #define NETWORK_SOCK_FLOW_MAP_SIZE 16U
@@ -285,6 +282,105 @@ static uint64_t g_udp_latency_samples[NETWORK_MAX_SAMPLES];
 static uint64_t g_tcp_latency_samples[NETWORK_MAX_SAMPLES];
 static uint32_t g_udp_latency_count;
 static uint32_t g_tcp_latency_count;
+
+/* A9: Buffer out-of-order TCP segment. Returns bytes buffered. */
+static uint32_t ooo_buffer_store(network_tcp_flow_t *flow, uint32_t seq,
+                                   const uint8_t *data, uint32_t len,
+                                   uint32_t expected_seq) {
+  if (len == 0 || seq <= expected_seq) return 0;
+  for (uint32_t i = 0; i < TCP_OOO_BUF_ENTRIES; ++i) {
+    if (!flow->ooo_buf[i].in_use) {
+      uint32_t copy_len = (len < NETWORK_TCP_MSS) ? len : NETWORK_TCP_MSS;
+      for (uint32_t j = 0; j < copy_len; ++j)
+        flow->ooo_buf[i].data[j] = data[j];
+      flow->ooo_buf[i].seq = seq;
+      flow->ooo_buf[i].len = (uint16_t)copy_len;
+      flow->ooo_buf[i].in_use = 1;
+      return copy_len;
+    }
+  }
+  return 0;
+}
+
+/* A9: Drain OOO buffer into rx_buf in order. Returns bytes delivered. */
+static uint32_t ooo_buffer_drain(network_tcp_flow_t *flow) {
+  uint32_t total = 0;
+  int progress = 1;
+  while (progress) {
+    progress = 0;
+    for (uint32_t i = 0; i < TCP_OOO_BUF_ENTRIES; ++i) {
+      if (flow->ooo_buf[i].in_use && flow->ooo_buf[i].seq == flow->expected_seq) {
+        uint32_t written = sockbuf_write(flow->rx_buf,
+                            flow->ooo_buf[i].data, flow->ooo_buf[i].len);
+        flow->expected_seq += written;
+        flow->pending_ack = 1;
+        flow->window_size = (uint16_t)sockbuf_available(flow->rx_buf);
+        flow->ooo_buf[i].in_use = 0;
+        total += written;
+        progress = 1;
+      }
+    }
+  }
+  return total;
+}
+
+/* A10: Per-listener accept backlog */
+#define NETWORK_MAX_LISTENERS 8U
+#define NETWORK_LISTENER_BACKLOG 8U
+typedef struct listener_accept_entry {
+  uint32_t flow_id;
+  uint32_t peer_ip;
+  uint16_t peer_port;
+  uint16_t local_port;
+  uint32_t active;
+} listener_accept_entry_t;
+
+typedef struct network_listener_ex {
+  uint16_t port;
+  uint64_t sockfd;
+  uint32_t active;
+  listener_accept_entry_t backlog[NETWORK_LISTENER_BACKLOG];
+  uint32_t backlog_count;
+} network_listener_ex_t;
+
+static network_listener_ex_t g_listeners_ex[NETWORK_MAX_LISTENERS];
+
+static network_listener_ex_t *find_listener_ex(uint16_t port) {
+  for (uint32_t i = 0; i < NETWORK_MAX_LISTENERS; ++i) {
+    if (g_listeners_ex[i].active && g_listeners_ex[i].port == port)
+      return &g_listeners_ex[i];
+  }
+  return 0;
+}
+
+static int listener_enqueue_backlog(uint16_t port, uint32_t flow_id,
+                                     uint32_t peer_ip, uint16_t peer_port) {
+  network_listener_ex_t *l = find_listener_ex(port);
+  if (!l) return 0;
+  if (l->backlog_count >= NETWORK_LISTENER_BACKLOG) return 0;
+  listener_accept_entry_t *e = &l->backlog[l->backlog_count++];
+  e->flow_id = flow_id;
+  e->peer_ip = peer_ip;
+  e->peer_port = peer_port;
+  e->local_port = port;
+  e->active = 1;
+  return 1;
+}
+
+static int listener_dequeue_backlog(uint16_t port, uint32_t *out_flow_id,
+                                     uint32_t *out_peer_ip,
+                                     uint16_t *out_peer_port) {
+  network_listener_ex_t *l = find_listener_ex(port);
+  if (!l || l->backlog_count == 0) return 0;
+  listener_accept_entry_t *e = &l->backlog[0];
+  if (out_flow_id) *out_flow_id = e->flow_id;
+  if (out_peer_ip) *out_peer_ip = e->peer_ip;
+  if (out_peer_port) *out_peer_port = e->peer_port;
+  for (uint32_t i = 1; i < l->backlog_count; ++i)
+    l->backlog[i - 1] = l->backlog[i];
+  l->backlog_count--;
+  return 1;
+}
 
 static uint16_t read_u16_be(const uint8_t *bytes) {
   return (uint16_t)(((uint16_t)bytes[0] << 8U) | (uint16_t)bytes[1]);
@@ -956,6 +1052,12 @@ static network_tcp_flow_t *alloc_tcp_flow(void) {
       g_tcp_flows[i].rto_ns = NETWORK_TCP_RETRANSMIT_NS;
       g_tcp_flows[i].rto_retries = 0;
       g_tcp_flows[i].in_retransmit = 0;
+      /* A9: OOO buffer */
+      for (uint32_t j = 0; j < TCP_OOO_BUF_ENTRIES; ++j) {
+        g_tcp_flows[i].ooo_buf[j].in_use = 0;
+        g_tcp_flows[i].ooo_buf[j].seq = 0;
+        g_tcp_flows[i].ooo_buf[j].len = 0;
+      }
       /* A4: MSS */
       g_tcp_flows[i].peer_mss = 0;
       g_tcp_flows[i].mss_parsed = 0;
@@ -1033,6 +1135,13 @@ void network_stack_init(void) {
     g_packet_descs[i].dst_address = 0;
     g_packet_descs[i].length = 0;
     g_packet_descs[i].created_ns = 0;
+  }
+
+  for (uint32_t i = 0; i < NETWORK_MAX_LISTENERS; ++i) {
+    g_listeners_ex[i].active = 0;
+    g_listeners_ex[i].port = 0;
+    g_listeners_ex[i].sockfd = 0;
+    g_listeners_ex[i].backlog_count = 0;
   }
 
   g_next_flow_id = 1U;
@@ -1526,10 +1635,11 @@ static void tcp_drain_pending(void) {
 
 void network_stack_register_listener(uint16_t port, uint64_t sockfd) {
   for (uint32_t i = 0; i < NETWORK_MAX_LISTENERS; ++i) {
-    if (g_listeners[i].active == 0) {
-      g_listeners[i].port = port;
-      g_listeners[i].sockfd = sockfd;
-      g_listeners[i].active = 1;
+    if (!g_listeners_ex[i].active) {
+      g_listeners_ex[i].port = port;
+      g_listeners_ex[i].sockfd = sockfd;
+      g_listeners_ex[i].active = 1;
+      g_listeners_ex[i].backlog_count = 0;
       return;
     }
   }
@@ -1538,53 +1648,33 @@ void network_stack_register_listener(uint16_t port, uint64_t sockfd) {
 
 void network_stack_unregister_listener(uint16_t port) {
   for (uint32_t i = 0; i < NETWORK_MAX_LISTENERS; ++i) {
-    if (g_listeners[i].active != 0 && g_listeners[i].port == port) {
-      g_listeners[i].active = 0;
+    if (g_listeners_ex[i].active && g_listeners_ex[i].port == port) {
+      g_listeners_ex[i].active = 0;
+      g_listeners_ex[i].backlog_count = 0;
       return;
     }
   }
 }
 
 int network_stack_has_listener(uint16_t port) {
-  for (uint32_t i = 0; i < NETWORK_MAX_LISTENERS; ++i) {
-    if (g_listeners[i].active != 0 && g_listeners[i].port == port) {
-      return 1;
-    }
-  }
-  return 0;
+  return find_listener_ex(port) != 0;
 }
 
 /* ---- Accept Queue Functions ---- */
 
 static void accept_queue_enqueue(uint32_t flow_id, uint32_t peer_ip,
-                                   uint16_t peer_port, uint16_t local_port) {
-  for (uint32_t i = 0; i < NETWORK_ACCEPT_QUEUE_SIZE; ++i) {
-    if (g_accept_queue[i].active == 0) {
-      g_accept_queue[i].flow_id = flow_id;
-      g_accept_queue[i].peer_ip = peer_ip;
-      g_accept_queue[i].peer_port = peer_port;
-      g_accept_queue[i].local_port = local_port;
-      g_accept_queue[i].active = 1;
-      return;
-    }
-  }
-  klog("network: accept queue full (port=%u)\n", local_port);
+                                  uint16_t peer_port, uint16_t local_port) {
+  listener_enqueue_backlog(local_port, flow_id, peer_ip, peer_port);
 }
 
 xaios_status_t network_stack_accept_connection(uint16_t listen_port,
                                                 uint32_t *out_flow_id,
                                                 uint32_t *out_peer_ip,
                                                 uint16_t *out_peer_port) {
-  for (uint32_t i = 0; i < NETWORK_ACCEPT_QUEUE_SIZE; ++i) {
-    if (g_accept_queue[i].active != 0 &&
-        g_accept_queue[i].local_port == listen_port) {
-      *out_flow_id = g_accept_queue[i].flow_id;
-      *out_peer_ip = g_accept_queue[i].peer_ip;
-      *out_peer_port = g_accept_queue[i].peer_port;
-      g_accept_queue[i].active = 0;
-      return XAIOS_OK;
-    }
-  }
+  if (!out_flow_id || !out_peer_ip || !out_peer_port)
+    return XAIOS_ERR_INVALID;
+  if (listener_dequeue_backlog(listen_port, out_flow_id, out_peer_ip, out_peer_port))
+    return XAIOS_OK;
   return XAIOS_ERR_NOT_FOUND;
 }
 
@@ -1915,13 +2005,19 @@ xaios_status_t network_stack_process_tcp_frame(const uint8_t *frame,
     uint32_t payload_len = (uint32_t)(ip_total) - (uint32_t)ip_hdr_bytes -
                             (uint32_t)tcp_hdr_bytes;
 
-    if (payload_len > 0 && flow->rx_buf != 0 &&
-        seq == flow->expected_seq) {
+    if (payload_len > 0 && flow->rx_buf != 0) {
       const uint8_t *payload = tcp_hdr + tcp_hdr_bytes;
-      uint32_t written = sockbuf_write(flow->rx_buf, payload, payload_len);
-      flow->expected_seq += written;
-      flow->pending_ack = 1;
-      flow->window_size = (uint16_t)sockbuf_available(flow->rx_buf);
+      if (seq == flow->expected_seq) {
+        uint32_t written = sockbuf_write(flow->rx_buf, payload, payload_len);
+        flow->expected_seq += written;
+        flow->pending_ack = 1;
+        flow->window_size = (uint16_t)sockbuf_available(flow->rx_buf);
+        /* A9: Drain any buffered OOO data */
+        ooo_buffer_drain(flow);
+      } else if (seq > flow->expected_seq) {
+        /* A9: Buffer out-of-order segment */
+        ooo_buffer_store(flow, seq, payload, payload_len, flow->expected_seq);
+      }
     }
 
     /* Handle ACK for our sent data */
@@ -2245,13 +2341,17 @@ xaios_status_t network_stack_process_tcp_frame_v6(const uint8_t *frame,
     uint16_t ip6_payload_len = read_u16_be(ip6 + 4U);
     uint32_t payload_len_v6 = (uint32_t)ip6_payload_len - (uint32_t)tcp_hdr_bytes;
 
-    if (payload_len_v6 > 0 && flow->rx_buf != 0 &&
-        seq == flow->expected_seq) {
+    if (payload_len_v6 > 0 && flow->rx_buf != 0) {
       const uint8_t *payload = tcp_hdr + tcp_hdr_bytes;
-      uint32_t written = sockbuf_write(flow->rx_buf, payload, payload_len_v6);
-      flow->expected_seq += written;
-      flow->pending_ack = 1;
-      flow->window_size = (uint16_t)sockbuf_available(flow->rx_buf);
+      if (seq == flow->expected_seq) {
+        uint32_t written = sockbuf_write(flow->rx_buf, payload, payload_len_v6);
+        flow->expected_seq += written;
+        flow->pending_ack = 1;
+        flow->window_size = (uint16_t)sockbuf_available(flow->rx_buf);
+        ooo_buffer_drain(flow);
+      } else if (seq > flow->expected_seq) {
+        ooo_buffer_store(flow, seq, payload, payload_len_v6, flow->expected_seq);
+      }
     }
 
     /* Handle ACK for our sent data */
