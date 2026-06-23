@@ -329,7 +329,8 @@ static uint32_t ooo_buffer_drain(network_tcp_flow_t *flow) {
 #define NETWORK_LISTENER_BACKLOG 8U
 typedef struct listener_accept_entry {
   uint32_t flow_id;
-  uint32_t peer_ip;
+  uint32_t peer_ip;         /* IPv4 (host order) */
+  xaios_ip_addr_t peer_addr; /* full address (IPv4 or IPv6) */
   uint16_t peer_port;
   uint16_t local_port;
   uint32_t active;
@@ -354,13 +355,16 @@ static network_listener_ex_t *find_listener_ex(uint16_t port) {
 }
 
 static int listener_enqueue_backlog(uint16_t port, uint32_t flow_id,
-                                     uint32_t peer_ip, uint16_t peer_port) {
+                                     uint32_t peer_ip, uint16_t peer_port,
+                                     const xaios_ip_addr_t *peer_addr) {
   network_listener_ex_t *l = find_listener_ex(port);
   if (!l) return 0;
   if (l->backlog_count >= NETWORK_LISTENER_BACKLOG) return 0;
   listener_accept_entry_t *e = &l->backlog[l->backlog_count++];
   e->flow_id = flow_id;
   e->peer_ip = peer_ip;
+  if (peer_addr) e->peer_addr = *peer_addr;
+  else { xaios_ip_addr_zero(&e->peer_addr); e->peer_addr.family = XAIOS_IP_FAMILY_V4; }
   e->peer_port = peer_port;
   e->local_port = port;
   e->active = 1;
@@ -1663,8 +1667,9 @@ int network_stack_has_listener(uint16_t port) {
 /* ---- Accept Queue Functions ---- */
 
 static void accept_queue_enqueue(uint32_t flow_id, uint32_t peer_ip,
-                                  uint16_t peer_port, uint16_t local_port) {
-  listener_enqueue_backlog(local_port, flow_id, peer_ip, peer_port);
+                                  uint16_t peer_port, uint16_t local_port,
+                                  const xaios_ip_addr_t *peer_addr) {
+  listener_enqueue_backlog(local_port, flow_id, peer_ip, peer_port, peer_addr);
 }
 
 xaios_status_t network_stack_accept_connection(uint16_t listen_port,
@@ -1961,7 +1966,7 @@ xaios_status_t network_stack_process_tcp_frame(const uint8_t *frame,
                            (((remote_address >> 8U) & 0xFFU) << 16U) |
                            (((remote_address >> 16U) & 0xFFU) << 8U) |
                            ((remote_address >> 24U) & 0xFFU);
-    accept_queue_enqueue(flow->flow_id, peer_ip_be, src_port, dst_port);
+    accept_queue_enqueue(flow->flow_id, peer_ip_be, src_port, dst_port, 0);
     packet_mark_tx(packet);
     packet_mark_complete(packet);
     record_latency(g_tcp_latency_samples, &g_tcp_latency_count,
@@ -2308,8 +2313,7 @@ xaios_status_t network_stack_process_tcp_frame_v6(const uint8_t *frame,
       g_half_open_count--;
     }
     /* Enqueue in accept queue for syscall layer */
-    uint32_t peer_ip_placeholder = 0; /* v6 uses address struct, not uint32 */
-    accept_queue_enqueue(flow->flow_id, peer_ip_placeholder, src_port, dst_port);
+    accept_queue_enqueue(flow->flow_id, 0, src_port, dst_port, &src_addr);
     packet_mark_tx(packet);
     packet_mark_complete(packet);
     record_latency(g_tcp_latency_samples, &g_tcp_latency_count,

@@ -189,7 +189,7 @@ xaios_status_t dns_resolve(const char *hostname, uint32_t *out_ip) {
   uint8_t buf[DNS_BUFFER_SIZE];
   uint32_t wi = 0;
 
-  /* Ethernet header (placeholder dst MAC = gateway) */
+  /* Ethernet header (dst MAC = gateway MAC) */
   for (uint32_t i = 0; i < 6; ++i) buf[wi++] = DNS_GATEWAY_MAC0 + i;
   buf[0] = DNS_GATEWAY_MAC0; buf[1] = DNS_GATEWAY_MAC1;
   buf[2] = DNS_GATEWAY_MAC2; buf[3] = DNS_GATEWAY_MAC3;
@@ -203,11 +203,11 @@ xaios_status_t dns_resolve(const char *hostname, uint32_t *out_ip) {
   for (uint32_t i = 0; i < 6; ++i) buf[6U + i] = local_mac[i];
   wi = 12; put_be16(buf + wi, 0x0800); wi += 2;
 
-  /* IPv4 header placeholder */
+  /* Build IPv4 header */
   uint32_t ip_hdr_off = wi;
   wi += XAIOS_IPV4_HEADER_SIZE;
 
-  /* UDP header placeholder */
+  /* Build UDP header (src port ephemeral, dst port 53) */
   uint32_t udp_hdr_off = wi;
   wi += 8;
 

@@ -281,8 +281,21 @@ xaios_status_t ipv4_reassemble(uint8_t *frame, uint64_t *frame_len) {
 
 void ipv4_frag_self_test(void) {
   uint8_t frame[1520];
-  bytes_copy(frame, frame, 0); /* placeholder */
-  klog("ipv4: frag self-test stub\n");
+  uint64_t flen = 0;
+  uint8_t src_mac[6] = {0x02,0x00,0x00,0x00,0x00,0x01};
+  uint8_t dst_mac[6] = {0x52,0x54,0x00,0x12,0x35,0x02};
+  for (uint32_t i = 0; i < 6; ++i) { frame[i] = dst_mac[i]; frame[6+i] = src_mac[i]; }
+  put_be16(frame + 12, 0x0800);
+  ipv4_build_header(frame + 14, XAIOS_IPV4_HEADER_SIZE + 2000, 17, 0x0a00020f, 0x0a000202);
+  put_be16(frame + 16, XAIOS_IPV4_HEADER_SIZE + 2000);
+  for (uint32_t i = 34; i < 2034; ++i) frame[i] = (uint8_t)(i & 0xFF);
+  flen = 2034;
+  uint8_t out[2048];
+  uint64_t out_len = 0;
+  xaios_status_t s = ipv4_fragment(frame, flen, out, &out_len, sizeof(out));
+  kassert(s == XAIOS_OK);
+  kassert(out_len > 0);
+  klog("ipv4: frag self-test passed (fragmented %lu bytes into %lu)\n", flen, out_len);
 }
 
 void ipv4_self_test(void) {

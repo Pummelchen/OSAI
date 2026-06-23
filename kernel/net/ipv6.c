@@ -265,28 +265,41 @@ int ipv6_is_fragment_v6(const uint8_t *frame, uint64_t frame_len) {
 xaios_status_t ipv6_fragment_v6(const uint8_t *frame, uint64_t frame_len,
                                  uint8_t *out_buf, uint64_t *out_len,
                                  uint64_t out_capacity) {
-  (void)frame;
-  (void)frame_len;
-  (void)out_buf;
-  (void)out_len;
-  (void)out_capacity;
-  /* Fragmentation is a stub — full implementation would copy the frame and insert
-   * a Fragment extension header for each fragment. For now, we treat this as
-   * "not yet implemented" and return the frame unchanged. */
-  return XAIOS_ERR_NO_MEMORY;
+  if (!frame || !out_buf || !out_len || frame_len < 54U || out_capacity < frame_len) {
+    return XAIOS_ERR_INVALID;
+  }
+  uint16_t plen = (uint16_t)(frame_len - 14U - XAIOS_IPV6_HEADER_SIZE);
+  uint16_t frag_size = 1400U;
+  if (plen <= frag_size) {
+    for (uint64_t i = 0; i < frame_len; ++i) out_buf[i] = frame[i];
+    *out_len = frame_len;
+    return XAIOS_OK;
+  }
+  return XAIOS_ERR_NO_MEMORY; /* fragmentation requires multi-frame output */
 }
 
 xaios_status_t ipv6_reassemble_v6(uint8_t *frame, uint64_t *frame_len) {
-  /* Check if the frame contains a Fragment header; if so, we cannot
-   * reassemble without a fragment cache, so return error.
-   * If no fragment header, return OK (already complete). */
-  if (frame == 0 || frame_len == 0) {
-    return XAIOS_ERR_INVALID;
+  if (!frame || !frame_len || *frame_len < 54U) return XAIOS_ERR_INVALID;
+  if (!ipv6_is_fragment_v6(frame, *frame_len)) return XAIOS_OK;
+  uint8_t *ip6 = frame + 14U;
+  /* Fragment reassembly: skip fragment header if offset=0 and MF=0 */
+  uint8_t *fh = ip6 + XAIOS_IPV6_HEADER_SIZE;
+  uint16_t fh_offset = (uint16_t)(((uint16_t)(fh[2] & 0xF8) << 5U) | fh[3]);
+  uint8_t more_frags = fh[2] >> 7U;
+  if (fh_offset == 0 && !more_frags) {
+    /* Single fragment with MF=0, offset=0 → not really fragmented,
+     * just has a Fragment header present. Skip it. */
+    uint8_t next_hdr = fh[0];
+    uint16_t original = (uint16_t)(((uint16_t)ip6[4] << 8U) | ip6[5]);
+    uint16_t remaining = original - 8U;
+    for (uint32_t i = 0; i < remaining; ++i)
+      ip6[XAIOS_IPV6_HEADER_SIZE + i] = fh[8 + i];
+    ip6[6] = next_hdr;
+    put_be16(ip6 + 4, remaining);
+    *frame_len = 14U + XAIOS_IPV6_HEADER_SIZE + remaining;
+    return XAIOS_OK;
   }
-  if (!ipv6_is_fragment_v6(frame, *frame_len)) {
-    return XAIOS_OK; /* not fragmented, no reassembly needed */
-  }
-  return XAIOS_ERR_NO_MEMORY; /* stub: reassembly not yet implemented */
+  return XAIOS_ERR_NO_MEMORY; /* multi-fragment reassembly not yet implemented */
 }
 
 void ipv6_self_test(void) {
