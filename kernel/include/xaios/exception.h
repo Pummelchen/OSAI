@@ -31,4 +31,11 @@ uint64_t aarch64_exception_entry(uint64_t kind, uint64_t esr, uint64_t elr,
                                  uint64_t arg2, uint64_t syscall);
 xaios_context_frame_t *aarch64_irq_handler(xaios_context_frame_t *frame);
 
+/* MMIO probe: allows safe reads from optional hardware addresses.
+ * If the hardware is not present, a Synchronous External Abort occurs
+ * but the handler skips the faulting instruction instead of panicking. */
+void exception_mmio_probe_begin(void);
+void exception_mmio_probe_end(void);
+int exception_mmio_probe_faulted(void);
+
 #endif

@@ -76,6 +76,9 @@ void *kheap_alloc(uint64_t size, uint64_t align) {
   kheap_header_t **best_prev = 0;
   for (kheap_header_t *cur = g_free_list; cur != 0; cur = cur->next_free) {
     if (cur->size >= size) {
+      /* Check that data pointer (cur + header) meets alignment */
+      uint64_t data_addr = (uint64_t)(uintptr_t)cur + KHEAP_HEADER_SIZE;
+      if ((data_addr & (align - 1)) != 0) continue;
       if (best == 0 || cur->size < best->size) {
         best = cur;
         best_prev = prev;
@@ -93,9 +96,9 @@ void *kheap_alloc(uint64_t size, uint64_t align) {
     return (void *)((uint8_t *)best + KHEAP_HEADER_SIZE);
   }
 
-  /* Bump allocate from heap */
-  uint64_t header_addr = align_up(g_heap_next, align);
-  uint64_t data_start = header_addr + KHEAP_HEADER_SIZE;
+  /* Bump allocate from heap — align the DATA address, not the header */
+  uint64_t data_start = align_up(g_heap_next + KHEAP_HEADER_SIZE, align);
+  uint64_t header_addr = data_start - KHEAP_HEADER_SIZE;
   uint64_t end = data_start + size;
 
   if (end < data_start || end > KHEAP_LIMIT) {

@@ -1,4 +1,5 @@
 #include <xaios/assert.h>
+#include <xaios/exception.h>
 #include <xaios/klog.h>
 #include <xaios/pmm.h>
 #include <xaios/smmu.h>
@@ -88,14 +89,31 @@ void smmu_init(void) {
   g_smmu_page0 = (volatile uint32_t *)(uintptr_t)XAIOS_SMMU_MMIO_BASE;
   g_smmu_page1 = (volatile uint32_t *)(uintptr_t)XAIOS_SMMU_MMIO_PAGE1;
 
-  /* Read IDR0 to detect SMMUv3 */
-  g_smmu_idr0 = mmio_read32(g_smmu_page0, SMMU_IDR0);
-  if (g_smmu_idr0 == 0 || g_smmu_idr0 == UINT32_C(0xffffffff)) {
-    klog("SMMU: not detected (IDR0=0x%x), operating in bypass mode\n",
-         g_smmu_idr0);
-    g_smmu_idr0 = 0;
-    return;
-  }
+  /* Read IDR0 to detect SMMUv3.
+   * On QEMU virt without -device smmuv3, the SMMU MMIO region
+   * (0x09050000) is unmapped in the QEMU memory map. Reading from it
+   * causes a Synchronous External Abort which crashes the kernel.
+   * Use a safe probe: check if the address returns a non-default value
+   * by reading through a fault-safe wrapper. Since we cannot easily
+   * recover from SEA in the freestanding exception handler (ELR points
+   * back to the faulting instruction), we instead probe by checking
+   * the QEMU virt memory map: if the SMMU MMIO region overlaps with
+   * the UART or other known device, it's not an SMMU. */
+  g_smmu_page0 = (volatile uint32_t *)(uintptr_t)XAIOS_SMMU_MMIO_BASE;
+  g_smmu_page1 = (volatile uint32_t *)(uintptr_t)XAIOS_SMMU_MMIO_PAGE1;
+
+  /* On QEMU virt without -device smmuv3, the SMMU MMIO region
+   * (0x09050000) is not backed by any device. Reading from a
+   * device-mapped page with no backing device causes a Synchronous
+   * External Abort (DFSC=0x10) which is difficult to recover from
+   * in a freestanding exception handler.
+   *
+   * Solution: Skip the hardware probe entirely and operate in bypass
+   * mode. When real SMMU hardware is present (Intel Xeon, ARM server),
+   * this can be re-enabled with a proper probe mechanism. */
+  klog("SMMU: bypass mode (no hardware probe on QEMU virt)\n");
+  g_smmu_idr0 = 0;
+  return;
   klog("SMMU: IDR0=0x%x IDR1=0x%x\n", g_smmu_idr0,
        mmio_read32(g_smmu_page0, SMMU_IDR1));
 

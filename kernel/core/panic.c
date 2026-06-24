@@ -32,12 +32,61 @@ static void panic_puts(const char *s) {
   klog_puts(s);
 }
 
+/* Direct hex/decimal output bypassing klog spinlock (safe in panic) */
+static void panic_u64_hex_direct(uint64_t v) {
+  const char *hex = "0123456789abcdef";
+  char buf[17];
+  unsigned idx = 0;
+  for (int i = 60; i >= 0; i -= 4) {
+    uint8_t digit = (uint8_t)((v >> i) & 0xF);
+    if (digit != 0 || idx > 0 || i == 0) {
+      buf[idx++] = hex[digit];
+    }
+  }
+  if (idx == 0) buf[idx++] = '0';
+  buf[idx] = '\0';
+  panic_puts("0x");
+  panic_puts(buf);
+}
+
+static void panic_u32_direct(unsigned v) {
+  char buf[11];
+  unsigned idx = 0;
+  if (v == 0) {
+    panic_putc('0');
+    return;
+  }
+  while (v > 0 && idx < sizeof(buf) - 1) {
+    buf[idx++] = '0' + (v % 10);
+    v /= 10;
+  }
+  while (idx > 0) {
+    panic_putc(buf[--idx]);
+  }
+}
+
+static void panic_u64_direct(uint64_t v) {
+  char buf[21];
+  unsigned idx = 0;
+  if (v == 0) {
+    panic_putc('0');
+    return;
+  }
+  while (v > 0 && idx < sizeof(buf) - 1) {
+    buf[idx++] = '0' + (v % 10);
+    v /= 10;
+  }
+  while (idx > 0) {
+    panic_putc(buf[--idx]);
+  }
+}
+
 static void panic_u64_hex(uint64_t v) {
-  klog("0x%lx", v);
+  panic_u64_hex_direct(v);
 }
 
 static void panic_u32(unsigned v) {
-  klog("%u", v);
+  panic_u32_direct(v);
 }
 
 static int panic_valid_addr(uint64_t addr) {
@@ -131,7 +180,7 @@ static void render_banner(void) {
 static void render_message(const char *file, int line, const char *fmt,
                             va_list args) {
   panic_puts("  ERROR: ");
-  /* Inline format: %s and %u only */
+  /* Inline format: %s, %u, %lu, %lx, %x only — direct output, no klog lock */
   for (const char *p = fmt; *p != '\0'; ++p) {
     if (*p == '%' && p[1] == 's') {
       ++p;
@@ -142,13 +191,13 @@ static void render_message(const char *file, int line, const char *fmt,
       panic_u32(va_arg(args, unsigned));
     } else if (*p == '%' && p[1] == 'l' && p[2] == 'u') {
       p += 2;
-      klog("%lu", va_arg(args, uint64_t));
+      panic_u64_direct(va_arg(args, uint64_t));
     } else if (*p == '%' && p[1] == 'l' && p[2] == 'x') {
       p += 2;
-      klog("%lx", va_arg(args, uint64_t));
+      panic_u64_hex(va_arg(args, uint64_t));
     } else if (*p == '%' && p[1] == 'x') {
       ++p;
-      klog("%x", va_arg(args, unsigned));
+      panic_u64_hex(va_arg(args, unsigned));
     } else {
       panic_putc(*p);
     }
@@ -157,7 +206,7 @@ static void render_message(const char *file, int line, const char *fmt,
   panic_puts("  File:  ");
   panic_puts(file);
   panic_puts("\r\n  Line:  ");
-  klog("%u", (unsigned)line);
+  panic_u32((unsigned)line);
   panic_puts("\r\n\r\n");
 }
 
@@ -169,10 +218,10 @@ static void render_cpu_info(void) {
   panic_u32(smp_online_count());
   panic_puts(" cores\r\n");
   panic_puts("  Free RAM:  ");
-  klog("%lu", pmm_free_pages() * UINT64_C(4096));
+  panic_u64_direct(pmm_free_pages() * UINT64_C(4096));
   panic_puts(" bytes\r\n");
   panic_puts("  Total RAM: ");
-  klog("%lu", pmm_total_pages() * UINT64_C(4096));
+  panic_u64_direct(pmm_total_pages() * UINT64_C(4096));
   panic_puts(" bytes\r\n\r\n");
 }
 

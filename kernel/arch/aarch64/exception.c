@@ -26,7 +26,31 @@
 #define ICC_EOIR1_EL1 "S3_0_C12_C12_1"
 #define TIMER_PPI_INTID 30U
 
+/* DFSC for Synchronous External Abort (SEA) */
+#define DFSC_SYNC_EXT_ABORT UINT64_C(0x10)
+
 extern char __exception_vectors[];
+
+/* MMIO fault recovery: when set, a synchronous external abort during
+ * EL1 data access sets g_mmio_probe_faulted=1 and skips the faulting
+ * instruction instead of panicking. Used for probing optional hardware. */
+static volatile int g_mmio_probe_active = 0;
+static volatile int g_mmio_probe_faulted = 0;
+
+void exception_mmio_probe_begin(void) {
+  g_mmio_probe_faulted = 0;
+  g_mmio_probe_active = 1;
+  __asm__ volatile("isb" ::: "memory");
+}
+
+void exception_mmio_probe_end(void) {
+  g_mmio_probe_active = 0;
+  __asm__ volatile("isb" ::: "memory");
+}
+
+int exception_mmio_probe_faulted(void) {
+  return g_mmio_probe_faulted;
+}
 
 static const char *exception_kind_name(uint64_t kind) {
   switch ((xaios_exception_kind_t)kind) {
@@ -145,6 +169,16 @@ uint64_t aarch64_exception_entry(uint64_t kind, uint64_t esr, uint64_t elr,
                                  uint64_t arg2, uint64_t syscall) {
   uint64_t ec = (esr >> ESR_EC_SHIFT) & ESR_EC_MASK;
   uint64_t iss = esr & ESR_ISS_MASK;
+
+  /* MMIO probe recovery: if a synchronous external abort occurs while
+   * probing optional MMIO hardware (SMMU, etc.), skip the faulting
+   * instruction and set faulted flag instead of panicking. */
+  if (g_mmio_probe_active && ec == ESR_EC_DATA_ABORT_CURRENT &&
+      (iss & UINT64_C(0x3f)) == DFSC_SYNC_EXT_ABORT) {
+    g_mmio_probe_faulted = 1;
+    __asm__ volatile("msr elr_el1, %[elr]" : : [elr] "r"(elr + 4));
+    return 0;
+  }
 
   /* FIX-008: Division by zero protection */
   if (kind == XAIOS_EXCEPTION_LOWER_A64_SYNC && ec == ESR_EC_UNKNOWN) {

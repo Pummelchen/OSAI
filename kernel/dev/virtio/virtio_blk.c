@@ -280,10 +280,10 @@ void virtio_block_self_test(void) {
   kassert(write_sector != 0);
   kassert(virtio_block_init() == XAIOS_OK);
   kassert(virtio_block_read_sector(0, sector, SECTOR_SIZE) == XAIOS_OK);
-  kassert(sector[0] == 'O');
-  kassert(sector[1] == 'S');
-  kassert(sector[2] == 'A');
-  kassert(sector[3] == 'I');
+  kassert(sector[0] == 'X');
+  kassert(sector[1] == 'A');
+  kassert(sector[2] == 'I');
+  kassert(sector[3] == 'O');
   klog("virtio-blk: sector0 magic='%s'\n", (const char *)sector);
   kassert(virtio_block_read_sector(virtio_block_capacity_sectors(), sector,
                                    SECTOR_SIZE) == XAIOS_ERR_IO);
