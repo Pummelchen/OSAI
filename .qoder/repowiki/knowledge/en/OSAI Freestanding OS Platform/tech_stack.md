@@ -1,1 +1,0 @@
-Cross-module tooling includes Clang/LLD for freestanding AArch64/x86_64 compilation, Python for contract-validation gate scripts, and QEMU for hardware-agnostic integration testing across all subsystems.

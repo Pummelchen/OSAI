@@ -1,1 +1,0 @@
-Custom C-based kernel runtime using virtio-blk for block storage, FNV-1a for content hashing, and a bespoke arena-based memory allocator for build artifacts.

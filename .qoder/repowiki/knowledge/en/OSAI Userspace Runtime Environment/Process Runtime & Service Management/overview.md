@@ -1,1 +1,0 @@
-Manages process lifecycle, service supervision, and OS control interfaces through direct system calls in AArch64 assembly.

@@ -1,1 +1,0 @@
-Implements MMIO-based Virtio block and network drivers with a shared transport layer for virtualized I/O in the OSAI kernel.

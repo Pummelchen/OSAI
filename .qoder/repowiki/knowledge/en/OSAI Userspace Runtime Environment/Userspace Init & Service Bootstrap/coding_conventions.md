@@ -1,2 +1,0 @@
-- Syscall invocation follows a strict register convention: x0/x1 for arguments and x8 for the syscall number, followed by `svc #0`.
-- Error handling uses `cmn x0, #1` to check for negative return values, branching to labeled failure routines that print diagnostics before exiting.

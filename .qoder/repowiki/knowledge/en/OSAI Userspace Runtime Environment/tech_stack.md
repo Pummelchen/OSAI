@@ -1,1 +1,0 @@
-AArch64 Assembly (ELF entry points and syscall wrappers), Freestanding C99 (no libc dependency), Custom Linker Scripts (fixed-address memory layout).

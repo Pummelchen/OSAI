@@ -1,1 +1,0 @@
-AArch64 assembly with custom ELF linking; interacts with a userspace service manager via string-based command protocols.

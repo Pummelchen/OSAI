@@ -1,3 +1,0 @@
-- Syscalls are invoked via a single `osai_syscall3` wrapper mapping arguments to registers x0-x2 and the syscall number to x8.
-- All userspace binaries use a custom `_start` entry point that either performs direct setup (init) or branches to a `main` function (apps/lib).
-- Error handling across the library consistently checks for a return value of `~0ULL` from syscalls to indicate failure.

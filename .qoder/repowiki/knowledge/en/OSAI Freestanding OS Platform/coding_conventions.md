@@ -1,2 +1,0 @@
-- All modules adhere to a freestanding C99 standard with no reliance on host libc, enforced by `-ffreestanding` and `-fno-builtin` flags in both kernel and userspace build scripts.
-- Cross-component interfaces (syscalls, boot info, filesystem formats) are defined in a central JSON contract and validated by automated scripts to prevent drift between kernel implementation and userspace expectations.

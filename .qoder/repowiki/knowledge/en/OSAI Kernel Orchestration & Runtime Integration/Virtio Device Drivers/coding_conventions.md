@@ -1,3 +1,0 @@
-- DMA buffers are allocated with 16-byte alignment via `kheap_calloc` and translated to physical addresses using `vmm_translate` before being passed to the device.
-- Vring descriptors are manually constructed with explicit flag management (e.g., `VRING_DESC_F_NEXT`, `VRING_DESC_F_WRITE`) to define scatter-gather I/O chains.
-- Device initialization follows the Virtio spec sequence: reset, acknowledge, driver status set, feature negotiation, and finally setting `DRIVER_OK`.

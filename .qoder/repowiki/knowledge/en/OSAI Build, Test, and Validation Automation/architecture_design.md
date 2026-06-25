@@ -1,4 +1,0 @@
-- Entry points are shell scripts for image construction (`build-image.sh`) and Python scripts for QEMU orchestration (`qemu-smoke.py`, `qemu-abi-contract.py`).
-- A shared library (`qemu_gate_lib.py`) provides common utilities for subprocess execution, telemetry parsing, and ABI validation against a JSON contract (`contracts/qemu-rc-v1.json`).
-- Image creation relies on `create-initfs.py` to pack ELF binaries and configuration into a custom read-only filesystem (ROFS) format, which is then embedded into FAT and VirtIO block images.
-- Test scripts enforce a 'marker-based' verification strategy, scanning QEMU serial output for specific success strings and validating structured telemetry JSON against predefined schemas.

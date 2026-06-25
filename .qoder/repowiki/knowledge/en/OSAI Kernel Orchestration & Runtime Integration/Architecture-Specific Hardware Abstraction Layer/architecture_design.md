@@ -1,6 +1,0 @@
-- Dual-architecture support: Separate subdirectories (`aarch64/`, `x86_64/`) contain architecture-specific assembly entry points (`entry.S`, `vectors.S`), C-based exception handlers (`exception.c`, `early.c`), and hardware drivers (GIC, MMU, Timer, SMP).
-- Bootstrapping: Each architecture defines a `kernel_entry` in assembly that zeroes BSS and calls a C main (`kmain` or `x86_64_kmain`).
-- Exception Handling: Architecture-specific vector tables (`vectors.S` for AArch64, macro-generated ISRs for x86_64) dispatch to C handlers (`aarch64_exception_entry`, `x86_64_exception_entry`) which manage syscalls, page faults, and IRQs.
-- Memory Management: AArch64 implements a 4-level page table walker (`mmu.c`) with identity mapping and kernel/user space separation. x86_64 uses early static page tables (`early.c`) for initial identity mapping.
-- Hardware Drivers: AArch64 includes specific drivers for the Generic Interrupt Controller (GIC), architectural timer, and SMP boot via PSCI. x86_64 includes early PCI enumeration, APIC discovery, and IDT setup.
-- Linker Scripts: Architecture-specific linker scripts (`linker.ld`) define memory layout, including distinct sections for kernel text/data and user-space accessible regions (AArch64).

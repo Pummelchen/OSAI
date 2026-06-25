@@ -1,4 +1,0 @@
-- Syscall handlers consistently validate user-space pointers using `vmm_validate_user_buffer` before any memory access to ensure isolation.
-- Service and process state changes are tracked via explicit transition functions (`transition_process`, `start_service`) that update global counters and log state changes.
-- Administrative and sensitive operations require specific capability checks (`require_admin_capability`, `user_process_has_capability`) before proceeding.
-- Input tokens for service commands are validated for safety using `token_safe` to restrict characters to printable ASCII, preventing injection or malformed input.

@@ -1,4 +1,0 @@
-- **Sandbox Lifecycle Management**: Implements a state machine for sandbox instances (`sandbox.c`) covering creation, building, and rollback, backed by dedicated memory arenas (`arena.c`).
-- **Security Enforcement Layer**: Centralized policy engine (`security.c`) that validates sandbox paths against escape attempts, enforces capability-based access control, and checks for credential leakage.
-- **Read-Only Root Filesystem**: Uses a custom `initramfs` (`initramfs.c`) loaded from virtio-blk to provide a verified, immutable set of executables and configuration manifests.
-- **Mutable State Overlay**: Provides a journaling mutable filesystem (`mutable_fs.c`) for persistent runtime state (logs, service status) while maintaining integrity through checksums and atomic commits.

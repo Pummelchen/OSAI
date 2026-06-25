@@ -1,4 +1,0 @@
-- Centralized boot sequence in `kmain.c` strictly orders initialization: hardware (arch) -> memory (mm) -> devices/drivers -> runtime services -> scheduler -> user-space.
-- Shared boundary contracts defined in `include/osai/` headers decouple architectural ports (AArch64/x86_64) from core logic and runtime services.
-- Cross-module integration via self-test harnesses ensures subsystem readiness (e.g., VMM, GIC, Virtio) before transitioning to user-space execution.
-- User-space lifecycle is managed through a capability-based service supervisor that interacts with the scheduler and ELF loader for process isolation.

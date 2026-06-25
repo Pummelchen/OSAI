@@ -1,1 +1,0 @@
-Implements a round-robin preemptive scheduler with context switching and address space isolation for AArch64.

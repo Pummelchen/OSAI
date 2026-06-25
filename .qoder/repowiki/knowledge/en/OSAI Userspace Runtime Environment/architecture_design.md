@@ -1,3 +1,0 @@
-- **System Call Boundary**: All children communicate with the OSAI kernel exclusively through a unified `svc #0` interface defined in `osai_user_lib`, using a shared header (`osai_user.h`) for syscall numbers and data structures.
-- **Bootstrapping & Policy**: The `init_system` module acts as the primary entry point (`_start` at `0x41000000`), validating kernel capabilities and configuring the `process_runtime` service manager via text-based OS control commands before handing off control.
-- **Freestanding Execution**: Children operate without a standard C library or OS loader; `osai_user_lib` provides essential memory and string utilities, while `linker.ld` enforces a fixed memory layout for all userspace ELF binaries.

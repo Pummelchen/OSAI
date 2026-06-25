@@ -1,3 +1,0 @@
-- Single-file assembly entry (`init.S`) using raw `svc #0` calls for kernel interaction without a C runtime.
-- Custom linker script (`linker.ld`) enforcing a fixed load address at `0x41000000` with page-aligned sections for predictable memory layout.
-- Declarative configuration (`osai-init.conf`) defining the service hierarchy and restart policies for the QEMU MVP environment.

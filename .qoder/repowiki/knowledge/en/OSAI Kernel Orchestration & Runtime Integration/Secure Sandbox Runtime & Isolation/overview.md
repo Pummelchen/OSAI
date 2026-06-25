@@ -1,1 +1,0 @@
-Manages isolated build sandboxes with strict path validation, security authorization, and artifact management within a read-only kernel environment.

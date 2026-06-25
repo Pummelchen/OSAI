@@ -1,4 +1,0 @@
-- The module consists of two bare-metal AArch64 assembly entry points: `service-manager.S` (control plane) and `worker.S` (child process).
-- `service-manager.S` orchestrates the runtime by issuing `svc #0` system calls for service definition, configuration, crash supervision, admin policy enforcement, and filesystem operations.
-- `source-index.svc` acts as a static service descriptor consumed by the manager to define child service properties (e.g., restart policies).
-- `worker.S` serves as a minimal supervised child process that signals execution status and exits, validating the supervisor's ability to manage child lifecycles.

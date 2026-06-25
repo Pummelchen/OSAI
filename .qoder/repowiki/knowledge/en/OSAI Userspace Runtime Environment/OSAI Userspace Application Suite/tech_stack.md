@@ -1,1 +1,0 @@
-C99-compatible userspace applications linked against the custom `osai_user` SDK, utilizing fixed-width integer types (`u64`) and kernel-provided syscalls for I/O and computation.

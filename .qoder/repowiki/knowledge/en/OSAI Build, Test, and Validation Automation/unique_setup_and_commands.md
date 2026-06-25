@@ -1,3 +1,0 @@
-- `scripts/build-image.sh`: Compiles all kernel/userspace components and generates `osai-aarch64.img`, `osai-virtio-test.img`, and `osai-persistent.img`.
-- `scripts/qemu-smoke.py`: Runs a full system boot in QEMU and validates ~300+ functional markers across scheduler, network, filesystem, and AI subsystems.
-- `scripts/qemu-abi-contract.py`: Validates that source code definitions (syscalls, capabilities) and image generation constants match the frozen release candidate contract.

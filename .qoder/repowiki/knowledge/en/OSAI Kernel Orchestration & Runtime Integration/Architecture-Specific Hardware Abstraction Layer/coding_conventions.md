@@ -1,4 +1,0 @@
-- Assembly entry points delegate to C functions immediately after minimal hardware setup (BSS zeroing, stack setup).
-- Hardware register access is encapsulated in static inline functions or macros using volatile pointers or system register instructions.
-- Exception handlers distinguish between synchronous exceptions (syscalls, faults) and asynchronous interrupts (IRQs) using ESR/Vector kind checks.
-- Memory management structures (page tables) are statically allocated in early boot code before dynamic allocation is available.

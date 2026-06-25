@@ -1,1 +1,0 @@
-Orchestrates a freestanding AArch64/x86_64 operating system by enforcing a unified boot-to-runtime contract across the UEFI bootloader, kernel core, and userspace environment.

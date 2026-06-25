@@ -1,1 +1,0 @@
-A collection of C-based integration tests and utilities validating the OSAI kernel's userspace APIs, including filesystem, networking, SMP, ML, and remote shell capabilities.

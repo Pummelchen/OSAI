@@ -1,1 +1,0 @@
-Orchestrates hardware abstraction, memory management, and runtime services into a unified freestanding kernel that boots, initializes subsystems, and manages user-space lifecycle.

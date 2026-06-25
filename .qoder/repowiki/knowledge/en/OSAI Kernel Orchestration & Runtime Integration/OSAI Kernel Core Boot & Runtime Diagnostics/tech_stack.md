@@ -1,1 +1,0 @@
-Freestanding C99 targeting AArch64 QEMU Virt, utilizing PL011 UART for I/O and ARM WFE instructions for low-power halting in panic/idle states.

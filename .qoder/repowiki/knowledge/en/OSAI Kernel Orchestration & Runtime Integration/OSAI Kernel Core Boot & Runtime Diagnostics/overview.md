@@ -1,1 +1,0 @@
-Implements the kernel entry point, hardware initialization sequence, and foundational runtime diagnostics including logging, assertions, panic handling, and telemetry emission.

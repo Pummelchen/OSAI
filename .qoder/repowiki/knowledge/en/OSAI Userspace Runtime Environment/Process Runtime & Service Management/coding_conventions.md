@@ -1,2 +1,0 @@
-- System call invocation follows a consistent pattern: loading arguments into x0-x2, setting the syscall number in x8, executing `svc #0`, and checking for errors via `cmn x0, #1` followed by a conditional branch.
-- String length calculation for write syscalls is performed at runtime using `adr` to get start/end addresses and `sub` to compute the difference, rather than using hardcoded constants.

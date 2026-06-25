@@ -1,5 +1,0 @@
-- Entry point: `sshd_run()` in `sshd.c` listens on port 22 via `osai_net_listen` and delegates connections to `handle_connection()`.
-- Protocol layer: `ssh_protocol.c/h` handles version exchange, binary packet framing (length-prefixed with padding), and basic helpers.
-- Crypto layer: `ssh_crypto.c/h` implements SHA-256, HMAC-SHA-256, AES-128-CTR, and Curve25519 primitives; `ssh_host_key.c/h` provides static host keys.
-- Channel layer: `ssh_channel.c/h` manages up to 4 concurrent SSH channels, handling open/data/close messages.
-- Dependency direction: `sshd.c` depends on all sub-modules; crypto and protocol modules depend only on `<osai/types.h>` and `<osai_user.h>` for network I/O.

@@ -1,1 +1,0 @@
-Automates the compilation of the freestanding AArch64 kernel and userspace, constructs bootable disk images, and executes comprehensive QEMU-based integration and contract-validation test suites.

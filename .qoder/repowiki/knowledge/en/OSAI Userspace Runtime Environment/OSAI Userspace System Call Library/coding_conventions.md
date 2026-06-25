@@ -1,2 +1,0 @@
-- Syscall wrappers consistently return -1 on error by checking if the kernel return value equals `~0ULL`.
-- Complex syscall arguments are passed via pointer to a packed request struct defined in the header, with the pointer and size passed as syscall arguments.

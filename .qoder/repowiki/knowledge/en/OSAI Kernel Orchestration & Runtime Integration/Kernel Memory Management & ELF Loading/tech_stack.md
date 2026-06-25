@@ -1,1 +1,0 @@
-Freestanding C99 targeting AArch64; uses a custom `osai_` API for VMM/PMM interactions and ELF64 structures defined in-module.

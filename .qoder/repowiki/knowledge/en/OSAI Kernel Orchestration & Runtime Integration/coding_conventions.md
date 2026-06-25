@@ -1,2 +1,0 @@
-- Mandatory self-test execution for every major subsystem (memory, network, drivers) during the boot sequence before operational use.
-- Uniform error handling using `osai_status_t` return values and `kassert` macros for critical path validation across all modules.

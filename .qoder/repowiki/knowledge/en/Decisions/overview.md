@@ -1,1 +1,0 @@
-Architecture decision records distilled from coding plans.

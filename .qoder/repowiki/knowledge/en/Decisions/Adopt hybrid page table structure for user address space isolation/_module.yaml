@@ -1,7 +1,0 @@
-schema_version: 1
-module_path: decisions/808394076012_b2c6223a89b8
-title: Adopt hybrid page table structure for user address space isolation
-scope: []
-source_files: []
-depends_on: []
-related_to: []

@@ -1,3 +1,0 @@
-- All public API functions perform explicit bounds checking on IDs and null-pointer validation on inputs before executing logic.
-- State transitions are guarded by strict pre-condition checks on the current state to prevent illegal operations (e.g., building an empty sandbox).
-- Security-sensitive operations (path validation, credential scanning) are centralized in the security module and called as prerequisites for filesystem and sandbox actions.

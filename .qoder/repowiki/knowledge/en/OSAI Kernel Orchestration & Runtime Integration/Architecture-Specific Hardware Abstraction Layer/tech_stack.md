@@ -1,1 +1,0 @@
-Freestanding C99 and AArch64/x86_64 Assembly. Uses PSCI for SMP boot on AArch64. GICv3 for interrupt control on AArch64. Legacy PCI config space access for x86_64.

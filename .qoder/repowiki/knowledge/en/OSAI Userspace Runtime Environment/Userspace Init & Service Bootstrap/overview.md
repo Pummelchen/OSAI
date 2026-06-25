@@ -1,1 +1,0 @@
-Bare-metal AArch64 entry point that validates syscalls, configures the service manager policy, and launches the primary child service.
