@@ -1,0 +1,69 @@
+<!--
+AI onboarding file.
+Mode: bootstrap
+Indexed commit: 8458ff956831e1b3b44a0cbcb396352ce28e3a01
+Last generated: 2026-06-25T09:20:22Z
+Generator: generic high-end AI coding agent
+Purpose: Help future AI sessions understand this repository quickly.
+Audience: Any high-capability AI coding agent, regardless of vendor or model family.
+Human edits are allowed. Future refreshes should preserve valid human edits.
+-->
+# Components
+
+## Bootloader
+
+- Responsibility: Load kernel ELF from FAT image and transfer control with boot info.
+- Key files: `boot/uefi/loader_main.c`, `boot/uefi/linker.ld`, `scripts/build-image.sh`.
+- Risks: earliest boot failures; toolchain/linker sensitivity.
+- Validate: `make image`, `make qemu-smoke`.
+
+## Kernel initialization/core
+
+- Responsibility: strict subsystem initialization and userspace launch.
+- Key files: `kernel/core/kmain.c`, `kernel/core/telemetry.c`, `kernel/core/klog.c`.
+- Invariants: self-tests run before dependent runtime paths; capability masks match app needs.
+- Validate: `make compile-check`, `make qemu-smoke`.
+
+## Memory and process loading
+
+- Responsibility: PMM/NUMA/VMM, arenas, heap, ELF loading, process address spaces.
+- Key files: `kernel/mm/`, `kernel/arch/aarch64/mmu.c`, `kernel/user/user.c`.
+- Risks: boot failure, address-space corruption, user-buffer validation regressions.
+- Validate: compile check plus smoke/regression.
+
+## Syscall/API surface
+
+- Responsibility: kernel/user boundary and userspace wrappers.
+- Key files: `kernel/include/xaios/syscall.h`, `kernel/user/syscall.c`, `userspace/include/xaios_user.h`, `userspace/lib/xaios_user.c`.
+- Public interfaces: syscall numbers, request structs, capability bits, wrapper functions.
+- Risks: docs/contract drift; missing capability enforcement.
+- Validate: `python3 scripts/qemu-abi-contract.py`, `make qemu-smoke`.
+
+## Filesystem, persistence, update
+
+- Responsibility: initramfs, mutable filesystem, persistent state, update/rollback.
+- Key files: `kernel/fs/`, `kernel/runtime/persistence.c`, `kernel/runtime/update.c`, `scripts/create-initfs.py`, `contracts/qemu-rc-v1.json`.
+- Risks: data loss, rollback/auth bypass, contract mismatch.
+- Validate: filesystem/update/readiness gates.
+
+## Network and SSH
+
+- Responsibility: packet/protocol/socket paths and remote administration surfaces.
+- Key files: `kernel/net/`, `kernel/runtime/network_stack.c`, `userspace/sshd/`, `scripts/run-qemu-aarch64.sh`.
+- External dependency: QEMU host forwarding defaults to host port `2222` for guest SSH port 22.
+- Risks: auth/security regressions, socket accounting mismatch.
+- Validate: network suite and SSH smoke if environment supports it.
+
+## CPU-AI runtime and AI Cell
+
+- Responsibility: CPU-only inference runtime/model handling and resource isolation.
+- Key files: `kernel/runtime/cpu_ai_runtime.c`, `kernel/runtime/model_arena.c`, `kernel/runtime/ai_cell.c`, `tools/convert_gguf_to_xaios.py`.
+- Risks: model format mismatch, unsupported hardware-performance claims, arena/KV-cache accounting bugs.
+- Validate: CPU-AI suite, AI Cell gate, smoke.
+
+## Build/gate system
+
+- Responsibility: reproducible build images and QEMU validation reports.
+- Key files: `Makefile`, `scripts/build-image.sh`, `scripts/qemu-*.py`, `scripts/qemu_gate_lib.py`, `.github/workflows/ci.yml`.
+- Generated outputs: `build/` reports/images/ELFs.
+- Validate: relevant make targets; do not commit generated reports.
